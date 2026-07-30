@@ -1,0 +1,4 @@
+strict side profile view, orthographic projection, facing right,
+no perspective, full body visible, centered composition,
+isolated on flat magenta #FF00FF background, no shadow, no ground plane,
+sharp edges suitable for cutout

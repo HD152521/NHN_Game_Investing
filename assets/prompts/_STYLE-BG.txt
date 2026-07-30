@@ -1,0 +1,4 @@
+wide panoramic horizontal composition, side-scrolling game background layer,
+flat orthographic side view, no characters, no foreground objects,
+seamlessly tileable horizontally with matching left and right edges,
+desaturated background tones so foreground characters stay readable

@@ -1,0 +1,6 @@
+3D render, photorealistic, photograph, blurry, soft focus, drop shadow,
+ground shadow, cast shadow, perspective distortion, three-quarter view,
+isometric, top-down, watermark, signature, text, letters, numbers, logo,
+busy cluttered background, gradient mesh, painterly, oil painting,
+sketchy lines, rough linework, extra limbs, deformed hands, anime face,
+pastel colors, bright white background

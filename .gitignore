@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.vite/
+coverage/
+*.local
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# 아트 파이프라인 산출물
+# assets/raw/ 는 절대 무시하지 않습니다 (AI 원본 = 재키잉 근거, PLAN STEP 0)
+# assets/cut/ 도 커밋 대상입니다
+assets/atlas/*
+!assets/atlas/.gitkeep
