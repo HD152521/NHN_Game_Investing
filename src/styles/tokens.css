@@ -1,0 +1,90 @@
+/*
+ * TICKER FRONT 색 토큰 소비 레이어.
+ *
+ * ★ 이 파일에는 HEX 를 적지 않습니다.
+ *   --tf-* 커스텀 프로퍼티의 실제 값은 src/design/css-vars.ts 의 applyPalette() 가
+ *   TS 팔레트(단일 소스)에서 런타임에 주입합니다. 색약 모드를 토글하면
+ *   같은 변수가 갱신되므로 차트와 진영 색이 동시에 바뀝니다 (아트가이드 §1.3).
+ *
+ *   HEX 를 여기에 직접 적으면 no-hardcoded-hex.test.ts 가 실패합니다.
+ */
+
+.tf-surface-deep {
+  background-color: var(--tf-bg-0);
+}
+
+.tf-surface {
+  background-color: var(--tf-bg-1);
+}
+
+.tf-surface-near {
+  background-color: var(--tf-bg-2);
+}
+
+.tf-text {
+  color: var(--tf-text);
+}
+
+.tf-text-muted {
+  color: var(--tf-muted);
+}
+
+.tf-gold {
+  color: var(--tf-gold);
+}
+
+.tf-aum {
+  color: var(--tf-aum);
+}
+
+/* ── 방향 색 (차트 캔들 · 진영 유닛이 같은 변수를 공유) ───────────────── */
+
+.tf-up {
+  --tf-direction: var(--tf-up-ally);
+  --tf-direction-deep: var(--tf-up-deep);
+}
+
+.tf-down {
+  --tf-direction: var(--tf-enemy-down);
+  --tf-direction-deep: var(--tf-enemy-deep);
+}
+
+/* ── 이중 인코딩: 색을 못 봐도 구분되는 형태 신호 ────────────────────── */
+
+/* 캔들 채움/빈칸 — 상승은 속을 채우고, 하락은 테두리만 남긴다 */
+.tf-candle {
+  border: 2px solid var(--tf-direction);
+}
+
+.tf-candle--filled {
+  background-color: var(--tf-direction);
+}
+
+.tf-candle--hollow {
+  background-color: transparent;
+}
+
+/* 진영 실루엣 — 아군은 둥글게, 적군은 각지게 */
+.tf-silhouette--rounded {
+  border-radius: 50%;
+}
+
+.tf-silhouette--angular {
+  border-radius: 0;
+  clip-path: polygon(50% 0%, 100% 30%, 82% 100%, 18% 100%, 0% 30%);
+}
+
+/* ▲ ▼ 기호는 항상 색과 함께 병기한다 (색 단독 신호 금지) */
+.tf-direction-symbol {
+  color: var(--tf-direction);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 화면 흔들림 감소 (FR-13.1) */
+@media (prefers-reduced-motion: reduce) {
+  .tf-candle,
+  .tf-direction-symbol {
+    transition: none;
+    animation: none;
+  }
+}
