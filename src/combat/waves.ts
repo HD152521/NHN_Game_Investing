@@ -8,14 +8,12 @@
 
 import {
   AIR_ENEMY_SHARE,
-  AIR_WAVE_NUMBERS,
+  DEFAULT_WAVE_TABLE,
   ENEMY_ATTACK_COOLDOWN_MS,
   ENEMY_DAMAGE,
   ENEMY_SPEED_AIR,
   ENEMY_SPEED_GROUND,
   UNIT_MELEE_RANGE,
-  WAVE_BASE_COUNT,
-  WAVE_BASE_HP,
 } from './constants';
 import type { CombatParams, Lane } from './types';
 
@@ -44,16 +42,19 @@ export interface EnemySpec {
  * 웨이브 범위를 벗어나면(정의되지 않은 웨이브) 빈 배열을 반환한다.
  */
 export function spawnPlanFor(wave: number, params: CombatParams): EnemySpec[] {
+  // 스테이지별 테이블을 params에서 읽는다 — 없으면 R1(DEFAULT_WAVE_TABLE). R2/R3 계수는
+  // 이 파일을 고치지 않고 `params.waveTable` 주입만으로 붙는다.
+  const table = params.waveTable ?? DEFAULT_WAVE_TABLE;
   const index = wave - 1;
-  const baseCount = WAVE_BASE_COUNT[index];
-  const baseHp = WAVE_BASE_HP[index];
+  const baseCount = table.baseCount[index];
+  const baseHp = table.baseHp[index];
   if (baseCount === undefined || baseHp === undefined) {
     return [];
   }
 
   const count = Math.ceil(baseCount * params.heat);
   const hp = baseHp * params.heat;
-  const airCount = AIR_WAVE_NUMBERS.has(wave) ? Math.max(1, Math.round(count * AIR_ENEMY_SHARE)) : 0;
+  const airCount = table.airWaves.has(wave) ? Math.max(1, Math.round(count * AIR_ENEMY_SHARE)) : 0;
   const groundCount = count - airCount;
 
   const specs: EnemySpec[] = [];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { DEFAULT_POSITION_PARAMS } from './constants';
+import { DEFAULT_POSITION_PARAMS, REFUND_RATIO } from './constants';
 import { closePosition, openPosition } from './trade';
 import type { OpenPosition, PositionParams, Wallet } from './types';
 
@@ -150,8 +150,8 @@ describe('openPosition', () => {
   });
 });
 
-describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () => {
-  test('1) z=+1.0 청산 → r=0.90, pnl=445, 골드 +945(=stake+pnl), AUM은 1500 그대로', () => {
+describe('closePosition — 이익만 골드·원금은 AUM 복귀 정산 수용 기준', () => {
+  test('1) z=+1.0 청산 → r=0.90, pnl=445, 골드 +445(=pnl), AUM은 원금의 70%인 350이 복귀해 1850', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -169,12 +169,14 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
     if (!closed.ok) return;
     expect(closed.result.evaluation.r).toBeCloseTo(0.9, 10);
     expect(closed.result.evaluation.pnl).toBe(445);
-    expect(closed.result.goldGained).toBe(945);
-    expect(closed.result.wallet.gold).toBe(945);
-    expect(closed.result.wallet.aum).toBe(1500);
+    expect(closed.result.goldGained).toBe(445); // 이익 그대로. 승수 없음
+    expect(closed.result.wallet.gold).toBe(445);
+    // 이익 청산이어도 원금은 REFUND_RATIO(0.70)만큼만 복귀한다 — floor(500 × 0.7) = 350.
+    expect(closed.result.aumReturned).toBe(350);
+    expect(closed.result.wallet.aum).toBe(1850);
   });
 
-  test('2) z=−0.5 청산 → r=−0.45, pnl=−230, 골드 +270(=stake+pnl), AUM은 1500 그대로', () => {
+  test('2) z=−0.5 청산 → r=−0.45, pnl=−230, 골드 증가 0, AUM은 (500−230)×0.7=189만 복귀해 1689', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -192,12 +194,14 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
     if (!closed.ok) return;
     expect(closed.result.evaluation.r).toBeCloseTo(-0.45, 10);
     expect(closed.result.evaluation.pnl).toBe(-230);
-    expect(closed.result.goldGained).toBe(270);
-    expect(closed.result.wallet.gold).toBe(270);
-    expect(closed.result.wallet.aum).toBe(1500);
+    // 손실 청산은 골드를 한 푼도 만들지 않는다 — 골드 파이프는 pnl > 0에서만 열린다.
+    expect(closed.result.goldGained).toBe(0);
+    expect(closed.result.wallet.gold).toBe(0);
+    expect(closed.result.aumReturned).toBe(189); // floor((500 − 230) × 0.7)
+    expect(closed.result.wallet.aum).toBe(1689);
   });
 
-  test('3) z=−1.2까지 하락 → 강제 청산, pnl=−500(전액 소실), 골드 증가 0, AUM 1500 그대로', () => {
+  test('3) z=−1.2까지 하락 → 강제 청산, pnl=−500(전액 소실), 골드 증가 0, AUM 복귀도 0', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -220,10 +224,12 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
     expect(closed.result.evaluation.pnl).toBe(-500);
     expect(closed.result.goldGained).toBe(0);
     expect(closed.result.wallet.gold).toBe(0);
+    // 원금을 전부 잃었으므로 AUM으로도 아무 것도 돌아오지 않는다. 진입 후 1500 그대로.
+    expect(closed.result.aumReturned).toBe(0);
     expect(closed.result.wallet.aum).toBe(1500);
   });
 
-  test('4) 진입 직후 z≈0에서 즉시 청산 → 수수료만큼만 손해 보고 원금이 골드로 넘어간다', () => {
+  test('4) 진입 직후 z≈0에서 즉시 청산 → 골드는 0, 원금은 수수료를 문 뒤 70%만 AUM으로 복귀한다', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -240,11 +246,12 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBe(-5);
-    // 골드 += stake - fee = 500 - 5 = 495. AUM은 진입 때 이미 500만큼 줄어든 채(1500)
-    // 유지되고, 청산으로 다시 늘지 않는다 — 원금은 AUM으로 복귀하지 않는다.
-    expect(closed.result.goldGained).toBe(495);
-    expect(closed.result.wallet.gold).toBe(495);
-    expect(closed.result.wallet.aum).toBe(1500);
+    // 이 왕복이 만든 골드는 0이다. 원금 500은 수수료 5를 문 뒤 70%만 복귀(346) →
+    // 시작 AUM 2000이 1846이 된다. 왕복 자체가 큰 순손실이고, 얻는 것이 전혀 없다.
+    expect(closed.result.goldGained).toBe(0);
+    expect(closed.result.wallet.gold).toBe(0);
+    expect(closed.result.aumReturned).toBe(346); // floor((500 − 5) × 0.7)
+    expect(closed.result.wallet.aum).toBe(1846);
   });
 
   test('5) 극단적 손실(z=-3)에서도 pnl은 −stake 아래로 내려가지 않고, 골드 증가는 0이다', () => {
@@ -264,7 +271,7 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBe(-500);
-    expect(closed.result.wallet.aum).toBe(1500); // 청산은 AUM을 늘리지 않는다
+    expect(closed.result.wallet.aum).toBe(1500); // 원금 전액 소실 → AUM 복귀 0
     expect(closed.result.goldGained).toBe(0);
   });
 
@@ -348,7 +355,8 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBeGreaterThan(0);
-    expect(closed.result.goldGained).toBe(opened.position.stake + closed.result.evaluation.pnl);
+    expect(closed.result.goldGained).toBe(closed.result.evaluation.pnl);
+    expect(closed.result.aumReturned).toBe(Math.floor(opened.position.stake * REFUND_RATIO));
   });
 
   test('9) 지갑 객체는 변형되지 않고 새 객체로 반환된다 (불변성)', () => {
@@ -396,8 +404,14 @@ describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () 
   });
 });
 
-describe('closePosition — AUM 불변·골드 비음수 불변식', () => {
-  test('어떤 z(가격 변동)에서도 청산은 AUM을 늘리지 않는다', () => {
+describe('closePosition — AUM 상한·골드 비음수 불변식', () => {
+  /**
+   * 예전 이 자리에는 "청산은 AUM을 절대 늘리지 않는다"는 테스트가 있었다. 그 불변식은
+   * 원금이 골드로 넘어가던 옛 경제(= 세탁 익스플로잇의 원천)를 고정하던 것이라 폐기했다.
+   * 지금의 올바른 불변식은 **"청산 후 AUM은 진입 전 AUM을 절대 넘지 못한다"**이다 —
+   * 왕복만으로는 AUM이 늘어날 수 없다는, 세탁 방지의 핵심 보증이다.
+   */
+  test('어떤 z(가격 변동)에서도 왕복 후 AUM은 진입 전 AUM을 넘지 못한다', () => {
     const params = fixtureParams();
     const closePrices = [130, 110, 105, 100, 95, 90, 70, 50]; // 큰 이익 ~ 전액 소실까지 훑는다
 
@@ -417,7 +431,10 @@ describe('closePosition — AUM 불변·골드 비음수 불변식', () => {
 
       expect(closed.ok).toBe(true);
       if (!closed.ok) continue;
-      expect(closed.result.wallet.aum).toBe(aumAfterOpen);
+      // 복귀액은 원금이 손실만 문 값이므로 항상 [0, stake] 범위다.
+      expect(closed.result.aumReturned).toBeGreaterThanOrEqual(0);
+      expect(closed.result.aumReturned).toBeLessThanOrEqual(opened.position.stake * REFUND_RATIO);
+      expect(closed.result.wallet.aum).toBe(aumAfterOpen + closed.result.aumReturned);
       expect(closed.result.wallet.aum).toBeLessThanOrEqual(wallet.aum);
     }
   });

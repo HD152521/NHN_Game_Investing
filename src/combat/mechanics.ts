@@ -5,7 +5,7 @@
  * DOM·타이머·전역 상태는 참조하지 않으며, 경과 시간(dtMs)은 전부 호출자가 주입한다.
  */
 
-import { BASE_DAMAGE_PER_LEAK, TOWER_COOLDOWN_MS, TOWER_DAMAGE, TOWER_RANGE } from './constants';
+import { BASE_DAMAGE_PER_LEAK, TOWER_COOLDOWN_MS, TOWER_DAMAGE, TOWER_RANGE, towerX } from './constants';
 import type { Enemy, Tower, Unit } from './types';
 
 /** 남은 쿨다운(ms)을 dtMs만큼 줄인다. 0 아래로는 내려가지 않는다. */
@@ -33,6 +33,15 @@ export interface TowerFireResult {
  * 타워 쿨다운을 dtMs만큼 줄이고, 준비된 타워는 사거리 내 적을 공격한다 (FR-6.2, FR-6.4).
  * `basic`/`splash`는 지상만, `antiair`는 공중만 표적으로 삼는다. `splash`는 사거리 내
  * 전원에게 피해를 준다(범위 피해). 사거리 내 표적이 없으면 쿨다운을 소모하지 않고 대기한다.
+ *
+ * ★ 사거리는 **타워 자기 위치 기준 상대 거리**로 잰다 ★
+ * 판정식은 `enemy.x - towerX(tower.slot) <= range`다. 예전에는 `enemy.x <= range`,
+ * 즉 본진(x=0) 절대좌표 기준이라 **슬롯 6개가 전부 같은 구간을 커버**했다 — 어디에 짓든
+ * 결과가 완전히 동일해서 배치라는 결정 자체가 존재하지 않았다. 상대 거리로 바꾸면
+ * 앞 슬롯일수록 적을 더 일찍(더 먼 x에서) 잡는 대신 커버 구간이 통째로 앞으로 밀린다.
+ *
+ * 뺄셈 결과가 음수인 경우(적이 타워를 지나쳐 본진 쪽으로 간 경우)도 `<= range`를 만족해
+ * 계속 표적이 된다 — 지나친 적이 무적이 되면 안 되기 때문이다.
  */
 export function applyTowerFire(towers: readonly Tower[], enemies: readonly Enemy[], dtMs: number): TowerFireResult {
   let currentEnemies = enemies;
@@ -47,8 +56,11 @@ export function applyTowerFire(towers: readonly Tower[], enemies: readonly Enemy
     }
 
     const range = TOWER_RANGE[tower.kind];
+    const originX = towerX(tower.slot);
     const targetLane = tower.kind === 'antiair' ? 'air' : 'ground';
-    const candidates = currentEnemies.filter((enemy) => enemy.lane === targetLane && enemy.x <= range);
+    const candidates = currentEnemies.filter(
+      (enemy) => enemy.lane === targetLane && enemy.x - originX <= range,
+    );
 
     if (candidates.length === 0) {
       nextTowers.push({ ...tower, cooldownMs: 0 });

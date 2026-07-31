@@ -9,7 +9,8 @@
  * 그 전까지 블라인드 규칙(FR-4)은 강제되지 않는다.
  */
 
-import type { CombatParams, CombatState, TowerKind, UnitKind } from '../combat';
+import type { CombatParams, CombatState, StageId, TowerKind, UnitKind } from '../combat';
+import { STAGES } from '../combat';
 import {
   AUM_DROP_PER_WAVE,
   BASE_HP,
@@ -43,9 +44,16 @@ import {
   openPosition,
 } from '../position';
 
-/** PRD §9.2 — 스테이지 시작 재화. */
-export const STARTING_GOLD = 200;
-export const STARTING_AUM = 2000;
+/**
+ * PRD §9.2 — 스테이지 시작 재화.
+ *
+ * 값을 여기 직접 쓰지 마라. `src/combat/stages.ts`의 `STAGES`가 단일 출처다 —
+ * 예전에는 이 파일이 자체 상수(200/2000)를 들고 있어서, 밸런스 상수를 고쳐도
+ * 런타임은 계속 옛 값을 읽는 이중 출처 상태였다.
+ */
+export const DEFAULT_STAGE_ID: StageId = 'R1';
+export const STARTING_GOLD = STAGES[DEFAULT_STAGE_ID].startingGold;
+export const STARTING_AUM = STAGES[DEFAULT_STAGE_ID].startingAum;
 
 export interface SessionSnapshot {
   readonly wallet: Wallet;
@@ -60,7 +68,10 @@ export interface SessionSnapshot {
 /** 방금 일어난 청산을 UI가 한 번만 연출할 수 있도록 물고 있는 큐. */
 export interface CloseNotice {
   readonly position: ClosedPosition;
+  /** 골드로 넘어간 금액. **이익분만**이며 원금은 포함하지 않는다 (FR-5.7). */
   readonly goldGained: number;
+  /** AUM으로 복귀한 금액. `(원금 + 손실) × REFUND_RATIO`. 강제 청산 시 0. */
+  readonly aumReturned: number;
 }
 
 /** 점령 지역 수. MVP 1지역만 있으므로 0 고정 (FR-6.7 heat / FR-6.8 운영비). */
@@ -306,6 +317,7 @@ export class StageSession {
     this.pendingNotice = {
       position: result.result.position,
       goldGained: result.result.goldGained,
+      aumReturned: result.result.aumReturned,
     };
   }
 

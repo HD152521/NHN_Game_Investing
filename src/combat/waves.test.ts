@@ -33,15 +33,16 @@ describe('spawnPlanFor', () => {
     const params = fixtureParams();
     const plan = spawnPlanFor(1, params);
     expect(plan).toHaveLength(3);
-    expect(plan.every((spec) => spec.hp === 50)).toBe(true);
+    // 웨이브 1 기본 HP는 50 → 70으로 올랐다(무입력 관전 구간 제거). stages.ts 참고.
+    expect(plan.every((spec) => spec.hp === 70)).toBe(true);
   });
 
   test('heat가 적용되면 적 수는 올림, HP는 그대로 곱해진다(FR-6.7)', () => {
-    // 점령 1개 → heat=1.02, 웨이브 4 baseCount=5 → ceil(5×1.02)=6, HP=70×1.02=71.4
+    // 점령 1개 → heat=1.02, 웨이브 4 baseCount=5 → ceil(5×1.02)=6, HP=115×1.02=117.3
     const params = fixtureParams({ heat: 1.02 });
     const plan = spawnPlanFor(4, params);
     expect(plan).toHaveLength(6);
-    expect(plan[0]?.hp).toBeCloseTo(71.4);
+    expect(plan[0]?.hp).toBeCloseTo(117.3);
   });
 
   test('정의되지 않은 웨이브 번호는 빈 배열을 반환한다', () => {
@@ -105,13 +106,15 @@ describe('waveIncomeFor — FR-6.8 기본 수입', () => {
     expect(sum).toBe(totalBaseIncomeFor(captured));
   });
 
-  test('점령 2개 예시(PRD 수용 기준): 총액 275, 웨이브 1~12 각 21, 웨이브 13은 23', () => {
+  test('점령 2개 예시: 총액 165, 웨이브 1~12 각 12, 웨이브 13은 21', () => {
+    // ⚠️ PRD §9.2 수용 기준에 적힌 275/21/23은 BASE_INCOME_PER_WAVE=25 시절 값이다.
+    // 15로 내린 지금은 25×13 − 2×15 → 15×13 − 2×15 = 165이 맞다. PRD 문서 갱신 필요.
     const params = fixtureParams({ totalBaseIncome: totalBaseIncomeFor(2) });
-    expect(params.totalBaseIncome).toBe(275);
+    expect(params.totalBaseIncome).toBe(165);
 
     for (let wave = 1; wave <= 12; wave += 1) {
-      expect(waveIncomeFor(wave, params)).toBe(21);
+      expect(waveIncomeFor(wave, params)).toBe(12);
     }
-    expect(waveIncomeFor(13, params)).toBe(23);
+    expect(waveIncomeFor(13, params)).toBe(21);
   });
 });

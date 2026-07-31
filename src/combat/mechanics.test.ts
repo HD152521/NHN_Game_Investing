@@ -8,6 +8,8 @@ import {
   UNIT_MELEE_RANGE,
   UNIT_RANGE,
   UNIT_SPEED,
+  TOWER_RANGE,
+  towerX,
 } from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks } from './mechanics';
 import type { Enemy, Tower, Unit } from './types';
@@ -193,5 +195,62 @@ describe('collectLeaks / collectDeaths', () => {
     const result = collectDeaths(enemies, 21);
     expect(result.kills).toBe(0);
     expect(result.aumDropped).toBe(0);
+  });
+});
+
+describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌표 판정)', () => {
+  /**
+   * 예전 판정은 `enemy.x <= range`(본진 절대좌표)라 슬롯 6개가 전부 같은 구간을 커버했고,
+   * "어느 슬롯에 짓는가"라는 결정이 존재하지 않았다. 지금은 `enemy.x - towerX(slot) <= range`다.
+   */
+  test('슬롯마다 커버 구간의 바깥 경계가 TOWER_SLOT_SPACING만큼 밀린다', () => {
+    const range = TOWER_RANGE.basic;
+
+    // 슬롯이 앞설수록 경계가 towerX(slot) = slot × TOWER_SLOT_SPACING 만큼 밀린다.
+    for (const slot of [0, 1, 5]) {
+      const boundary = range + towerX(slot);
+      const towers: Tower[] = [makeTower({ slot, kind: 'basic' })];
+
+      // 경계 바로 안쪽: 맞는다.
+      const inside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary - 0.001 })], 1000);
+      expect(inside.enemies[0]?.hp).toBe(100 - 20);
+
+      // 경계 바로 바깥: 안 맞는다.
+      const outside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary + 0.001 })], 1000);
+      expect(outside.enemies[0]?.hp).toBe(100);
+    }
+  });
+
+  test('같은 적에 대해 앞 슬롯은 사격하고 뒤 슬롯은 아직 못 한다', () => {
+    // x = 0.43 은 슬롯 0(경계 0.42) 밖이지만 슬롯 1(경계 0.44) 안이다.
+    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.43 })];
+
+    const backSlot = applyTowerFire([makeTower({ slot: 0, kind: 'basic' })], enemies, 1000);
+    const frontSlot = applyTowerFire([makeTower({ slot: 1, kind: 'basic' })], enemies, 1000);
+
+    expect(backSlot.enemies[0]?.hp).toBe(100); // 슬롯 0: 사거리 밖
+    expect(frontSlot.enemies[0]?.hp).toBe(100 - 20); // 슬롯 1: 사거리 안
+  });
+
+  test('타워를 지나쳐 본진 쪽으로 간 적도 계속 표적이 된다 (음수 거리)', () => {
+    // 슬롯 5(x=0.10)보다 본진 쪽에 있는 적. enemy.x - towerX = -0.09 ≤ range.
+    const towers: Tower[] = [makeTower({ slot: 5, kind: 'basic' })];
+    const result = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: 0.01 })], 1000);
+
+    expect(result.enemies[0]?.hp).toBe(100 - 20);
+  });
+
+  test('splash의 범위 피해도 자기 위치 기준으로 판정한다', () => {
+    // splash 사거리 0.3. 슬롯 5(x=0.10) 기준 경계는 0.40.
+    const towers: Tower[] = [makeTower({ slot: 5, kind: 'splash' })];
+    const enemies: Enemy[] = [
+      makeEnemy({ id: 1, lane: 'ground', x: 0.35 }), // 슬롯 0이었다면 사거리 밖(0.30 초과)
+      makeEnemy({ id: 2, lane: 'ground', x: 0.45 }), // 슬롯 5에서도 밖
+    ];
+
+    const result = applyTowerFire(towers, enemies, 1400);
+
+    expect(result.enemies.find((e) => e.id === 1)?.hp).toBe(90);
+    expect(result.enemies.find((e) => e.id === 2)?.hp).toBe(100);
   });
 });

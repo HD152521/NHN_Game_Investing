@@ -19,9 +19,19 @@
 
 export type { CloseReason, Direction, OpenPosition, PositionEval, PositionParams, Wallet } from './types';
 
-export { DEFAULT_POSITION_PARAMS, LIQ_WARN_RATIO, STAKE_PRESETS } from './constants';
+export {
+  AUM_SETTLEMENT_RATIO,
+  DEFAULT_POSITION_PARAMS,
+  LIQ_WARN_RATIO,
+  MIN_PROFIT_CLOSES_FOR_AUM_CREDIT,
+  REFUND_RATIO,
+  STAKE_PRESETS,
+} from './constants';
 
 export { evaluatePosition } from './evaluate';
+
+export type { AumCreditInput } from './settle';
+export { aumCapitalCredit } from './settle';
 
 export type {
   AddError,

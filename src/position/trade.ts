@@ -2,12 +2,20 @@
  * 포지션 진입·청산 — 순수·불변 상태 전이 함수 (PRD FR-5).
  *
  * 입력으로 받은 `wallet`/`position` 객체는 절대 변형하지 않고, 항상 새 객체를 반환한다.
- * 이 파일이 이 게임의 경제 코어다 — AUM은 골드로만 흘러가는 일방통행 파이프다:
- * 진입 시 AUM에서 stake가 빠지고, 청산 시 원금+손익(`stake + pnl`, 최소 0)이
- * 통째로 골드로 넘어간다. 원금은 AUM으로 복귀하지 않는다. AUM을 다시 채우는
- * 유일한 경로는 적 처치 드롭(`src/combat`)이며, 이 파일은 그 경로를 다루지 않는다.
+ * 이 파일이 이 게임의 경제 코어다 — **골드와 AUM은 서로 다른 파이프를 탄다**:
+ * 진입 시 AUM에서 stake가 빠지고, 청산 시 **이익만 골드가 되며**
+ * **원금은 손실을 문 뒤 `REFUND_RATIO`(0.70)만큼만 AUM으로 복귀**한다.
+ * AUM을 늘리는 다른 경로는 적 처치 드롭(`src/combat`)이며, 이 파일은 그 경로를 다루지 않는다.
+ *
+ * ★ 예전 구조(`goldGained = max(stake + pnl, 0)`)를 되돌리지 마라 ★
+ * 그 식에서는 원금 자체가 골드로 바뀌었기 때문에, **AUM 전액 진입 → 2초 대기 →
+ * z≈0 청산**만 반복하면 수수료 1%만 내고 AUM의 99%를 골드로 세탁할 수 있었다.
+ * 차트를 한 번도 보지 않는 플레이가 최적 전략이 되어 "예측을 건너뛴 플레이는
+ * 존재할 수 없다"(PRD §9.3)는 코어 보증이 정확히 반전됐다. 아래 정산식은 그 경로를
+ * 죽이기 위한 것이다 — 자세한 근거는 `closePosition` JSDoc 참고.
  */
 
+import { REFUND_RATIO } from './constants';
 import { evaluatePosition } from './evaluate';
 import type { CloseReason, Direction, OpenPosition, PositionEval, PositionParams, Wallet } from './types';
 
@@ -219,11 +227,15 @@ export interface CloseResult {
   readonly wallet: Wallet;
   readonly evaluation: PositionEval;
   /**
-   * 이번 청산으로 골드에 더해진 총액 — "순이익"이 아니라 `max(stake + pnl, 0)`,
-   * 즉 원금과 손익을 합쳐 골드로 넘어간 금액 전체다. 강제 청산처럼 `pnl === -stake`인
-   * 경우에만 0이 된다.
+   * 이번 청산으로 골드에 더해진 금액 = `max(pnl, 0)`. 승수 없음.
+   * **원금은 여기 포함되지 않는다** — 이익이 없으면(pnl ≤ 0) 정확히 0이다.
    */
   readonly goldGained: number;
+  /**
+   * 이번 청산으로 AUM에 되돌아온 금액 = `floor((stake + min(pnl, 0)) × REFUND_RATIO)`.
+   * 원금이 손실을 문 뒤 70%만 남은 값이다. 강제 청산(`pnl === -stake`)이면 0이 된다.
+   */
+  readonly aumReturned: number;
   readonly reason: CloseReason;
 }
 
@@ -245,15 +257,28 @@ export type ClosePositionResult =
 /**
  * 포지션 청산.
  *
- * AUM → 골드 일방통행 정산 — **원금은 AUM으로 복귀하지 않는다.**
+ * **이익만이 골드가 되고, 원금은 손실을 문 뒤 일부만 AUM으로 복귀한다.**
  * ```
- * goldGained = max(stake + pnl, 0)
+ * goldGained  = max(pnl, 0)                                 // 승수 없음
+ * aumReturned = floor((stake + min(pnl, 0)) × REFUND_RATIO) // 0.70
+ *
  * gold += goldGained
- * aum  += 0   (청산은 AUM을 절대 늘리지 않는다)
+ * aum  += aumReturned
  * ```
- * 진입 시 이미 AUM에서 stake가 빠져나간 상태이므로, 청산은 그 stake와 손익을
- * 합산해 골드로 흘려보내는 것으로 끝난다. 강제 청산이면 `pnl === -stake`가 되어
- * `goldGained`가 정확히 0이 된다 — 원금을 전부 잃었으니 넘어갈 것이 없다는 뜻이다.
+ *
+ * ★ 설계 의도 ★
+ * - **매매를 안 하면 골드가 전혀 안 나온다.** 골드는 `pnl > 0`에서만 생기므로,
+ *   차트를 안 보고는 타워·유닛을 살 수 없다. 예측이 전투의 유일한 자금줄이다.
+ * - **무의미한 진입·청산 반복은 큰 순손실이다.** z≈0 왕복은 `pnl = -fee`라 골드는 0인데
+ *   원금은 수수료를 문 뒤 30%가 더 타서 사라진다(2,000 → 1,386). 예전
+ *   `max(stake + pnl, 0)` 식이 열어준 "세탁" 경로가 여기서 완전히 끊긴다.
+ * - **환급률이 승수보다 옳은 이유는 재순환이다.** 원금이 AUM으로 돌아오면 같은 돈을
+ *   몇 번이고 다시 투입할 수 있어(세션 총 투입 S ≈ 초기 AUM의 5~6배) 이익 쪽에 승수를
+ *   얹으면 골드가 폭발한다. 골드는 `pnl` 그대로 두고 원금 쪽을 태우는 것이 정합하다.
+ *   자세한 수치 근거는 `constants.ts`의 `REFUND_RATIO` 주석 참고.
+ *
+ * 강제 청산이면 `pnl === -stake`가 되어 `goldGained`와 `aumReturned`가 **둘 다 0**이다 —
+ * 원금을 전부 잃었으니 어느 쪽으로도 넘어갈 것이 없다.
  *
  * `reason`이 `liquidated`/`stage_end`(서버 강제 청산)이면 `minHoldMs` 검사를 건너뛴다 —
  * 플레이어의 의사와 무관하게 서버가 즉시 정리해야 하는 상황이기 때문이다.
@@ -271,11 +296,15 @@ export function closePosition(input: ClosePositionInput): ClosePositionResult {
 
   const evaluation = evaluatePosition(input.position, input.closePrice, input.params);
 
-  const goldGained = Math.max(input.position.stake + evaluation.pnl, 0);
+  // 이익만 골드가 된다. pnl ≤ 0이면 0 — 원금은 이 파이프를 절대 타지 않는다.
+  const goldGained = Math.max(evaluation.pnl, 0);
+  // 원금은 손실을 문 뒤 REFUND_RATIO만큼만 AUM으로 복귀한다(정수 재화이므로 내림).
+  // 이익은 여기 더해지지 않는다 — 위 골드 파이프로 간다.
+  const aumReturned = Math.floor((input.position.stake + Math.min(evaluation.pnl, 0)) * REFUND_RATIO);
 
   const wallet: Wallet = {
     gold: input.wallet.gold + goldGained,
-    aum: input.wallet.aum,
+    aum: input.wallet.aum + aumReturned,
   };
 
   const closedPosition: ClosedPosition = {
@@ -293,6 +322,7 @@ export function closePosition(input: ClosePositionInput): ClosePositionResult {
       wallet,
       evaluation,
       goldGained,
+      aumReturned,
       reason: input.reason,
     },
   };

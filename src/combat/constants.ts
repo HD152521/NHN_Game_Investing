@@ -7,7 +7,8 @@
  * 수준의 체감이며, 정밀 밸런싱은 봇 시뮬레이터·플레이테스트(§9.3, §10)에서 재조정한다.
  */
 
-import type { TowerKind, UnitKind } from './types';
+import { STAGES } from './stages';
+import type { StageWaveTable, TowerKind, UnitKind } from './types';
 
 // ── §9.2 경제 파라미터 (PRD 명시값) ─────────────────────────────
 export const WAVE_COUNT = 13;
@@ -15,11 +16,33 @@ export const WAVE_DURATION_MS = 30_000;
 export const BASE_HP = 100;
 export const TOWER_SLOTS = 6;
 export const AUM_DROP_PER_WAVE = 150;
-export const BASE_INCOME_PER_WAVE = 25;
+/**
+ * 웨이브당 기본 수입(G) — **R1 값**. 25 → 15로 내렸다.
+ *
+ * 기본 수입은 **매매를 한 번도 안 해도 들어오는 무조건적 골드**다. 이 값이 높으면
+ * "예측을 건너뛴 플레이"의 하한이 올라가 코어 루프(예측 → 골드 → 방어)가 약해진다.
+ * 골드의 주 공급원은 어디까지나 청산 이익(`src/position/trade.ts`)이어야 한다.
+ *
+ * R2/R3는 웨이브마다 값이 다를 수 있어(마지막 웨이브만 +1) 배열로 관리한다 —
+ * `STAGES[id].baseIncomePerWave` 참고.
+ */
+export const BASE_INCOME_PER_WAVE = STAGES.R1.baseIncomePerWave[0] ?? 15;
 export const SKILL_COST = 200;
 export const SKILL_COOLDOWN_MS = 45_000;
-/** 스테이지 시작 지급 골드(FR-6.8-b). 전투 시뮬 자체는 사용하지 않으나 §9.2 상수로 문서화해 둔다. */
-export const STARTING_GOLD = 200;
+/**
+ * 스테이지 시작 지급 골드(FR-6.8-b). 전투 시뮬 자체는 사용하지 않으나 §9.2 상수로 문서화해 둔다.
+ *
+ * 200 → 120. **기본 포탑(120 G) 정확히 1기**만 지을 수 있는 값이다 — PRD FR-6.8-b가
+ * 요구하는 제약("타워 최소 1기는 웨이브 1 이전에 반드시 건설 가능")은 그대로 지키면서,
+ * 여유분 80 G를 걷어낸다. **2기째 자금은 첫 청산 이익에서만 나온다** — 즉 두 번째 타워를
+ * 세우려면 반드시 차트를 봐야 한다.
+ *
+ * ⚠️ 런타임이 실제로 읽는 값은 `src/app/session.ts`의 동명 상수다(중복 정의). 그쪽도
+ * 120으로 맞추지 않으면 이 변경은 효과가 없다.
+ *
+ * 전 지역 공통값이라 `STAGES.R1.startingGold`를 그대로 쓴다.
+ */
+export const STARTING_GOLD = STAGES.R1.startingGold;
 /** 경계도 계수 증가분(지역 1점령당). heat = 1 + 점령수 × HEAT_PER_TERRITORY (FR-6.7). */
 export const HEAT_PER_TERRITORY = 0.02;
 
@@ -49,6 +72,27 @@ export const TOWER_RANGE: Record<TowerKind, number> = {
   antiair: 0.5,
   splash: 0.3,
 };
+
+/**
+ * 타워 슬롯 간 간격(진행도 단위). 슬롯 0이 본진(x=0)에 가장 가깝고, 인덱스가 커질수록
+ * 적 본진 쪽으로 이 간격만큼 전진 배치된다.
+ *
+ * 이 상수가 있어야 "어느 슬롯에 짓는가"가 의미를 갖는다. 예전에는 타워 표적 판정이
+ * `enemy.x <= range`(본진 절대좌표 기준)라서 슬롯 6개가 전부 **완전히 동일하게** 동작했고,
+ * 배치 결정이 사실상 0개였다. 이제 판정이 `enemy.x - towerX(slot) <= range`(상대 거리)라,
+ * 앞 슬롯일수록 적을 더 일찍 잡되 본진 앞 구간 커버가 얇아지는 트레이드오프가 생긴다.
+ */
+export const TOWER_SLOT_SPACING = 0.02;
+
+/**
+ * 슬롯 인덱스 → 전장 위치(진행도, 0=아군 사옥 ~ 1=적 본진).
+ *
+ * `Tower`에 위치 필드를 따로 싣지 않고 `slot`에서 파생시킨다 — 슬롯이 곧 위치의 단일
+ * 출처이므로, 필드를 이중으로 들면 둘이 어긋날 여지만 생긴다.
+ */
+export function towerX(slot: number): number {
+  return slot * TOWER_SLOT_SPACING;
+}
 
 /** 타워 공격 주기(ms). 낮을수록 자주 쏜다. */
 export const TOWER_COOLDOWN_MS: Record<TowerKind, number> = {
@@ -192,13 +236,21 @@ export const AIR_ENEMY_SHARE = 1 / 3;
 /** 스킬(공시 폭탄) 즉시 피해량. 초반 웨이브 HP(50~90대)는 즉사시키고 후반(200대)은 크게 깎는 수준. */
 export const SKILL_DAMAGE = 90;
 
-// ── R1 웨이브 테이블 (§9.4, PRD 명시값) ──────────────────────────
-/** 웨이브 1~13의 기본 적 수(heat 적용 전). 배열 인덱스 0 = 웨이브 1. */
-export const WAVE_BASE_COUNT: readonly number[] = [3, 4, 5, 5, 6, 7, 7, 8, 9, 10, 11, 12, 14];
-/** 웨이브 1~13의 기본 HP(heat 적용 전). 배열 인덱스 0 = 웨이브 1. */
-export const WAVE_BASE_HP: readonly number[] = [50, 55, 60, 70, 80, 90, 105, 120, 140, 160, 185, 215, 260];
-/** 공중 적이 포함되는 웨이브 번호(1-based) 집합. */
-export const AIR_WAVE_NUMBERS: ReadonlySet<number> = new Set([3, 5, 7, 8, 10, 11, 12, 13]);
+// ── R1 웨이브 테이블 별칭 (§9.4) ─────────────────────────────────
+/**
+ * 지역별 값은 전부 `stages.ts`의 `STAGES`에 모여 있다. 아래 세 상수는 **R1 값의 별칭**으로,
+ * 지역 개념이 없던 시절 코드와의 호환을 위해 남겨 둔 것이다.
+ * 새 코드는 `CombatParams.waveTable`(또는 `STAGES[id].waveTable`)을 써라 — 전역 상수를
+ * 직접 읽으면 R2/R3에서 조용히 R1 난이도가 적용된다.
+ */
+export const WAVE_BASE_COUNT: readonly number[] = STAGES.R1.waveTable.baseCount;
+/** 웨이브 1~13의 기본 HP(heat 적용 전). R1 값의 별칭 — 위 주의사항 참고. */
+export const WAVE_BASE_HP: readonly number[] = STAGES.R1.waveTable.baseHp;
+/** 공중 적이 포함되는 웨이브 번호(1-based) 집합. R1 값의 별칭 — 위 주의사항 참고. */
+export const AIR_WAVE_NUMBERS: ReadonlySet<number> = STAGES.R1.waveTable.airWaves;
+
+/** `CombatParams.waveTable`이 비었을 때 쓰는 기본 테이블(=R1). */
+export const DEFAULT_WAVE_TABLE: StageWaveTable = STAGES.R1.waveTable;
 
 // ── 시뮬레이션 타임스텝 ───────────────────────────────────────────
 /**

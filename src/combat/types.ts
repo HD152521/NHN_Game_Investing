@@ -101,8 +101,31 @@ export interface CombatState {
   readonly skillCooldownMs: number;
 }
 
+/**
+ * 한 지역(스테이지)의 웨이브 구성 — **지역마다 다른 값이 들어갈 자리**다.
+ *
+ * ★ 왜 모듈 전역 배열이 아니라 구조체인가 ★
+ * R2/R3 계수는 기획 결정 대기 중이다. 웨이브 테이블을 전역 상수로 하드코딩해 두면 지역이
+ * 늘어날 때마다 `waves.ts`가 전역을 직접 읽는 구조를 뜯어야 한다. 구조를 먼저 열어두면
+ * R2/R3는 `CombatParams.waveTable`로 주입하는 것으로 끝난다.
+ * 확정값은 R1뿐이며 `constants.ts`의 `R1_WAVE_TABLE`에 있다.
+ */
+export interface StageWaveTable {
+  /** 웨이브 1~N의 기본 적 수(heat 적용 전). 인덱스 0 = 웨이브 1. */
+  readonly baseCount: readonly number[];
+  /** 웨이브 1~N의 기본 HP(heat 적용 전). 인덱스 0 = 웨이브 1. */
+  readonly baseHp: readonly number[];
+  /** 공중 적이 포함되는 웨이브 번호(1-based) 집합. */
+  readonly airWaves: ReadonlySet<number>;
+}
+
 /** 스테이지 진입 시 확정되는 전투 파라미터 스냅샷. */
 export interface CombatParams {
+  /**
+   * 이 스테이지의 웨이브 테이블. 생략하면 `DEFAULT_WAVE_TABLE`(=R1)을 쓴다.
+   * R2/R3 계수가 확정되면 여기에 주입한다 — `constants.ts`를 고칠 필요가 없다.
+   */
+  readonly waveTable?: StageWaveTable;
   readonly waveCount: number;
   readonly waveDurationMs: number;
   readonly towerSlots: number;

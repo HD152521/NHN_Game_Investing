@@ -35,12 +35,17 @@ describe('StageSession — 배선', () => {
   });
 
   /**
-   * ★ 이 프로젝트의 코어 경제 규칙 (FR-5.7, 2026-07-31 개정).
+   * ★ 이 프로젝트의 코어 경제 규칙 (FR-5.7, 2026-08-01 개정).
    *
-   * AUM은 골드로 흘러가는 **일방통행 파이프**다. 청산하면 원금+손익이 통째로 골드가 되고,
-   * AUM으로는 한 푼도 돌아오지 않는다. AUM을 다시 채우는 유일한 경로는 적 처치 드롭이다.
+   * **이익만이 골드가 된다.** 원금은 골드로 넘어가지 않고, 손실을 물고
+   * `REFUND_RATIO`(0.70)만큼만 AUM으로 복귀한다.
+   *
+   * 이전 규칙("원금+손익이 통째로 골드")은 폐기됐다 — 진입 후 2초 만에 청산하면
+   * 수수료 1%만 내고 AUM의 99%가 골드가 되어, **차트를 한 번도 안 보고**
+   * 자금을 조달할 수 있었다. 합리적 플레이어의 최적해가 "차트 무시"가 되면서
+   * PRD §9.3의 "예측을 건너뛴 플레이는 존재할 수 없다"는 코어 보증이 반전됐다.
    */
-  test('청산하면 원금+손익이 통째로 골드가 되고 AUM으로는 돌아오지 않는다', () => {
+  test('청산하면 이익만 골드가 되고 원금은 환급률만큼만 AUM으로 복귀한다', () => {
     const session = makeSession();
     const minHoldMs = session.params.minHoldMs;
 
@@ -53,40 +58,43 @@ describe('StageSession — 배선', () => {
 
     expect(snap.position).toBeNull();
     expect(snap.wallet.gold).toBe(STARTING_GOLD + (notice?.goldGained ?? 0));
-    // 청산은 AUM을 절대 늘리지 않는다.
-    expect(snap.wallet.aum).toBe(aumAfterOpen);
+    expect(snap.wallet.aum).toBe(aumAfterOpen + (notice?.aumReturned ?? 0));
   });
 
   /**
-   * 진입 직후 즉시 청산은 "수수료만 내고 AUM을 골드로 환전"하는 저위험 경로다.
-   * 새 규칙에서는 이것이 **허용된 플레이**다 — 다만 AUM은 그만큼 영구히 줄고
-   * 적을 잡아야만 복구되므로, 매매를 잘할수록 같은 AUM에서 더 많은 골드가 나온다.
+   * 세탁 경로(진입 → 최소 보유 → 즉시 청산)가 죽었는지 확인한다.
+   * 이 테스트가 깨지면 코어 루프가 다시 우회 가능해진 것이다.
    */
-  test('진입 즉시 청산하면 수수료 정도만 손해 보고 골드로 넘어간다', () => {
+  test('진입 즉시 청산은 골드를 거의 못 벌고 원금의 약 30%를 잃는다', () => {
     const session = makeSession();
     const minHoldMs = session.params.minHoldMs;
 
+    const aumBeforeOpen = session.snapshot(0).wallet.aum;
     session.openTrade('long', 0.25, 0);
     const stake = session.snapshot(0).position?.stake ?? 0;
     session.closeTrade(minHoldMs);
 
     const gained = session.takeNotice()?.goldGained ?? 0;
-    // 2초(=시장 2분) 보유로는 큰 변동이 없어야 한다 — 랜덤워크 스케일링이 지켜지는지 확인.
-    expect(gained).toBeGreaterThan(stake * 0.7);
-    expect(gained).toBeLessThan(stake * 1.3);
+    const aumAfter = session.snapshot(minHoldMs).wallet.aum;
+
+    // 2초(=시장 2분) 보유로는 큰 변동이 없으므로 이익이 거의 안 난다.
+    expect(gained).toBeLessThan(stake * 0.3);
+    // 왕복 한 번에 투입 원금의 30% 안팎이 증발한다 — 세탁을 반복할수록 AUM이 마른다.
+    expect(aumAfter).toBeLessThan(aumBeforeOpen);
+    expect(aumBeforeOpen - aumAfter).toBeGreaterThan(stake * 0.2);
   });
 
-  /** 손익이 어떻게 나오든 AUM이 청산으로 늘어나는 일은 없어야 한다. */
-  test('전 재생 구간 어디서 청산해도 AUM은 늘지 않는다', () => {
+  /** 어디서 청산하든 왕복 후 AUM이 진입 전보다 많아질 수는 없다. */
+  test('전 재생 구간 어디서 청산해도 왕복 후 AUM이 진입 전을 넘지 않는다', () => {
     for (const closeAt of [2_000, 30_000, 120_000, 300_000]) {
       const session = makeSession();
+      const aumBeforeOpen = session.snapshot(0).wallet.aum;
       session.openTrade('long', 0.25, 0);
-      const aumAfterOpen = session.snapshot(0).wallet.aum;
 
       session.syncLiquidation(closeAt);
       session.closeTrade(closeAt);
 
-      expect(session.snapshot(closeAt).wallet.aum).toBe(aumAfterOpen);
+      expect(session.snapshot(closeAt).wallet.aum).toBeLessThanOrEqual(aumBeforeOpen);
     }
   });
 
@@ -253,12 +261,13 @@ describe('StageSession — 배선', () => {
 
   test('골드가 부족하면 건설이 조용히 무시된다', () => {
     const session = makeSession();
-    // 200골드로 120짜리 하나만 지어지고 두 번째는 실패해야 한다.
+    // 시작 골드 120 = 기본 포탑 정확히 1기. 두 번째 건설은 잔액 0이라 실패해야 한다.
+    // 2기째 자금은 첫 청산에서만 나온다 — 이게 "매매를 해야 방어가 선다"는 압박의 출발점이다.
     session.build(0, 'basic');
     session.build(1, 'basic');
 
     expect(session.combatState.towers).toHaveLength(1);
-    expect(session.snapshot(0).wallet.gold).toBe(80);
+    expect(session.snapshot(0).wallet.gold).toBe(0);
   });
 
   test('전투가 끝나면 더 이상 진행되지 않는다', () => {
