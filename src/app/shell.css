@@ -1,0 +1,175 @@
+/**
+ * 앱 셸 스타일 — 파이낸셜 느와르 톤.
+ *
+ * 색은 전부 `--tf-*` CSS 변수를 참조한다. 이 변수는 런타임에
+ * `applyPalette(document.documentElement, palette)` 가 주입한다 (src/design/css-vars.ts).
+ * 여기에 생짜 HEX를 쓰면 색약 모드 토글이 이 파일만 못 따라와 화면이 깨진다.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--tf-bg-0);
+  color: var(--tf-text);
+  font-family: 'DM Mono', 'SF Mono', 'Cascadia Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.stage {
+  width: min(1040px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── 블라인드 태그 줄 ─────────────────────────────────────── */
+.stage__tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tf-muted);
+}
+
+.stage__tag {
+  padding: 3px 8px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 2px;
+}
+
+.stage__spacer {
+  flex: 1;
+}
+
+/* 정체가 가려져 있다는 사실 자체를 UI로 보여준다 (FR-4). */
+.stage__blind {
+  color: var(--tf-aum);
+  border-color: var(--tf-aum);
+}
+
+/* ── 차트 ────────────────────────────────────────────────── */
+.stage__chart {
+  position: relative;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-0);
+  overflow: hidden;
+}
+
+.stage__chart canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ── HUD ─────────────────────────────────────────────────── */
+.hud {
+  display: flex;
+  gap: 20px;
+  padding: 9px 12px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+  font-size: 12px;
+}
+
+.hud__item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.hud__label {
+  color: var(--tf-muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hud__value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hud__value--gold {
+  color: var(--tf-gold);
+}
+
+.hud__value--aum {
+  color: var(--tf-aum);
+}
+
+.hud__value--up {
+  color: var(--tf-up-ally);
+}
+
+.hud__value--down {
+  color: var(--tf-enemy-down);
+}
+
+/* ── 컨트롤 ──────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn {
+  padding: 7px 14px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+  color: var(--tf-text);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--tf-muted);
+  background: var(--tf-bg-2);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--tf-aum);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--active {
+  border-color: var(--tf-gold);
+  color: var(--tf-gold);
+}
+
+.controls__note {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--tf-muted);
+}
