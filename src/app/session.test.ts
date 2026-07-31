@@ -111,6 +111,63 @@ describe('StageSession — 배선', () => {
     }
   });
 
+  test('전투가 돌면 적 처치 드롭으로 AUM이 늘고, 골드는 웨이브 수입으로만 는다', () => {
+    const session = makeSession();
+    // 타워를 세워야 적이 죽고 AUM이 떨어진다.
+    session.build(0, 'basic');
+    session.build(1, 'antiair');
+
+    const goldAfterBuild = session.snapshot(0).wallet.gold;
+    const aumStart = session.snapshot(0).wallet.aum;
+
+    for (let i = 0; i < 400; i += 1) {
+      session.stepCombatFrame(200);
+    }
+
+    const snap = session.snapshot(0);
+    expect(snap.wallet.aum).toBeGreaterThan(aumStart);
+    // 매매를 한 번도 하지 않았으므로 골드 증가분은 전부 웨이브 기본 수입이다.
+    expect(snap.wallet.gold).toBeGreaterThan(goldAfterBuild);
+    expect(session.combatState.wave).toBeGreaterThan(1);
+  });
+
+  test('타워 건설은 골드만 쓰고 AUM을 건드리지 않는다', () => {
+    const session = makeSession();
+    const before = session.snapshot(0).wallet;
+
+    session.build(0, 'basic');
+
+    const after = session.snapshot(0).wallet;
+    expect(after.gold).toBe(before.gold - 120);
+    expect(after.aum).toBe(before.aum);
+    expect(session.combatState.towers).toHaveLength(1);
+  });
+
+  test('골드가 부족하면 건설이 조용히 무시된다', () => {
+    const session = makeSession();
+    // 200골드로 120짜리 하나만 지어지고 두 번째는 실패해야 한다.
+    session.build(0, 'basic');
+    session.build(1, 'basic');
+
+    expect(session.combatState.towers).toHaveLength(1);
+    expect(session.snapshot(0).wallet.gold).toBe(80);
+  });
+
+  test('전투가 끝나면 더 이상 진행되지 않는다', () => {
+    const session = makeSession();
+    // 타워 없이 방치하면 본진이 뚫린다.
+    for (let i = 0; i < 4000; i += 1) {
+      session.stepCombatFrame(200);
+    }
+
+    const phase = session.combatState.phase;
+    expect(phase).not.toBe('running');
+
+    const frozen = session.combatState;
+    session.stepCombatFrame(200);
+    expect(session.combatState).toBe(frozen);
+  });
+
   test('강제 청산이 걸리면 포지션이 사라지고 골드는 늘지 않는다', () => {
     const session = makeSession();
     session.openTrade('short', 0.5, 0);

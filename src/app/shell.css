@@ -121,6 +121,77 @@ body {
   color: var(--tf-enemy-down);
 }
 
+/* ── 전장 ────────────────────────────────────────────────── */
+.stage__battle {
+  position: relative;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stage__battle canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 클리어·패배 배너. 전투가 끝나면 화면 위에 얹힌다. */
+.stage__banner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(20px, 4vw, 34px);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--tf-enemy-down);
+  background: color-mix(in srgb, var(--tf-bg-0) 78%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+
+.stage__banner--win {
+  color: var(--tf-gold);
+}
+
+/* ── 빌드바 ──────────────────────────────────────────────── */
+.buildbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+}
+
+.buildbar__group {
+  display: flex;
+  gap: 6px;
+}
+
+/* 타워 / 유닛 / 스킬 사이의 시각적 구분선 */
+.buildbar__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 4px;
+  background: var(--tf-bg-2);
+}
+
+.btn em {
+  font-style: normal;
+  color: var(--tf-gold);
+  margin-left: 5px;
+}
+
+.btn--summon {
+  border-color: var(--tf-up-deep);
+}
+
+.btn--skill {
+  border-color: var(--tf-gold);
+}
+
 /* ── 컨트롤 ──────────────────────────────────────────────── */
 .controls {
   display: flex;

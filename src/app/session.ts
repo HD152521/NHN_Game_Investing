@@ -9,6 +9,22 @@
  * 그 전까지 블라인드 규칙(FR-4)은 강제되지 않는다.
  */
 
+import type { CombatParams, CombatState, TowerKind, UnitKind } from '../combat';
+import {
+  AUM_DROP_PER_WAVE,
+  BASE_HP,
+  BASE_INCOME_PER_WAVE,
+  HEAT_PER_TERRITORY,
+  TOWER_SLOTS,
+  WAVE_COUNT,
+  WAVE_DURATION_MS,
+  buildTower,
+  castSkill,
+  createCombat,
+  step as stepCombat,
+  summonUnit,
+  upgradeTower,
+} from '../combat';
 import type { ChartSet, Replay } from '../market';
 import { createReplay, generateChartSet } from '../market';
 import type {
@@ -41,21 +57,101 @@ export interface CloseNotice {
   readonly goldGained: number;
 }
 
+/** 점령 지역 수. MVP 1지역만 있으므로 0 고정 (FR-6.7 heat / FR-6.8 운영비). */
+const TERRITORIES = 0;
+
 export class StageSession {
   readonly set: ChartSet;
   readonly replay: Replay;
   readonly params: PositionParams;
+  readonly combatParams: CombatParams;
 
   private wallet: Wallet = { gold: STARTING_GOLD, aum: STARTING_AUM };
   private position: OpenPosition | null = null;
   private openCount = 0;
   private seq = 0;
   private pendingNotice: CloseNotice | null = null;
+  private combat: CombatState;
 
   constructor(seed: number, speed: number, startAtMs: number) {
     this.set = generateChartSet(seed);
     this.replay = createReplay(this.set, { speed, startAtMs });
     this.params = { ...DEFAULT_POSITION_PARAMS, sigma: this.set.sigma30 };
+
+    this.combatParams = {
+      waveCount: WAVE_COUNT,
+      // 배속을 올리면 차트와 전투가 같은 시계를 써야 한다 — 웨이브도 같이 짧아진다.
+      waveDurationMs: WAVE_DURATION_MS / speed,
+      towerSlots: TOWER_SLOTS,
+      maxBaseHp: BASE_HP,
+      heat: 1 + TERRITORIES * HEAT_PER_TERRITORY,
+      aumDropPerWave: AUM_DROP_PER_WAVE,
+      totalBaseIncome: BASE_INCOME_PER_WAVE * WAVE_COUNT - TERRITORIES * BASE_INCOME_PER_WAVE,
+    };
+    this.combat = createCombat(this.combatParams);
+  }
+
+  get combatState(): CombatState {
+    return this.combat;
+  }
+
+  /**
+   * 전투를 한 프레임 진행하고 벌어들인 재화를 지갑에 반영한다.
+   *
+   * AUM은 적 처치 드롭으로만 늘어난다(FR-6.8-a). 골드는 웨이브 기본 수입과
+   * 매매 순이익 두 경로뿐이다 — 여기서 AUM을 골드로 바꾸는 일은 절대 없다.
+   */
+  stepCombatFrame(dtMs: number): void {
+    if (this.combat.phase !== 'running') {
+      return;
+    }
+
+    const result = stepCombat(this.combat, dtMs, this.combatParams);
+    this.combat = result.state;
+
+    const { aumDropped, goldIncome } = result.events;
+    if (aumDropped > 0 || goldIncome > 0) {
+      this.wallet = {
+        gold: this.wallet.gold + goldIncome,
+        aum: this.wallet.aum + aumDropped,
+      };
+    }
+  }
+
+  build(slot: number, kind: TowerKind): void {
+    const result = buildTower(this.combat, slot, kind, this.wallet.gold, this.combatParams);
+    if (!result.ok) {
+      return;
+    }
+    this.combat = result.state;
+    this.wallet = { ...this.wallet, gold: result.gold };
+  }
+
+  upgrade(slot: number): void {
+    const result = upgradeTower(this.combat, slot, this.wallet.gold);
+    if (!result.ok) {
+      return;
+    }
+    this.combat = result.state;
+    this.wallet = { ...this.wallet, gold: result.gold };
+  }
+
+  summon(kind: UnitKind): void {
+    const result = summonUnit(this.combat, kind, this.wallet.gold);
+    if (!result.ok) {
+      return;
+    }
+    this.combat = result.state;
+    this.wallet = { ...this.wallet, gold: result.gold };
+  }
+
+  useSkill(): void {
+    const result = castSkill(this.combat, this.wallet.gold);
+    if (!result.ok) {
+      return;
+    }
+    this.combat = result.state;
+    this.wallet = { ...this.wallet, gold: result.gold };
   }
 
   /**
