@@ -137,8 +137,8 @@ describe('applyEngagement — 탱커가 원거리 유닛을 보호하는 구도'
     expect(result.units.find((u) => u.id === 2)?.hp).toBe(100); // 원거리는 무피해
   });
 
-  test('유닛들이 같은 x에 있으면(동시 소환) 사거리가 짧은 탱커가 짝짓기 우선순위를 갖는다', () => {
-    // gap이 둘 다 0.04로 동일 — 사거리만으로는 구분 안 되니 짝짓기 순서(tie-break)로 검증한다.
+  test('유닛들이 같은 x에 있으면(동시 소환) 적은 사거리가 짧은 탱커를 표적으로 삼는다', () => {
+    // gap이 둘 다 0.04로 동일 — 거리로는 안 갈리므로 사거리 타이브레이크가 작동해야 한다.
     const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.04, hp: 1000, maxHp: 1000 })];
     const units: Unit[] = [
       makeUnit({ id: 1, kind: 'analyst', x: 0, hp: 100, maxHp: 100 }),
@@ -147,9 +147,37 @@ describe('applyEngagement — 탱커가 원거리 유닛을 보호하는 구도'
 
     const result = applyEngagement(enemies, units, 1000);
 
-    // 탱커(id 2)가 밀착 교전에 들어가고, analyst(id 1)는 짝지어지지 않아 피해를 주고받지 않는다.
+    // 둘 다 사거리 안이므로 둘 다 멈춰서 사격한다 — 짝짓기가 없으니 노는 유닛이 생기지 않는다.
+    expect(result.blockedUnitIds.has(1)).toBe(true);
     expect(result.blockedUnitIds.has(2)).toBe(true);
-    expect(result.blockedUnitIds.has(1)).toBe(false);
+
+    // 적의 반격은 전열(사거리가 짧은 trader)에게만 간다 — 원거리는 보호받는다.
     expect(result.units.find((u) => u.id === 1)?.hp).toBe(100);
+    expect(result.units.find((u) => u.id === 2)?.hp).toBeLessThan(100);
+  });
+
+  test('적 1체에 유닛 여럿이 사거리 안이면 전원이 멈춰서 사격한다 (짝짓기 잔재 없음)', () => {
+    // 회귀 방지: 예전 구현은 min(적 수, 유닛 수)로 1쌍만 만들어, 짝이 없는 원거리 유닛이
+    // 사거리 안인데도 계속 전진해 밀착해 버렸다.
+    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.15, hp: 1000, maxHp: 1000 })];
+    const units: Unit[] = [
+      makeUnit({ id: 1, kind: 'analyst', x: 0, hp: 100, maxHp: 100 }),
+      makeUnit({ id: 2, kind: 'analyst', x: 0, hp: 100, maxHp: 100 }),
+      makeUnit({ id: 3, kind: 'analyst', x: 0, hp: 100, maxHp: 100 }),
+    ];
+
+    const result = applyEngagement(enemies, units, 1000);
+
+    // 사거리(0.2) 안이므로 3명 전원 정지 + 사격. 아무도 더 다가가지 않는다.
+    expect(result.blockedUnitIds.has(1)).toBe(true);
+    expect(result.blockedUnitIds.has(2)).toBe(true);
+    expect(result.blockedUnitIds.has(3)).toBe(true);
+
+    // 피해는 합산된다 — 3명 몫이 전부 들어가야 한다.
+    const damaged = result.enemies.find((e) => e.id === 1);
+    expect(damaged?.hp).toBeLessThan(1000 - 1);
+
+    // 적은 자기 사거리(0.05) 밖이라 멈추지 않고 계속 접근한다.
+    expect(result.blockedEnemyIds.has(1)).toBe(false);
   });
 });

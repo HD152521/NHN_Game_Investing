@@ -80,24 +80,63 @@ export interface EngagementResult {
   readonly blockedUnitIds: ReadonlySet<number>;
 }
 
+/** id별 피해량을 누적한다. 여러 개체가 같은 표적을 때릴 수 있으므로 덮어쓰기가 아니라 합산이다. */
+function addDelta(deltas: Map<number, number>, id: number, amount: number): void {
+  deltas.set(id, (deltas.get(id) ?? 0) + amount);
+}
+
 /**
- * 지상 적과 유닛의 교전을 처리한다 (FR-6.5). 지상 적을 x 오름차순(본진에 가까운 순), 유닛을
- * x 내림차순(가장 전진한 순)으로 정렬해 앞에서부터 짝짓는다 — 서로를 향해 움직이므로 가장
- * 먼저 마주치는 쌍이 이 순서와 일치한다. x가 같으면 사거리가 짧은(근접·탱커) 유닛을 앞세운다
- * — 탱커가 원거리 유닛보다 먼저 적과 붙어야 "탱커가 앞에 서면 원거리가 보호받는" 구도가
- * 나온다(기획 의도).
+ * `fromX`에서 사거리(`range`) 안에 있는 후보 중 **가장 가까운** 하나를 고른다. 없으면 null.
+ *
+ * 거리는 절대값으로 잰다 — 적이 유닛을 지나쳐 뒤로 간 경우(gap 음수)에도 사거리 안이면
+ * 표적으로 삼아야 한다. 부호로 판정하면 스쳐 지나간 적이 무적이 된다.
+ *
+ * 거리가 같으면 **자기 사거리가 짧은 쪽**을 고른다. 적이 유닛을 고를 때 이 규칙이 "탱커가
+ * 앞에 서면 원거리가 보호받는다"는 기획 의도를 만든다 — 동시 소환으로 x가 같아도 근접
+ * 탱커가 먼저 맞는다. 보통은 전열이 더 가까우므로 거리만으로 갈리고, 이 타이브레이크는
+ * 동률일 때만 작동한다.
+ */
+function nearestInRange<T extends { readonly id: number; readonly x: number; readonly range: number }>(
+  candidates: readonly T[],
+  fromX: number,
+  range: number,
+): T | null {
+  let best: T | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const distance = Math.abs(candidate.x - fromX);
+    if (distance > range) {
+      continue;
+    }
+    if (best === null || distance < bestDistance || (distance === bestDistance && candidate.range < best.range)) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * 지상 적과 유닛의 교전을 처리한다 (FR-6.5).
+ *
+ * **개체별 독립 판정이다.** 모든 유닛·적이 각자 "내 사거리 안에 표적이 있는가"만 본다.
+ * 있으면 **그 자리에 멈춰서 때리고**, 없으면 **이동한다**. 표적은 사거리 안에서 가장 가까운
+ * 개체다.
+ *
+ * 이전 구현은 적과 유닛을 정렬 인덱스로 1:1 짝지어(`min(적 수, 유닛 수)`) 교전시켰는데,
+ * 짝이 없는 유닛은 사거리 안에 적이 있어도 계속 전진해 원거리 유닛이 밀착해 버렸다. 개체별
+ * 판정은 그 문제가 구조적으로 생기지 않는다 — 유닛 5명 vs 적 1명이면 사거리가 닿는 5명 전원이
+ * 멈춰서 사격한다.
  *
  * 스탯은 전부 개체(`unit.range`/`unit.damage`/`enemy.range`/`enemy.damage` 등)에서 읽는다 —
  * `kind`로 전역 상수 테이블을 조회하지 않는다(types.ts 참고). 부서 업그레이드(FR-11)가
  * 개체별로 다른 스탯을 요구하므로, 이 파일이 조회 대신 개체 필드를 읽어야 그 기능이 이 위에
  * 자연스럽게 올라간다.
  *
- * 각 쌍은 유닛의 사거리(`unit.range`) 안에 적이 들어와야 교전을 시작한다 — 사거리 밖이면
- * 이번 틱에 아무 일도 없이 각자 이동한다. 사거리 안에 들어오면 유닛은 전진을 멈추고
- * 공격하지만, 적은 그보다 짧은 자신의 밀착 사거리(`enemy.range`, 근접이라 보통 유닛의 밀착
- * 거리와 같은 값) 안까지 접근해야만 반격할 수 있다 — 원거리 유닛(analyst)은 이 둘의 차이만큼
- * "일방적으로 때리기만 하는 구간"을 갖는다. 근접·탱커는 사거리 자체가 밀착 거리와 같아 이
- * 구간이 사실상 없다(밀착해야만 교전).
+ * 유닛 사거리(`unit.range`)와 적 사거리(`enemy.range`)가 다르므로 **비대칭 구간**이 자연히
+ * 생긴다: 원거리 유닛(analyst, 0.2)은 근접 적(0.05)이 밀착하기 전까지 일방적으로 때린다.
+ * 그 구간에서 유닛은 멈춰 있고 적만 접근한다. 근접·탱커는 사거리가 밀착 거리와 같아 이
+ * 구간이 없다.
  *
  * 유닛·적 모두 "쿨다운 후 발사" 모델이다(각자 `cooldownMs`를 dtMs만큼 줄이다가 0 이하가 되면
  * 공격하고 자신의 `attackCooldownMs`로 재장전). 교전 중이 아니어도 쿨다운은 계속 줄어든다 —
@@ -107,14 +146,7 @@ export interface EngagementResult {
  * 예외 없음).
  */
 export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[], dtMs: number): EngagementResult {
-  const groundEnemies = enemies.filter((enemy) => enemy.lane === 'ground').sort((a, b) => a.x - b.x);
-  const sortedUnits = [...units].sort((a, b) => {
-    if (a.x !== b.x) {
-      return b.x - a.x;
-    }
-    return a.range - b.range;
-  });
-  const pairCount = Math.min(groundEnemies.length, sortedUnits.length);
+  const groundEnemies = enemies.filter((enemy) => enemy.lane === 'ground');
 
   const enemyHpDelta = new Map<number, number>();
   const unitHpDelta = new Map<number, number>();
@@ -123,45 +155,39 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
   const blockedEnemyIds = new Set<number>();
   const blockedUnitIds = new Set<number>();
 
-  for (let i = 0; i < pairCount; i += 1) {
-    const enemy = groundEnemies[i];
-    const unit = sortedUnits[i];
-    if (!enemy || !unit) {
+  // 유닛 → 적: 사거리 안에 지상 적이 있으면 전진을 멈추고 가장 가까운 적을 때린다.
+  for (const unit of units) {
+    const target = nearestInRange(groundEnemies, unit.x, unit.range);
+    if (target === null) {
       continue;
     }
 
-    const gap = enemy.x - unit.x;
-    if (gap > unit.range) {
-      // 사거리 밖 — 교전 없음. 둘 다 이번 틱에 자유롭게 이동한다.
-      continue;
-    }
-
-    // 사거리 안에 들어왔다 — 유닛은 전진을 멈추고 공격에 전념한다.
     blockedUnitIds.add(unit.id);
 
-    if (gap <= enemy.range) {
-      // 적의 밀착 거리 안 — 적도 멈춰서 반격한다. 근접·탱커는 사거리=밀착거리라 항상 이 분기다.
-      blockedEnemyIds.add(enemy.id);
-
-      // 적 → 유닛: 적도 쿨다운 후 발사 모델을 쓴다(Enemy.cooldownMs, types.ts).
-      const cooledEnemyCooldownMs = tickCooldown(enemy.cooldownMs, dtMs);
-      if (cooledEnemyCooldownMs <= 0) {
-        unitHpDelta.set(unit.id, -enemy.damage);
-        enemyCooldownOverride.set(enemy.id, enemy.attackCooldownMs);
-      } else {
-        enemyCooldownOverride.set(enemy.id, cooledEnemyCooldownMs);
-      }
-    }
-    // else: 사거리 안이지만 밀착 전 — 원거리 유닛의 일방적 사격 구간. 적은 멈추지도,
-    // 반격하지도 않고 계속 접근한다(쿨다운도 이 쌍에서는 다루지 않고 아래 fallback으로 흐른다).
-
-    // 유닛 → 적: 유닛도 자신의 attackCooldownMs로 재장전한다.
     const cooledUnitCooldownMs = tickCooldown(unit.cooldownMs, dtMs);
     if (cooledUnitCooldownMs <= 0) {
-      enemyHpDelta.set(enemy.id, -unit.damage);
+      addDelta(enemyHpDelta, target.id, -unit.damage);
       unitCooldownOverride.set(unit.id, unit.attackCooldownMs);
     } else {
       unitCooldownOverride.set(unit.id, cooledUnitCooldownMs);
+    }
+  }
+
+  // 적 → 유닛: 동일한 규칙을 적에게도 적용한다. 자기 사거리 안에 유닛이 있으면 멈춰서 때린다.
+  for (const enemy of groundEnemies) {
+    const target = nearestInRange(units, enemy.x, enemy.range);
+    if (target === null) {
+      continue;
+    }
+
+    blockedEnemyIds.add(enemy.id);
+
+    const cooledEnemyCooldownMs = tickCooldown(enemy.cooldownMs, dtMs);
+    if (cooledEnemyCooldownMs <= 0) {
+      addDelta(unitHpDelta, target.id, -enemy.damage);
+      enemyCooldownOverride.set(enemy.id, enemy.attackCooldownMs);
+    } else {
+      enemyCooldownOverride.set(enemy.id, cooledEnemyCooldownMs);
     }
   }
 
