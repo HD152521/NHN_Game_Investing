@@ -10,6 +10,25 @@
   box-sizing: border-box;
 }
 
+/**
+ * ★ `hidden` 속성을 클래스가 이기지 못하게 못박는다.
+ *
+ * 브라우저 기본 스타일시트의 `[hidden] { display: none }` 은 명시도가 (0,1,0)이라
+ * `.stage__banner { display: grid }` 같은 **작성자 스타일시트의 클래스 규칙에 항상 진다**.
+ * 그래서 `el.hidden = true` 로 숨긴 요소가 화면에 그대로 남는다.
+ *
+ * 실제로 이 프로젝트에서 다음 버그를 냈다:
+ * - 클리어/패배 배너(`position:absolute; inset:0`)가 처음부터 전장을 덮어
+ *   **전장이 흐려 보이고 타워 슬롯 클릭이 전부 막혔다**
+ * - 매매 패널의 미보유(`__idle`)·보유(`__holding`) 섹션이 동시에 표시됐다
+ *
+ * 개별 선택자로 땜질하면 새 `hidden` 요소를 추가할 때마다 같은 버그가 재발하므로
+ * 전역으로 한 번 못박는다.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
