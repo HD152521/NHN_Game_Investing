@@ -178,10 +178,31 @@ body {
   background: var(--tf-bg-2);
 }
 
+/* 빌드바 버튼은 이름 / 담당 레인·역할 / 비용 3단으로 읽힌다. */
+.buildbar .btn {
+  display: grid;
+  grid-template-columns: auto;
+  gap: 1px;
+  padding: 6px 12px;
+  text-align: left;
+  line-height: 1.25;
+}
+
+.btn small {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tf-muted);
+}
+
 .btn em {
   font-style: normal;
   color: var(--tf-gold);
-  margin-left: 5px;
+  font-size: 11px;
+}
+
+/* 대공 포대는 유일하게 공중을 잡을 수 있다 — 목록에서 눈에 띄어야 한다. */
+.btn[data-tower='antiair'] small {
+  color: var(--tf-aum);
 }
 
 .btn--summon {

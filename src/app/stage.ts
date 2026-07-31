@@ -35,16 +35,23 @@ const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
 /** 프레임 간격이 이보다 크면 탭 비활성 복귀로 보고 버린다. */
 const MAX_FRAME_DT_MS = 250;
 
-const TOWER_LABELS: Record<TowerKind, string> = {
-  basic: '기본 포탑',
-  antiair: '대공 포대',
-  splash: '광역 포탑',
+/**
+ * 타워·유닛 라벨에 **담당 레인과 역할을 반드시 함께 노출**한다.
+ *
+ * 초기 플레이테스트에서 "공중 적을 어떻게 잡느냐"는 질문이 나왔다. 공중은 대공 포대로만
+ * 잡히는데(FR-6.2) 화면 어디에도 그 사실이 없었던 것이 원인이다. 라벨에서 이 정보를
+ * 빼면 같은 문제가 그대로 재발한다.
+ */
+const TOWER_LABELS: Record<TowerKind, { name: string; lane: string }> = {
+  basic: { name: '기본 포탑', lane: '지상' },
+  antiair: { name: '대공 포대', lane: '공중' },
+  splash: { name: '광역 포탑', lane: '지상·범위' },
 };
 
-const UNIT_LABELS: Record<UnitKind, string> = {
-  intern: '인턴',
-  analyst: '애널리스트',
-  trader: '트레이더',
+const UNIT_LABELS: Record<UnitKind, { name: string; role: string }> = {
+  intern: { name: '인턴', role: '근거리' },
+  analyst: { name: '애널리스트', role: '원거리' },
+  trader: { name: '트레이더', role: '탱커' },
 };
 
 interface StageRefs {
@@ -79,17 +86,17 @@ function buildMarkup(): string {
   ).join('');
 
   const towers = (Object.keys(TOWER_LABELS) as TowerKind[])
-    .map(
-      (kind) =>
-        `<button class="btn btn--build" type="button" data-tower="${kind}">${TOWER_LABELS[kind]} <em>${TOWER_BUILD_COST[kind]}</em></button>`,
-    )
+    .map((kind) => {
+      const { name, lane } = TOWER_LABELS[kind];
+      return `<button class="btn btn--build" type="button" data-tower="${kind}">${name}<small>${lane}</small><em>${TOWER_BUILD_COST[kind]}</em></button>`;
+    })
     .join('');
 
   const units = (Object.keys(UNIT_LABELS) as UnitKind[])
-    .map(
-      (kind) =>
-        `<button class="btn btn--summon" type="button" data-unit="${kind}">${UNIT_LABELS[kind]} <em>${UNIT_COST[kind]}</em></button>`,
-    )
+    .map((kind) => {
+      const { name, role } = UNIT_LABELS[kind];
+      return `<button class="btn btn--summon" type="button" data-unit="${kind}">${name}<small>${role}</small><em>${UNIT_COST[kind]}</em></button>`;
+    })
     .join('');
 
   return `
@@ -320,6 +327,8 @@ export function mountStage(root: HTMLElement): () => void {
       width: BATTLE_WIDTH,
       height: BATTLE_HEIGHT,
       selectedSlot: hoveredSlot,
+      // 빈 슬롯에 호버하면 지금 고른 타워의 사거리·실루엣을 미리 보여준다.
+      selectedTowerKind: selectedTower,
     });
 
     const delta = changePercent(session.set.bars, state.barIndex);
@@ -367,7 +376,7 @@ export function mountStage(root: HTMLElement): () => void {
     button.addEventListener('click', () => {
       selectedTower = (button.dataset['tower'] as TowerKind | undefined) ?? 'basic';
       syncButtons();
-      refs.log.textContent = `${TOWER_LABELS[selectedTower]} 선택 — 빈 슬롯을 클릭하세요`;
+      refs.log.textContent = `${TOWER_LABELS[selectedTower].name} 선택 (${TOWER_LABELS[selectedTower].lane}) — 빈 슬롯을 클릭하세요`;
     });
   }
 
@@ -412,7 +421,7 @@ export function mountStage(root: HTMLElement): () => void {
     }
     if (existing.level === 1) {
       current.upgrade(slot);
-      refs.log.textContent = `${TOWER_LABELS[existing.kind]} 업그레이드 (${TOWER_UPGRADE_COST[existing.kind]}G)`;
+      refs.log.textContent = `${TOWER_LABELS[existing.kind].name} 업그레이드 (${TOWER_UPGRADE_COST[existing.kind]}G)`;
     }
   });
 

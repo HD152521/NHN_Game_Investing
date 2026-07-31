@@ -5,9 +5,11 @@
  * 형태로 성격을 구분한다:
  *   - 적(지상) : 마름모(다이아몬드) — 지상을 딛고 미는 느낌
  *   - 적(공중) : 좌측을 향한 삼각형(쐐기) — 날아오는 느낌
- *   - 아군 intern : 작은 원 — 신입, 존재감이 작다
- *   - 아군 analyst: 사각형 — 안정적으로 버티는 느낌
- *   - 아군 trader : 우측(적 방향)을 향한 삼각형 — 공격적으로 전진
+ *
+ * 아군 유닛 3종은 역할(근접/원거리/탱커)이 실루엣만으로 읽혀야 한다:
+ *   - intern (근접) : 작은 원 몸통 + 적 방향으로 짧게 뻗은 무기 선 — 붙어서 때린다.
+ *   - analyst(원거리): 사각 몸통 + 길게 뻗은 무기 선과 끝의 발사체(점) — 거리를 두고 쏜다.
+ *   - trader (탱커) : 다른 유닛보다 눈에 띄게 큰 방패형 실루엣 + 두꺼운 외곽선 — 버틴다.
  */
 
 import type { Enemy, Unit, UnitKind } from '../combat/types.js';
@@ -21,7 +23,8 @@ import type { BattleCtx } from './surface.js';
 const UNIT_RADIUS = 8;
 const HP_BAR_WIDTH = 20;
 const HP_BAR_HEIGHT = 3;
-const HP_BAR_OFFSET_Y = 14;
+/** 탱커(trader)가 다른 유닛보다 커진 만큼 HP 바를 더 위로 띄운다. */
+const HP_BAR_OFFSET_Y = 18;
 const FULL_CIRCLE_START = 0;
 const FULL_CIRCLE_END = Math.PI * 2;
 /** 같은 지점에 겹치는 아군 유닛을 살짝 흩어 보이게 하는 세로 지터(px) — id 기반 결정적 패턴. */
@@ -68,27 +71,71 @@ export function drawEnemies(ctx: BattleCtx, palette: Palette, layout: BattleLayo
   }
 }
 
+/** 근접 무기 길이(px) — 짧게 붙어서 때리는 intern. */
+const MELEE_WEAPON_LENGTH = UNIT_RADIUS * 0.9;
+const MELEE_WEAPON_WIDTH = 2;
+/** 원거리 무기 길이(px) — 근접보다 훨씬 길게 뻗어 "거리를 둔다"는 느낌을 준다. */
+const RANGED_WEAPON_LENGTH = UNIT_RADIUS * 1.8;
+const RANGED_WEAPON_WIDTH = 1;
+const RANGED_PROJECTILE_RADIUS = 2;
+/** 탱커 몸체 배율 — 다른 유닛보다 눈에 띄게 크다. */
+const TANK_RADIUS_SCALE = 1.7;
+const TANK_OUTLINE_WIDTH = 2.5;
+
+/** intern(근접) — 작은 원 몸통 + 적 방향(+x)으로 짧게 뻗은 무기 선. */
 function drawInternShape(ctx: BattleCtx, palette: Palette, cx: number, cy: number): void {
+  const bodyRadius = UNIT_RADIUS * 0.55;
   ctx.fillStyle = palette.UP_ALLY;
   ctx.beginPath();
-  ctx.arc(cx, cy, UNIT_RADIUS * 0.6, FULL_CIRCLE_START, FULL_CIRCLE_END);
+  ctx.arc(cx, cy, bodyRadius, FULL_CIRCLE_START, FULL_CIRCLE_END);
   ctx.fill();
+
+  ctx.strokeStyle = palette.UP_DEEP;
+  ctx.lineWidth = MELEE_WEAPON_WIDTH;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cx + bodyRadius, cy);
+  ctx.lineTo(cx + bodyRadius + MELEE_WEAPON_LENGTH, cy);
+  ctx.stroke();
 }
 
+/** analyst(원거리) — 사각 몸통 + 길게 뻗은 무기 선과 끝의 발사체(점). */
 function drawAnalystShape(ctx: BattleCtx, palette: Palette, cx: number, cy: number): void {
-  const half = UNIT_RADIUS * 0.75;
+  const half = UNIT_RADIUS * 0.65;
   ctx.fillStyle = palette.UP_ALLY;
   ctx.fillRect(cx - half, cy - half, half * 2, half * 2);
+
+  ctx.strokeStyle = palette.UP_DEEP;
+  ctx.lineWidth = RANGED_WEAPON_WIDTH;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cx + half, cy);
+  ctx.lineTo(cx + half + RANGED_WEAPON_LENGTH, cy);
+  ctx.stroke();
+
+  ctx.fillStyle = palette.UP_DEEP;
+  ctx.beginPath();
+  ctx.arc(cx + half + RANGED_WEAPON_LENGTH, cy, RANGED_PROJECTILE_RADIUS, FULL_CIRCLE_START, FULL_CIRCLE_END);
+  ctx.fill();
 }
 
+/** trader(탱커) — 다른 유닛보다 눈에 띄게 큰 방패형 실루엣 + 두꺼운 외곽선. */
 function drawTraderShape(ctx: BattleCtx, palette: Palette, cx: number, cy: number): void {
+  const r = UNIT_RADIUS * TANK_RADIUS_SCALE;
   ctx.fillStyle = palette.UP_ALLY;
   ctx.beginPath();
-  ctx.moveTo(cx + UNIT_RADIUS, cy);
-  ctx.lineTo(cx - UNIT_RADIUS, cy - UNIT_RADIUS * 0.7);
-  ctx.lineTo(cx - UNIT_RADIUS, cy + UNIT_RADIUS * 0.7);
+  ctx.moveTo(cx - r * 0.6, cy - r);
+  ctx.lineTo(cx + r * 0.6, cy - r);
+  ctx.lineTo(cx + r * 0.75, cy);
+  ctx.lineTo(cx, cy + r);
+  ctx.lineTo(cx - r * 0.75, cy);
   ctx.closePath();
   ctx.fill();
+
+  ctx.strokeStyle = palette.UP_DEEP;
+  ctx.lineWidth = TANK_OUTLINE_WIDTH;
+  ctx.setLineDash([]);
+  ctx.stroke();
 }
 
 const SHAPE_BY_UNIT_KIND: Readonly<Record<UnitKind, (ctx: BattleCtx, palette: Palette, cx: number, cy: number) => void>> = {

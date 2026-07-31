@@ -18,12 +18,19 @@ const DEFAULT_START_PRICE = 50_000;
 const START_PRICE_JITTER_PCT = 5;
 
 /**
- * 봉마다 얹는 잡음의 최대 진폭(%). 아키타입별 추세 진폭보다 충분히 작게 잡아야
- * "surge는 항상 종가 > 시가"류의 방향성 계약이 노이즈에 뒤집히지 않는다.
+ * 봉 1개당 곱셈 잡음 스텝의 절반 폭(%). 매 봉마다 이 스텝을 누적 곱셈으로 쌓아
+ * 진짜 랜덤워크를 만든다(과거에는 매 봉이 기준선 대비 독립 잡음을 얹는 방식이라
+ * "k봉 이동폭이 k에 따라 커진다"는 랜덤워크의 기본 성질이 깨져 있었다).
+ *
+ * 균등분포 [-A, A]의 표준편차는 A/√3 이므로, 1봉 표준편차 std1 ≈ NOISE_STEP_PCT/√3 이고
+ * k봉 누적 표준편차는 독립 증분의 합이라 std1 × √k 로 커진다. 이 값은 40개 시드 ×
+ * 아키타입 4종에 대해 (1) k=2/10/30/60 이동폭 표준편차가 단조증가하고 (2) 2봉 |z|
+ * 중앙값이 0.4 미만이며 (3) 30봉 |z| 중앙값이 0.6~1.8 범위에 들고 (4) classifyArchetype
+ * 오분류가 없는 지점을 찾아 정한 값이다(.tmp 스윕 스크립트로 검증, 보고서 참고).
  */
-const NOISE_AMPLITUDE_PCT = 1.5;
+const NOISE_STEP_PCT = 0.2;
 
-/** 급등/급락 하루 총 등락 목표치(%). NOISE_AMPLITUDE_PCT보다 한참 커서 방향성이 항상 보존된다. */
+/** 급등/급락 하루 총 등락 목표치(%). 누적 잡음의 하루치 표준편차(약 2%대)보다 한참 커서 방향성이 항상 보존된다. */
 const SURGE_TOTAL_PCT = 18;
 const PLUNGE_TOTAL_PCT = -18;
 
@@ -153,12 +160,15 @@ export function generateChartSet(seed: number, archetype?: Archetype): ChartSet 
 
   const bars: Bar[] = [];
   let previousClose = startPrice;
+  // 잡음 누적 계수. 매 봉마다 독립적인 작은 스텝을 곱해 나가는 진짜 랜덤워크다.
+  // (봉 t까지의 표준편차가 √t로 커지므로, 오래 들고 있을수록 가격이 더 크게 움직인다.)
+  let noiseFactor = 1;
 
   for (let t = 0; t < BARS_PER_DAY; t += 1) {
     const f = t / (BARS_PER_DAY - 1);
     const trendPct = trendPercentAt(resolvedArchetype, f, reversalSign);
-    const noisePct = signedUnit(rng) * NOISE_AMPLITUDE_PCT;
-    const close = startPrice * (1 + (trendPct + noisePct) / 100);
+    noiseFactor *= 1 + (signedUnit(rng) * NOISE_STEP_PCT) / 100;
+    const close = startPrice * (1 + trendPct / 100) * noiseFactor;
     const open = t === 0 ? startPrice : previousClose;
 
     const bodyHigh = Math.max(open, close);

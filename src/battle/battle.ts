@@ -6,11 +6,13 @@
  * 안다. 좌표 계산(`layout.ts`)과 개별 그리기(`draw-*.ts`)는 전부 위임한다.
  */
 
-import type { CombatState } from '../combat/types.js';
+import type { CombatState, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import { drawBackground } from './draw-background.js';
+import { drawAirLaneWarning } from './draw-lane-warning.js';
 import { drawHud } from './draw-hud.js';
 import { drawEnemyBase, drawHq } from './draw-structures.js';
+import { drawTowerRangePreview } from './draw-tower-range.js';
 import { drawTowers } from './draw-towers.js';
 import { drawAllies, drawEnemies } from './draw-units.js';
 import { computeBattleLayout } from './layout.js';
@@ -23,18 +25,27 @@ export interface DrawBattleOptions {
   readonly height: number;
   /** 호버/선택된 타워 슬롯 인덱스. 없으면 강조 없음. */
   readonly selectedSlot?: number | null;
+  /**
+   * 툴바에서 선택된 타워 종류. 빈 슬롯을 선택(호버)했을 때 그 자리에 무엇을 지을 수
+   * 있는지(실루엣 미리보기)와 사거리 미리보기를 보여주는 데 쓴다. 지어진 타워가 있는
+   * 슬롯을 선택했을 때는 이 값 대신 실제 타워 종류가 우선한다.
+   */
+  readonly selectedTowerKind?: TowerKind | null;
 }
 
 /** 전장 한 프레임을 그린다. 적/유닛 0명, 캔버스 극소 크기에서도 크래시하지 않아야 한다. */
 export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   const { state, palette, width, height } = opts;
   const selectedSlot = opts.selectedSlot ?? null;
+  const selectedTowerKind = opts.selectedTowerKind ?? null;
   const layout = computeBattleLayout(width, height);
 
   drawBackground(ctx, palette, layout);
+  drawAirLaneWarning(ctx, palette, layout, state);
   drawHq(ctx, palette, layout, state);
   drawEnemyBase(ctx, palette, layout);
-  drawTowers(ctx, palette, layout, state, selectedSlot);
+  drawTowers(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
+  drawTowerRangePreview(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
   drawEnemies(ctx, palette, layout, state.enemies);
   drawAllies(ctx, palette, layout, state.units);
   drawHud(ctx, palette, layout, state);

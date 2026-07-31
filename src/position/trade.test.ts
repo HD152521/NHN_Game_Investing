@@ -150,8 +150,8 @@ describe('openPosition', () => {
   });
 });
 
-describe('closePosition — PRD FR-5.7 수용 기준', () => {
-  test('1) z=+1.0 청산 → r=0.90, pnl=445, 골드 +445, AUM 1500+500=2000', () => {
+describe('closePosition — AUM→골드 일방통행 정산 수용 기준', () => {
+  test('1) z=+1.0 청산 → r=0.90, pnl=445, 골드 +945(=stake+pnl), AUM은 1500 그대로', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -169,12 +169,12 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     if (!closed.ok) return;
     expect(closed.result.evaluation.r).toBeCloseTo(0.9, 10);
     expect(closed.result.evaluation.pnl).toBe(445);
-    expect(closed.result.goldGained).toBe(445);
-    expect(closed.result.wallet.gold).toBe(445);
-    expect(closed.result.wallet.aum).toBe(2000);
+    expect(closed.result.goldGained).toBe(945);
+    expect(closed.result.wallet.gold).toBe(945);
+    expect(closed.result.wallet.aum).toBe(1500);
   });
 
-  test('2) z=−0.5 청산 → r=−0.45, pnl=−230, 골드 증가 0, AUM 1500+270=1770', () => {
+  test('2) z=−0.5 청산 → r=−0.45, pnl=−230, 골드 +270(=stake+pnl), AUM은 1500 그대로', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -192,12 +192,12 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     if (!closed.ok) return;
     expect(closed.result.evaluation.r).toBeCloseTo(-0.45, 10);
     expect(closed.result.evaluation.pnl).toBe(-230);
-    expect(closed.result.goldGained).toBe(0);
-    expect(closed.result.wallet.gold).toBe(0);
-    expect(closed.result.wallet.aum).toBe(1770);
+    expect(closed.result.goldGained).toBe(270);
+    expect(closed.result.wallet.gold).toBe(270);
+    expect(closed.result.wallet.aum).toBe(1500);
   });
 
-  test('3) z=−1.2까지 하락 → 강제 청산, pnl=−500(전액), AUM 1500, 골드 증가 0', () => {
+  test('3) z=−1.2까지 하락 → 강제 청산, pnl=−500(전액 소실), 골드 증가 0, AUM 1500 그대로', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -223,7 +223,7 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     expect(closed.result.wallet.aum).toBe(1500);
   });
 
-  test('4) 진입 직후 z≈0에서 즉시 청산 → 골드 증가가 정확히 0이다 (세탁 차단)', () => {
+  test('4) 진입 직후 z≈0에서 즉시 청산 → 수수료만큼만 손해 보고 원금이 골드로 넘어간다', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -240,12 +240,14 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBe(-5);
-    expect(closed.result.goldGained).toBe(0);
-    expect(closed.result.wallet.gold).toBe(0);
-    expect(closed.result.wallet.aum).toBe(1995);
+    // 골드 += stake - fee = 500 - 5 = 495. AUM은 진입 때 이미 500만큼 줄어든 채(1500)
+    // 유지되고, 청산으로 다시 늘지 않는다 — 원금은 AUM으로 복귀하지 않는다.
+    expect(closed.result.goldGained).toBe(495);
+    expect(closed.result.wallet.gold).toBe(495);
+    expect(closed.result.wallet.aum).toBe(1500);
   });
 
-  test('5) 극단적 손실(z=-3)에서도 pnl은 −stake 아래로 내려가지 않는다', () => {
+  test('5) 극단적 손실(z=-3)에서도 pnl은 −stake 아래로 내려가지 않고, 골드 증가는 0이다', () => {
     const params = fixtureParams();
     const wallet = fixtureWallet();
     const opened = openFixturePosition(params, wallet);
@@ -262,7 +264,7 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBe(-500);
-    expect(closed.result.wallet.aum).toBe(1500); // stake 전액 소실, 그 이상 깎이지 않는다
+    expect(closed.result.wallet.aum).toBe(1500); // 청산은 AUM을 늘리지 않는다
     expect(closed.result.goldGained).toBe(0);
   });
 
@@ -346,7 +348,7 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBeGreaterThan(0);
-    expect(closed.result.goldGained).toBe(closed.result.evaluation.pnl);
+    expect(closed.result.goldGained).toBe(opened.position.stake + closed.result.evaluation.pnl);
   });
 
   test('9) 지갑 객체는 변형되지 않고 새 객체로 반환된다 (불변성)', () => {
@@ -391,6 +393,57 @@ describe('closePosition — PRD FR-5.7 수용 기준', () => {
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
     expect(closed.result.evaluation.pnl).toBe(445);
+  });
+});
+
+describe('closePosition — AUM 불변·골드 비음수 불변식', () => {
+  test('어떤 z(가격 변동)에서도 청산은 AUM을 늘리지 않는다', () => {
+    const params = fixtureParams();
+    const closePrices = [130, 110, 105, 100, 95, 90, 70, 50]; // 큰 이익 ~ 전액 소실까지 훑는다
+
+    for (const closePrice of closePrices) {
+      const wallet = fixtureWallet();
+      const opened = openFixturePosition(params, wallet);
+      const aumAfterOpen = opened.wallet.aum;
+
+      const closed = closePosition({
+        wallet: opened.wallet,
+        position: opened.position,
+        closePrice,
+        closeAtMs: 3000,
+        reason: 'manual',
+        params,
+      });
+
+      expect(closed.ok).toBe(true);
+      if (!closed.ok) continue;
+      expect(closed.result.wallet.aum).toBe(aumAfterOpen);
+      expect(closed.result.wallet.aum).toBeLessThanOrEqual(wallet.aum);
+    }
+  });
+
+  test('극단적인 z에서도 골드 증가액(goldGained)은 항상 0 이상이다', () => {
+    const params = fixtureParams();
+    // zMax=3 밖으로도 밀어붙여 클램프·−stake 하한이 goldGained를 음수로 만들지 않는지 검증한다.
+    const closePrices = [1000, 200, 100, 50, 1, 0.01];
+
+    for (const closePrice of closePrices) {
+      const wallet = fixtureWallet();
+      const opened = openFixturePosition(params, wallet);
+
+      const closed = closePosition({
+        wallet: opened.wallet,
+        position: opened.position,
+        closePrice,
+        closeAtMs: 3000,
+        reason: 'liquidated', // minHoldMs 검사를 피해 임의의 closePrice로 자유롭게 테스트한다
+        params,
+      });
+
+      expect(closed.ok).toBe(true);
+      if (!closed.ok) continue;
+      expect(closed.result.goldGained).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 

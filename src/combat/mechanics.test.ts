@@ -70,16 +70,17 @@ describe('applyTowerFire — FR-6.2 레인 표적 제한', () => {
 });
 
 describe('applyEngagement — FR-6.5 유닛-적 교전', () => {
-  test('가장 전진한 유닛과 가장 본진에 가까운 지상 적이 짝지어져 서로 피해를 주고받는다', () => {
+  test('밀착 거리 안의 유닛-적 쌍은 서로 피해를 주고받는다', () => {
+    // gap = 0.1 - 0.06 = 0.04 ≤ UNIT_MELEE_RANGE(0.05) — 밀착 거리.
     const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.1, hp: 100, maxHp: 100 })];
-    const units: Unit[] = [makeUnit({ id: 1, kind: 'analyst', x: 0.5, hp: 100, maxHp: 100, cooldownMs: 0 })];
+    const units: Unit[] = [makeUnit({ id: 1, kind: 'analyst', x: 0.06, hp: 100, maxHp: 100, cooldownMs: 0 })];
 
     const result = applyEngagement(enemies, units, 1000);
 
     expect(result.blockedEnemyIds.has(1)).toBe(true);
     expect(result.blockedUnitIds.has(1)).toBe(true);
-    // analyst 데미지 12(쿨다운 0이라 즉시 발사), 적 근접 dps 9 × 1초 = 9
-    expect(result.enemies[0]?.hp).toBe(88);
+    // analyst 데미지 13(쿨다운 0이라 즉시 발사), 적 근접 dps 9 × 1초 = 9
+    expect(result.enemies[0]?.hp).toBe(87);
     expect(result.units[0]?.hp).toBe(91);
   });
 
@@ -95,15 +96,28 @@ describe('applyEngagement — FR-6.5 유닛-적 교전', () => {
     expect(result.units[0]?.hp).toBe(100);
   });
 
-  test('유닛 쿨다운이 남아 있으면 이번 틱에 적을 때리지 못하지만 적의 공격은 계속 받는다', () => {
+  test('유닛 쿨다운이 남아 있으면 이번 틱에 적을 때리지 못하지만 밀착 상태면 적의 공격은 계속 받는다', () => {
+    // gap = 0.1 - 0.06 = 0.04 ≤ UNIT_MELEE_RANGE(0.05) — 밀착 거리.
     const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.1, hp: 100, maxHp: 100 })];
-    const units: Unit[] = [makeUnit({ id: 1, kind: 'intern', x: 0.5, hp: 100, maxHp: 100, cooldownMs: 500 })];
+    const units: Unit[] = [makeUnit({ id: 1, kind: 'intern', x: 0.06, hp: 100, maxHp: 100, cooldownMs: 500 })];
 
     const result = applyEngagement(enemies, units, 200);
 
     expect(result.enemies[0]?.hp).toBe(100); // 유닛 쿨다운(500) > dtMs(200)라 아직 못 쏨
     expect(result.units[0]?.cooldownMs).toBe(300);
     expect(result.units[0]?.hp).toBeCloseTo(100 - 9 * 0.2);
+  });
+
+  test('사거리 밖(교전 전)이면 서로 이동만 하고 피해를 주고받지 않는다', () => {
+    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.5, hp: 100, maxHp: 100 })];
+    const units: Unit[] = [makeUnit({ id: 1, kind: 'trader', x: 0.1, hp: 100, maxHp: 100 })];
+
+    const result = applyEngagement(enemies, units, 1000);
+
+    expect(result.blockedEnemyIds.size).toBe(0);
+    expect(result.blockedUnitIds.size).toBe(0);
+    expect(result.enemies[0]?.hp).toBe(100);
+    expect(result.units[0]?.hp).toBe(100);
   });
 });
 

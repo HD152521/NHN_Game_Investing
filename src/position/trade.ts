@@ -2,8 +2,10 @@
  * 포지션 진입·청산 — 순수·불변 상태 전이 함수 (PRD FR-5).
  *
  * 입력으로 받은 `wallet`/`position` 객체는 절대 변형하지 않고, 항상 새 객체를 반환한다.
- * 이 파일이 이 게임의 경제 코어다 — 특히 `closePosition`의 원금-이익 분리 정산(FR-5.7)은
- * 밸런싱 조절값이 아니라 AUM 세탁을 막는 구조적 안전장치이므로 절대 바꾸지 않는다.
+ * 이 파일이 이 게임의 경제 코어다 — AUM은 골드로만 흘러가는 일방통행 파이프다:
+ * 진입 시 AUM에서 stake가 빠지고, 청산 시 원금+손익(`stake + pnl`, 최소 0)이
+ * 통째로 골드로 넘어간다. 원금은 AUM으로 복귀하지 않는다. AUM을 다시 채우는
+ * 유일한 경로는 적 처치 드롭(`src/combat`)이며, 이 파일은 그 경로를 다루지 않는다.
  */
 
 import { evaluatePosition } from './evaluate';
@@ -92,7 +94,11 @@ export interface CloseResult {
   readonly position: ClosedPosition;
   readonly wallet: Wallet;
   readonly evaluation: PositionEval;
-  /** 이번 청산으로 골드에 실제로 더해진 양(순이익만, FR-5.7). 손실이면 항상 0이다. */
+  /**
+   * 이번 청산으로 골드에 더해진 총액 — "순이익"이 아니라 `max(stake + pnl, 0)`,
+   * 즉 원금과 손익을 합쳐 골드로 넘어간 금액 전체다. 강제 청산처럼 `pnl === -stake`인
+   * 경우에만 0이 된다.
+   */
   readonly goldGained: number;
   readonly reason: CloseReason;
 }
@@ -115,12 +121,15 @@ export type ClosePositionResult =
 /**
  * 포지션 청산.
  *
- * FR-5.7 원금-이익 분리 정산 — **원금은 절대 골드가 되지 않는다.**
+ * AUM → 골드 일방통행 정산 — **원금은 AUM으로 복귀하지 않는다.**
  * ```
- * pnl > 0  →  aum += stake,          gold += pnl
- * pnl <= 0 →  aum += (stake + pnl),  gold 증가 없음
+ * goldGained = max(stake + pnl, 0)
+ * gold += goldGained
+ * aum  += 0   (청산은 AUM을 절대 늘리지 않는다)
  * ```
- * 이 분리가 없으면 "진입 직후 즉시 청산"만으로 AUM 전액을 골드로 세탁할 수 있다.
+ * 진입 시 이미 AUM에서 stake가 빠져나간 상태이므로, 청산은 그 stake와 손익을
+ * 합산해 골드로 흘려보내는 것으로 끝난다. 강제 청산이면 `pnl === -stake`가 되어
+ * `goldGained`가 정확히 0이 된다 — 원금을 전부 잃었으니 넘어갈 것이 없다는 뜻이다.
  *
  * `reason`이 `liquidated`/`stage_end`(서버 강제 청산)이면 `minHoldMs` 검사를 건너뛴다 —
  * 플레이어의 의사와 무관하게 서버가 즉시 정리해야 하는 상황이기 때문이다.
@@ -138,12 +147,11 @@ export function closePosition(input: ClosePositionInput): ClosePositionResult {
 
   const evaluation = evaluatePosition(input.position, input.closePrice, input.params);
 
-  const goldGained = evaluation.pnl > 0 ? evaluation.pnl : 0;
-  const aumReturned = evaluation.pnl > 0 ? input.position.stake : input.position.stake + evaluation.pnl;
+  const goldGained = Math.max(input.position.stake + evaluation.pnl, 0);
 
   const wallet: Wallet = {
     gold: input.wallet.gold + goldGained,
-    aum: input.wallet.aum + aumReturned,
+    aum: input.wallet.aum,
   };
 
   const closedPosition: ClosedPosition = {

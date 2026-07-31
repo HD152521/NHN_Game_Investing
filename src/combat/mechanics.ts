@@ -5,7 +5,17 @@
  * DOM·타이머·전역 상태는 참조하지 않으며, 경과 시간(dtMs)은 전부 호출자가 주입한다.
  */
 
-import { BASE_DAMAGE_PER_LEAK, ENEMY_MELEE_DPS, TOWER_COOLDOWN_MS, TOWER_DAMAGE, TOWER_RANGE, UNIT_COOLDOWN_MS, UNIT_DAMAGE } from './constants';
+import {
+  BASE_DAMAGE_PER_LEAK,
+  ENEMY_MELEE_DPS,
+  TOWER_COOLDOWN_MS,
+  TOWER_DAMAGE,
+  TOWER_RANGE,
+  UNIT_COOLDOWN_MS,
+  UNIT_DAMAGE,
+  UNIT_MELEE_RANGE,
+  UNIT_RANGE,
+} from './constants';
 import type { Enemy, Tower, Unit } from './types';
 
 /** 남은 쿨다운(ms)을 dtMs만큼 줄인다. 0 아래로는 내려가지 않는다. */
@@ -83,12 +93,27 @@ export interface EngagementResult {
 /**
  * 지상 적과 유닛의 교전을 처리한다 (FR-6.5). 지상 적을 x 오름차순(본진에 가까운 순), 유닛을
  * x 내림차순(가장 전진한 순)으로 정렬해 앞에서부터 짝짓는다 — 서로를 향해 움직이므로 가장
- * 먼저 마주치는 쌍이 이 순서와 일치한다. 짝지어진 쌍은 이번 틱에 이동하지 않고 서로에게
- * 피해를 준다. 공중 적은 유닛과 절대 교전하지 않는다(FR-6.2 — 지상 유닛은 지상만 공격 가능).
+ * 먼저 마주치는 쌍이 이 순서와 일치한다. x가 같으면 사거리가 짧은(근접·탱커) 유닛을 앞세운다
+ * — 탱커가 원거리 유닛보다 먼저 적과 붙어야 "탱커가 앞에 서면 원거리가 보호받는" 구도가
+ * 나온다(기획 의도).
+ *
+ * 각 쌍은 유닛의 사거리(`UNIT_RANGE`) 안에 적이 들어와야 교전을 시작한다 — 사거리 밖이면
+ * 이번 틱에 아무 일도 없이 각자 이동한다. 사거리 안에 들어오면 유닛은 전진을 멈추고
+ * 공격하지만, 적은 그보다 짧은 밀착 사거리(`UNIT_MELEE_RANGE`) 안까지 접근해야만 반격할 수
+ * 있다 — 원거리 유닛(analyst)은 이 둘의 차이만큼 "일방적으로 때리기만 하는 구간"을 갖는다.
+ * 근접·탱커는 사거리 자체가 밀착 거리와 같아 이 구간이 사실상 없다(밀착해야만 교전).
+ *
+ * 공중 적은 유닛과 절대 교전하지 않는다(FR-6.2 — 지상 유닛은 지상만 공격 가능, 원거리 유닛도
+ * 예외 없음).
  */
 export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[], dtMs: number): EngagementResult {
   const groundEnemies = enemies.filter((enemy) => enemy.lane === 'ground').sort((a, b) => a.x - b.x);
-  const sortedUnits = [...units].sort((a, b) => b.x - a.x);
+  const sortedUnits = [...units].sort((a, b) => {
+    if (a.x !== b.x) {
+      return b.x - a.x;
+    }
+    return UNIT_RANGE[a.kind] - UNIT_RANGE[b.kind];
+  });
   const pairCount = Math.min(groundEnemies.length, sortedUnits.length);
   const dtSec = dtMs / 1000;
 
@@ -104,11 +129,25 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
     if (!enemy || !unit) {
       continue;
     }
-    blockedEnemyIds.add(enemy.id);
+
+    const gap = enemy.x - unit.x;
+    const range = UNIT_RANGE[unit.kind];
+    if (gap > range) {
+      // 사거리 밖 — 교전 없음. 둘 다 이번 틱에 자유롭게 이동한다.
+      continue;
+    }
+
+    // 사거리 안에 들어왔다 — 유닛은 전진을 멈추고 공격에 전념한다.
     blockedUnitIds.add(unit.id);
 
-    // 적 → 유닛: Enemy 타입(types.ts)에 쿨다운 필드가 없어 연속 DPS로 단순화한다.
-    unitHpDelta.set(unit.id, -(ENEMY_MELEE_DPS * dtSec));
+    if (gap <= UNIT_MELEE_RANGE) {
+      // 밀착 거리 — 적도 멈춰서 반격한다. 근접·탱커는 사거리=밀착거리라 항상 이 분기다.
+      blockedEnemyIds.add(enemy.id);
+      // 적 → 유닛: Enemy 타입(types.ts)에 쿨다운 필드가 없어 연속 DPS로 단순화한다.
+      unitHpDelta.set(unit.id, -(ENEMY_MELEE_DPS * dtSec));
+    }
+    // else: 사거리 안이지만 밀착 전 — 원거리 유닛의 일방적 사격 구간. 적은 멈추지도,
+    // 반격하지도 않고 계속 접근한다.
 
     // 유닛 → 적: Unit.cooldownMs를 살려 타워와 동일한 "쿨다운 후 발사" 모델을 쓴다.
     const cooledCooldownMs = tickCooldown(unit.cooldownMs, dtMs);

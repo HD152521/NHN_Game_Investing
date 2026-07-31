@@ -35,24 +35,59 @@ describe('StageSession — 배선', () => {
   });
 
   /**
-   * ★ 이 프로젝트에서 가장 중요한 불변식 (FR-5.7).
+   * ★ 이 프로젝트의 코어 경제 규칙 (FR-5.7, 2026-07-31 개정).
    *
-   * 진입 직후 즉시 청산으로 AUM을 골드로 바꿀 수 있으면, 예측을 전혀 하지 않고도
-   * 타워를 도배할 수 있어 게임의 코어 규칙이 완전히 무너진다.
+   * AUM은 골드로 흘러가는 **일방통행 파이프**다. 청산하면 원금+손익이 통째로 골드가 되고,
+   * AUM으로는 한 푼도 돌아오지 않는다. AUM을 다시 채우는 유일한 경로는 적 처치 드롭이다.
    */
-  test('진입 직후 즉시 청산해도 골드가 늘지 않는다 (AUM 세탁 차단)', () => {
+  test('청산하면 원금+손익이 통째로 골드가 되고 AUM으로는 돌아오지 않는다', () => {
     const session = makeSession();
     const minHoldMs = session.params.minHoldMs;
 
-    session.openTrade('long', 1.0, 0);
-    // 가격이 거의 움직이지 않은 시점 = 최소 보유 시간 직후
+    session.openTrade('long', 0.25, 0);
+    const aumAfterOpen = session.snapshot(0).wallet.aum;
     session.closeTrade(minHoldMs);
 
     const snap = session.snapshot(minHoldMs);
+    const notice = session.takeNotice();
+
     expect(snap.position).toBeNull();
-    expect(snap.wallet.gold).toBe(STARTING_GOLD);
-    // 원금은 AUM으로 돌아오되 수수료만큼은 줄어 있어야 한다.
-    expect(snap.wallet.aum).toBeLessThan(STARTING_AUM);
+    expect(snap.wallet.gold).toBe(STARTING_GOLD + (notice?.goldGained ?? 0));
+    // 청산은 AUM을 절대 늘리지 않는다.
+    expect(snap.wallet.aum).toBe(aumAfterOpen);
+  });
+
+  /**
+   * 진입 직후 즉시 청산은 "수수료만 내고 AUM을 골드로 환전"하는 저위험 경로다.
+   * 새 규칙에서는 이것이 **허용된 플레이**다 — 다만 AUM은 그만큼 영구히 줄고
+   * 적을 잡아야만 복구되므로, 매매를 잘할수록 같은 AUM에서 더 많은 골드가 나온다.
+   */
+  test('진입 즉시 청산하면 수수료 정도만 손해 보고 골드로 넘어간다', () => {
+    const session = makeSession();
+    const minHoldMs = session.params.minHoldMs;
+
+    session.openTrade('long', 0.25, 0);
+    const stake = session.snapshot(0).position?.stake ?? 0;
+    session.closeTrade(minHoldMs);
+
+    const gained = session.takeNotice()?.goldGained ?? 0;
+    // 2초(=시장 2분) 보유로는 큰 변동이 없어야 한다 — 랜덤워크 스케일링이 지켜지는지 확인.
+    expect(gained).toBeGreaterThan(stake * 0.7);
+    expect(gained).toBeLessThan(stake * 1.3);
+  });
+
+  /** 손익이 어떻게 나오든 AUM이 청산으로 늘어나는 일은 없어야 한다. */
+  test('전 재생 구간 어디서 청산해도 AUM은 늘지 않는다', () => {
+    for (const closeAt of [2_000, 30_000, 120_000, 300_000]) {
+      const session = makeSession();
+      session.openTrade('long', 0.25, 0);
+      const aumAfterOpen = session.snapshot(0).wallet.aum;
+
+      session.syncLiquidation(closeAt);
+      session.closeTrade(closeAt);
+
+      expect(session.snapshot(closeAt).wallet.aum).toBe(aumAfterOpen);
+    }
   });
 
   test('최소 보유 시간 이전에는 수동 청산이 거부된다', () => {
@@ -109,6 +144,24 @@ describe('StageSession — 배선', () => {
       }
       expect(evaluation.pnl).toBeGreaterThanOrEqual(-stake);
     }
+  });
+
+  test('AUM을 다시 채우는 유일한 경로는 적 처치 드롭이다', () => {
+    const session = makeSession();
+    session.build(0, 'basic');
+    const aumBefore = session.snapshot(0).wallet.aum;
+
+    // 매매만 반복해서는 AUM이 절대 늘지 않는다.
+    session.openTrade('long', 0.25, 0);
+    session.closeTrade(session.params.minHoldMs);
+    expect(session.snapshot(0).wallet.aum).toBeLessThan(aumBefore);
+
+    const aumAfterTrade = session.snapshot(0).wallet.aum;
+    for (let i = 0; i < 400; i += 1) {
+      session.stepCombatFrame(200);
+    }
+    // 전투로만 회복된다.
+    expect(session.snapshot(0).wallet.aum).toBeGreaterThan(aumAfterTrade);
   });
 
   test('전투가 돌면 적 처치 드롭으로 AUM이 늘고, 골드는 웨이브 수입으로만 는다', () => {
