@@ -1,0 +1,286 @@
+/**
+ * 앱 셸 스타일 — 파이낸셜 느와르 톤.
+ *
+ * 색은 전부 `--tf-*` CSS 변수를 참조한다. 이 변수는 런타임에
+ * `applyPalette(document.documentElement, palette)` 가 주입한다 (src/design/css-vars.ts).
+ * 여기에 생짜 HEX를 쓰면 색약 모드 토글이 이 파일만 못 따라와 화면이 깨진다.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+/**
+ * ★ `hidden` 속성을 클래스가 이기지 못하게 못박는다.
+ *
+ * 브라우저 기본 스타일시트의 `[hidden] { display: none }` 은 명시도가 (0,1,0)이라
+ * `.stage__banner { display: grid }` 같은 **작성자 스타일시트의 클래스 규칙에 항상 진다**.
+ * 그래서 `el.hidden = true` 로 숨긴 요소가 화면에 그대로 남는다.
+ *
+ * 실제로 이 프로젝트에서 다음 버그를 냈다:
+ * - 클리어/패배 배너(`position:absolute; inset:0`)가 처음부터 전장을 덮어
+ *   **전장이 흐려 보이고 타워 슬롯 클릭이 전부 막혔다**
+ * - 매매 패널의 미보유(`__idle`)·보유(`__holding`) 섹션이 동시에 표시됐다
+ *
+ * 개별 선택자로 땜질하면 새 `hidden` 요소를 추가할 때마다 같은 버그가 재발하므로
+ * 전역으로 한 번 못박는다.
+ */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--tf-bg-0);
+  color: var(--tf-text);
+  font-family: 'DM Mono', 'SF Mono', 'Cascadia Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+#app {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.stage {
+  width: min(1040px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── 블라인드 태그 줄 ─────────────────────────────────────── */
+.stage__tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tf-muted);
+}
+
+.stage__tag {
+  padding: 3px 8px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 2px;
+}
+
+.stage__spacer {
+  flex: 1;
+}
+
+/* 정체가 가려져 있다는 사실 자체를 UI로 보여준다 (FR-4). */
+.stage__blind {
+  color: var(--tf-aum);
+  border-color: var(--tf-aum);
+}
+
+/* ── 차트 ────────────────────────────────────────────────── */
+.stage__chart {
+  position: relative;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-0);
+  overflow: hidden;
+}
+
+.stage__chart canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ── HUD ─────────────────────────────────────────────────── */
+.hud {
+  display: flex;
+  gap: 20px;
+  padding: 9px 12px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+  font-size: 12px;
+}
+
+.hud__item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.hud__label {
+  color: var(--tf-muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.hud__value {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hud__value--gold {
+  color: var(--tf-gold);
+}
+
+.hud__value--aum {
+  color: var(--tf-aum);
+}
+
+.hud__value--up {
+  color: var(--tf-up-ally);
+}
+
+.hud__value--down {
+  color: var(--tf-enemy-down);
+}
+
+/* ── 전장 ────────────────────────────────────────────────── */
+.stage__battle {
+  position: relative;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stage__battle canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 클리어·패배 배너. 전투가 끝나면 화면 위에 얹힌다. */
+.stage__banner {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(20px, 4vw, 34px);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--tf-enemy-down);
+  background: color-mix(in srgb, var(--tf-bg-0) 78%, transparent);
+  backdrop-filter: blur(1.5px);
+}
+
+.stage__banner--win {
+  color: var(--tf-gold);
+}
+
+/* ── 빌드바 ──────────────────────────────────────────────── */
+.buildbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+}
+
+.buildbar__group {
+  display: flex;
+  gap: 6px;
+}
+
+/* 타워 / 유닛 / 스킬 사이의 시각적 구분선 */
+.buildbar__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 4px;
+  background: var(--tf-bg-2);
+}
+
+/* 빌드바 버튼은 이름 / 담당 레인·역할 / 비용 3단으로 읽힌다. */
+.buildbar .btn {
+  display: grid;
+  grid-template-columns: auto;
+  gap: 1px;
+  padding: 6px 12px;
+  text-align: left;
+  line-height: 1.25;
+}
+
+.btn small {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--tf-muted);
+}
+
+.btn em {
+  font-style: normal;
+  color: var(--tf-gold);
+  font-size: 11px;
+}
+
+/* 대공 포대는 유일하게 공중을 잡을 수 있다 — 목록에서 눈에 띄어야 한다. */
+.btn[data-tower='antiair'] small {
+  color: var(--tf-aum);
+}
+
+.btn--summon {
+  border-color: var(--tf-up-deep);
+}
+
+.btn--skill {
+  border-color: var(--tf-gold);
+}
+
+/* ── 컨트롤 ──────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn {
+  padding: 7px 14px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+  color: var(--tf-text);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--tf-muted);
+  background: var(--tf-bg-2);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--tf-aum);
+  outline-offset: 2px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--active {
+  border-color: var(--tf-gold);
+  color: var(--tf-gold);
+}
+
+.controls__note {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--tf-muted);
+}
