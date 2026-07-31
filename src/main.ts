@@ -1,4 +1,3 @@
-import './app/shell.css';
 import { mountStage } from './app/stage';
 
 const root = document.querySelector<HTMLDivElement>('#app');

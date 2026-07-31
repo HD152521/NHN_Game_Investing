@@ -1,0 +1,254 @@
+/**
+ * 매매 패널 스타일 — 파이낸셜 느와르 톤.
+ *
+ * `src/app/shell.css` 와 동일한 규약을 따른다: 색은 전부 `--tf-*` CSS 변수를
+ * 참조하고 생짜 HEX를 쓰지 않는다 (색약 모드 토글이 이 변수를 갈아끼운다).
+ * `--tf-*` 값은 런타임에 `applyPalette()` 가 주입한다 (src/design/css-vars.ts).
+ */
+
+.trade-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+  font-size: 12px;
+}
+
+/* ── 청산 경고 (FR-5.6 — 발동선 80% 도달) ───────────────────── */
+.trade-panel--warning {
+  border-color: var(--tf-up-ally);
+  box-shadow: 0 0 0 1px var(--tf-up-ally);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .trade-panel--warning {
+    animation: trade-panel-pulse 1.1s ease-in-out infinite;
+  }
+}
+
+@keyframes trade-panel-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--tf-up-ally);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px var(--tf-up-ally);
+  }
+}
+
+/* ── 미보유 / 보유 공통 레이아웃 ──────────────────────────── */
+.trade-panel__idle,
+.trade-panel__holding {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.trade-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.trade-panel__stakes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trade-panel__stakes-label {
+  margin-right: 2px;
+  color: var(--tf-muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* ── 버튼 (shell.css .btn 규약을 그대로 따른다) ─────────────── */
+.trade-panel__btn {
+  padding: 7px 14px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 3px;
+  background: var(--tf-bg-1);
+  color: var(--tf-text);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+.trade-panel__btn:hover:not(:disabled) {
+  border-color: var(--tf-muted);
+  background: var(--tf-bg-2);
+}
+
+.trade-panel__btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.trade-panel__btn:focus-visible {
+  outline: 2px solid var(--tf-aum);
+  outline-offset: 2px;
+}
+
+.trade-panel__btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* LONG = 상승 = 아군(빨강), SHORT = 하락 = 적군(파랑) — design/palette.ts 설계 그대로 */
+.trade-panel__btn--long {
+  border-color: var(--tf-up-deep);
+  color: var(--tf-up-ally);
+}
+
+.trade-panel__btn--long:hover:not(:disabled) {
+  border-color: var(--tf-up-ally);
+  background: var(--tf-up-deep);
+  color: var(--tf-text);
+}
+
+.trade-panel__btn--short {
+  border-color: var(--tf-enemy-deep);
+  color: var(--tf-enemy-down);
+}
+
+.trade-panel__btn--short:hover:not(:disabled) {
+  border-color: var(--tf-enemy-down);
+  background: var(--tf-enemy-deep);
+  color: var(--tf-text);
+}
+
+.trade-panel__btn--close {
+  margin-left: auto;
+  border-color: var(--tf-gold);
+  color: var(--tf-gold);
+}
+
+.trade-panel__btn--close:hover:not(:disabled) {
+  background: var(--tf-gold);
+  color: var(--tf-bg-0);
+}
+
+/* ── 투입 비율 버튼 ──────────────────────────────────────── */
+.trade-panel__stake {
+  padding: 5px 10px;
+  border: 1px solid var(--tf-bg-2);
+  border-radius: 2px;
+  background: var(--tf-bg-1);
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.trade-panel__stake:hover:not(:disabled) {
+  border-color: var(--tf-muted);
+  color: var(--tf-text);
+}
+
+.trade-panel__stake:focus-visible {
+  outline: 2px solid var(--tf-aum);
+  outline-offset: 2px;
+}
+
+.trade-panel__stake:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.trade-panel__stake--active {
+  border-color: var(--tf-gold);
+  color: var(--tf-gold);
+}
+
+/* ── 보유 중 필드 ────────────────────────────────────────── */
+.trade-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trade-panel__label {
+  color: var(--tf-muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.trade-panel__direction {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.trade-panel--long .trade-panel__direction {
+  color: var(--tf-up-ally);
+}
+
+.trade-panel--short .trade-panel__direction {
+  color: var(--tf-enemy-down);
+}
+
+.trade-panel__stake-amount {
+  color: var(--tf-muted);
+  font-size: 11px;
+}
+
+.trade-panel__pnl {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.trade-panel--profit .trade-panel__pnl {
+  color: var(--tf-up-ally);
+}
+
+.trade-panel--loss .trade-panel__pnl {
+  color: var(--tf-enemy-down);
+}
+
+.trade-panel--flat .trade-panel__pnl {
+  color: var(--tf-text);
+}
+
+.trade-panel__distance {
+  font-size: 12px;
+  color: var(--tf-muted);
+}
+
+.trade-panel--warning .trade-panel__distance {
+  color: var(--tf-up-ally);
+  font-weight: 600;
+}
+
+/* ── 하단 메타 (AUM·골드·진입 횟수) ──────────────────────── */
+.trade-panel__meta {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--tf-muted);
+}
+
+/* ── 시각적으로 숨기되 스크린리더에는 노출 (aria-live 아나운스 영역) ── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
