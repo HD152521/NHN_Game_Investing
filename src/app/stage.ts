@@ -5,215 +5,55 @@
  * 코어 루프: 매매 순이익 → 골드 → 타워·유닛 → 적 처치 → AUM 드롭 → 다시 매매.
  *
  * 설계 메모: 리플레이·판정·전투는 전부 시계를 주입받는 순수 계산기다.
- * `performance.now()`를 읽는 곳은 이 파일의 rAF 루프 하나뿐이다.
+ * `performance.now()`를 읽는 곳은 이 파일의 프레임 루프 하나뿐이다.
+ *
+ * ★ 스테이지는 **정지 상태로 마운트된다**. 시작 게이트의 [스테이지 시작]을 누르기
+ *   전까지 프레임 루프가 한 번도 돌지 않는다 (`frame-loop.ts`).
  */
 
 import './shell.css';
+import './start-gate.css';
 import '../ui/trade-panel.css';
+import '../ui/gold-flight.css';
 
 import { drawBattle, computeBattleLayout, slotAt } from '../battle';
 import { drawChart } from '../chart';
-import { SKILL_COST, TOWER_BUILD_COST, TOWER_UPGRADE_COST, UNIT_COST } from '../combat';
+import { TOWER_UPGRADE_COST } from '../combat';
 import type { TowerKind, UnitKind } from '../combat';
 import { changePercent } from '../market';
 import { applyPalette, createTheme } from '../design';
 import type { ColorTheme } from '../design';
 import type { Direction } from '../position';
-import { createTradePanel } from '../ui';
-import type { StakeRatio, TradePanel, TradePanelViewModel } from '../ui';
-import { STARTING_AUM, STARTING_GOLD, StageSession } from './session';
+import { createGoldMeter, createTradePanel, prefersReducedMotion } from '../ui';
+import type { GoldMeter, StakeRatio, TradePanel, TradePanelViewModel } from '../ui';
+import { createFrameLoop, createRafScheduler } from './frame-loop';
+import { StageSession } from './session';
+import {
+  BATTLE_HEIGHT,
+  BATTLE_WIDTH,
+  CHART_HEIGHT,
+  CHART_WIDTH,
+  SPEEDS,
+  TOWER_LABELS,
+  buildStageMarkup,
+  collectStageRefs,
+  formatSessionClock,
+  formatSignedPercent,
+} from './stage-dom';
 
-const CHART_WIDTH = 1024;
-const CHART_HEIGHT = 200;
-const BATTLE_WIDTH = 1024;
-/**
- * 전장 높이 300 → 360.
- *
- * 슬롯이 96×68로 커지면서 300px에서는 타워 슬롯(146~214)과 공중(103~127)·지상(234~258)
- * 사이 여유가 20px 밖에 남지 않아 요소가 서로 붙어 보였다. 360이면 위아래로 34px씩 확보된다.
- */
-const BATTLE_HEIGHT = 360;
-
-/** FR-3.5 — 배속은 스테이지 시작 전에만 정해진다. */
-const SPEEDS = [1, 2, 4] as const;
 const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
 
 /** 프레임 간격이 이보다 크면 탭 비활성 복귀로 보고 버린다. */
 const MAX_FRAME_DT_MS = 250;
-
-/**
- * 타워·유닛 라벨에 **담당 레인과 역할을 반드시 함께 노출**한다.
- *
- * 초기 플레이테스트에서 "공중 적을 어떻게 잡느냐"는 질문이 나왔다. 공중은 대공 포대로만
- * 잡히는데(FR-6.2) 화면 어디에도 그 사실이 없었던 것이 원인이다. 라벨에서 이 정보를
- * 빼면 같은 문제가 그대로 재발한다.
- */
-const TOWER_LABELS: Record<TowerKind, { name: string; lane: string }> = {
-  basic: { name: '기본 포탑', lane: '지상' },
-  antiair: { name: '대공 포대', lane: '공중' },
-  splash: { name: '광역 포탑', lane: '지상·범위' },
-};
-
-const UNIT_LABELS: Record<UnitKind, { name: string; role: string }> = {
-  intern: { name: '인턴', role: '근거리' },
-  analyst: { name: '애널리스트', role: '원거리' },
-  trader: { name: '트레이더', role: '탱커' },
-};
-
-interface StageRefs {
-  readonly chartCtx: CanvasRenderingContext2D;
-  readonly battleCanvas: HTMLCanvasElement;
-  readonly battleCtx: CanvasRenderingContext2D;
-  readonly change: HTMLElement;
-  readonly clock: HTMLElement;
-  readonly volume: HTMLElement;
-  readonly gold: HTMLElement;
-  readonly aum: HTMLElement;
-  readonly wave: HTMLElement;
-  readonly baseHp: HTMLElement;
-  readonly log: HTMLElement;
-  readonly banner: HTMLElement;
-  readonly speedButtons: readonly HTMLButtonElement[];
-  readonly towerButtons: readonly HTMLButtonElement[];
-}
-
-function formatSessionClock(barIndex: number): string {
-  const totalMinutes = 9 * 60 + barIndex;
-  return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
-}
-
-function formatSignedPercent(value: number): string {
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
-}
-
-function buildMarkup(): string {
-  const speeds = SPEEDS.map(
-    (s) => `<button class="btn" type="button" data-speed="${s}">${s}x</button>`,
-  ).join('');
-
-  const towers = (Object.keys(TOWER_LABELS) as TowerKind[])
-    .map((kind) => {
-      const { name, lane } = TOWER_LABELS[kind];
-      return `<button class="btn btn--build" type="button" data-tower="${kind}">${name}<small>${lane}</small><em>${TOWER_BUILD_COST[kind]}</em></button>`;
-    })
-    .join('');
-
-  const units = (Object.keys(UNIT_LABELS) as UnitKind[])
-    .map((kind) => {
-      const { name, role } = UNIT_LABELS[kind];
-      return `<button class="btn btn--summon" type="button" data-unit="${kind}">${name}<small>${role}</small><em>${UNIT_COST[kind]}</em></button>`;
-    })
-    .join('');
-
-  return `
-    <div class="stage">
-      <div class="stage__tags">
-        <span class="stage__tag stage__blind">BLIND</span>
-        <span class="stage__tag">아시아</span>
-        <span class="stage__tag">금융</span>
-        <span class="stage__tag">대형주</span>
-        <span class="stage__spacer"></span>
-        <span data-ref="volume">거래량 —</span>
-      </div>
-
-      <div class="stage__chart">
-        <canvas data-ref="chart" width="${CHART_WIDTH}" height="${CHART_HEIGHT}"
-                role="img" aria-label="블라인드 차트 리플레이"></canvas>
-      </div>
-
-      <div class="hud">
-        <span class="hud__item"><span class="hud__label">시각</span>
-          <span class="hud__value" data-ref="clock">09:00</span></span>
-        <span class="hud__item"><span class="hud__label">등락</span>
-          <span class="hud__value" data-ref="change">+0.00%</span></span>
-        <span class="hud__item"><span class="hud__label">골드</span>
-          <span class="hud__value hud__value--gold" data-ref="gold">${STARTING_GOLD}</span></span>
-        <span class="hud__item"><span class="hud__label">AUM</span>
-          <span class="hud__value hud__value--aum" data-ref="aum">${STARTING_AUM}</span></span>
-        <span class="hud__item"><span class="hud__label">웨이브</span>
-          <span class="hud__value" data-ref="wave">0/13</span></span>
-        <span class="hud__item"><span class="hud__label">본진</span>
-          <span class="hud__value" data-ref="basehp">100</span></span>
-      </div>
-
-      <div data-ref="panel-host"></div>
-
-      <div class="stage__battle">
-        <canvas data-ref="battle" width="${BATTLE_WIDTH}" height="${BATTLE_HEIGHT}"
-                aria-label="전장"></canvas>
-        <div class="stage__banner" data-ref="banner" hidden></div>
-      </div>
-
-      <div class="buildbar">
-        <span class="buildbar__group">${towers}</span>
-        <span class="buildbar__sep"></span>
-        <span class="buildbar__group">${units}</span>
-        <span class="buildbar__sep"></span>
-        <button class="btn btn--skill" type="button" data-action="skill">공시 폭탄 <em>${SKILL_COST}</em></button>
-      </div>
-
-      <div class="controls">
-        <button class="btn" type="button" data-action="restart">새 스테이지</button>
-        ${speeds}
-        <span class="controls__note" data-ref="log">타워를 고르고 아래 빈 슬롯을 클릭하세요</span>
-      </div>
-    </div>
-  `;
-}
-
-function collectRefs(root: HTMLElement): StageRefs | null {
-  const chart = root.querySelector<HTMLCanvasElement>('[data-ref="chart"]');
-  const battle = root.querySelector<HTMLCanvasElement>('[data-ref="battle"]');
-  const pick = (name: string): HTMLElement | null =>
-    root.querySelector<HTMLElement>(`[data-ref="${name}"]`);
-
-  const change = pick('change');
-  const clock = pick('clock');
-  const volume = pick('volume');
-  const gold = pick('gold');
-  const aum = pick('aum');
-  const wave = pick('wave');
-  const baseHp = pick('basehp');
-  const log = pick('log');
-  const banner = pick('banner');
-
-  if (!chart || !battle || !change || !clock || !volume || !gold || !aum || !wave || !baseHp || !log || !banner) {
-    return null;
-  }
-
-  const chartCtx = chart.getContext('2d');
-  const battleCtx = battle.getContext('2d');
-  if (!chartCtx || !battleCtx) {
-    return null;
-  }
-
-  return {
-    chartCtx,
-    battleCanvas: battle,
-    battleCtx,
-    change,
-    clock,
-    volume,
-    gold,
-    aum,
-    wave,
-    baseHp,
-    log,
-    banner,
-    speedButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-speed]')),
-    towerButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tower]')),
-  };
-}
 
 /** 스테이지를 마운트하고 정리 함수를 돌려준다 (HMR 대비). */
 export function mountStage(root: HTMLElement): () => void {
   const theme: ColorTheme = createTheme();
   applyPalette(document.documentElement, theme.palette);
 
-  root.innerHTML = buildMarkup();
-  const refs = collectRefs(root);
-  const panelHost = root.querySelector<HTMLElement>('[data-ref="panel-host"]');
-  if (!refs || !panelHost) {
+  root.innerHTML = buildStageMarkup();
+  const refs = collectStageRefs(root);
+  if (!refs) {
     root.textContent = '스테이지를 초기화하지 못했습니다 (캔버스 컨텍스트 없음).';
     return () => undefined;
   }
@@ -226,9 +66,22 @@ export function mountStage(root: HTMLElement): () => void {
   let session: StageSession | null = null;
   let elapsedMs = 0;
   let lastFrameMs = 0;
-  let frame = 0;
 
+  const scheduler = createRafScheduler();
   const battleLayout = computeBattleLayout(BATTLE_WIDTH, BATTLE_HEIGHT);
+
+  /**
+   * 골드 HUD 숫자의 소유자. 청산 골드는 차트에서 출발해 이 숫자로 날아와 꽂히고,
+   * 도착 시점에 카운트업된다 (즉시 치환 금지).
+   */
+  const goldMeter: GoldMeter = createGoldMeter({
+    layer: refs.stage,
+    source: refs.chartHost,
+    valueEl: refs.gold,
+    announceEl: refs.goldAnnounce,
+    scheduler,
+    prefersReducedMotion,
+  });
 
   const panel: TradePanel = createTradePanel({
     onOpen: (direction: Direction) => session?.openTrade(direction, stakeRatio, elapsedMs),
@@ -238,7 +91,7 @@ export function mountStage(root: HTMLElement): () => void {
       stakeRatio = ratio;
     },
   });
-  panelHost.appendChild(panel.element);
+  refs.panelHost.appendChild(panel.element);
 
   function startSession(nowMs: number): void {
     session = new StageSession(seed, speed, nowMs);
@@ -290,6 +143,22 @@ export function mountStage(root: HTMLElement): () => void {
     };
   }
 
+  /** 청산이 확정된 프레임 — 로그 한 줄 + 골드 비행 연출을 띄운다. */
+  function announceClose(current: StageSession): void {
+    const notice = current.takeNotice();
+    if (!notice) {
+      return;
+    }
+    const label = notice.position.reason === 'liquidated' ? '강제 청산' : '청산';
+    const sign = notice.position.pnl > 0 ? '+' : '';
+    refs!.log.textContent = `${label} — 손익 ${sign}${notice.position.pnl} / 골드 +${notice.goldGained}`;
+    goldMeter.launch({
+      goldGained: notice.goldGained,
+      pnl: notice.position.pnl,
+      reason: notice.position.reason,
+    });
+  }
+
   function render(nowMs: number): void {
     if (!session) {
       startSession(nowMs);
@@ -305,13 +174,7 @@ export function mountStage(root: HTMLElement): () => void {
     // 판정을 먼저 — 강제 청산이 걸린 프레임에서 정리된 상태를 그려야 한다.
     session.syncLiquidation(elapsedMs);
     session.stepCombatFrame(dt);
-
-    const notice = session.takeNotice();
-    if (notice) {
-      const label = notice.position.reason === 'liquidated' ? '강제 청산' : '청산';
-      const sign = notice.position.pnl > 0 ? '+' : '';
-      refs!.log.textContent = `${label} — 손익 ${sign}${notice.position.pnl} / 골드 +${notice.goldGained}`;
-    }
+    announceClose(session);
 
     const snap = session.snapshot(elapsedMs);
     const combat = session.combatState;
@@ -347,7 +210,8 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.change.classList.toggle('hud__value--up', delta >= 0);
     refs!.change.classList.toggle('hud__value--down', delta < 0);
     refs!.clock.textContent = formatSessionClock(state.barIndex);
-    refs!.gold.textContent = String(snap.wallet.gold);
+    // 골드 표시는 연출이 소유한다 — 여기서 직접 덮어쓰면 카운트업이 끊긴다.
+    goldMeter.sync(snap.wallet.gold);
     refs!.aum.textContent = String(snap.wallet.aum);
     refs!.wave.textContent = `${combat.wave}/${combat.waveCount}`;
     refs!.baseHp.textContent = String(combat.baseHp);
@@ -369,12 +233,15 @@ export function mountStage(root: HTMLElement): () => void {
     }
   }
 
-  function loop(nowMs: number): void {
-    render(nowMs);
-    frame = requestAnimationFrame(loop);
-  }
+  const loop = createFrameLoop(scheduler, render);
 
   // ── 이벤트 배선 ───────────────────────────────────────────
+  refs.startButton.addEventListener('click', () => {
+    refs.gate.remove();
+    refs.stage.classList.remove('stage--gated');
+    loop.start(); // 여기서 처음으로 차트가 흐르기 시작한다.
+  });
+
   for (const button of refs.speedButtons) {
     button.addEventListener('click', () => {
       speed = Number(button.dataset['speed']) || 1;
@@ -442,10 +309,10 @@ export function mountStage(root: HTMLElement): () => void {
   });
 
   syncButtons();
-  frame = requestAnimationFrame(loop);
 
   return () => {
-    cancelAnimationFrame(frame);
+    loop.stop();
+    goldMeter.destroy();
     panel.destroy();
   };
 }

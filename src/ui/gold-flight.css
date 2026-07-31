@@ -1,0 +1,58 @@
+/**
+ * 골드 이동 연출 스타일.
+ *
+ * 위치·크기·투명도는 전부 JS(`gold-flight-logic.ts`)가 계산해 인라인으로 넣는다.
+ * CSS는 **색과 형태만** 책임진다. 이렇게 나눠야 타임라인을 테스트할 수 있다.
+ *
+ * 색 매핑 근거(아트가이드 §1.3 / PRD FR-5.10):
+ *   이익 = 골드(재화 도착이 곧 메시지) / 손실 = 파랑(하락과 같은 토큰) /
+ *   강제 청산 = 고채도 적색 + 별도 문구.
+ */
+
+.gold-flight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 15;
+  padding: 4px 10px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tf-bg-0) 82%, transparent);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+  /* 애니메이션은 transform / opacity 두 개만 — 레이아웃을 건드리지 않는다. */
+  will-change: transform, opacity;
+}
+
+.gold-flight--profit {
+  color: var(--tf-gold);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--tf-gold) 35%, transparent);
+}
+
+.gold-flight--loss {
+  color: var(--tf-enemy-down);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--tf-enemy-down) 30%, transparent);
+}
+
+.gold-flight--liquidated {
+  color: var(--tf-up-ally);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--tf-up-ally) 45%, transparent);
+}
+
+/* 도착 지점(골드 HUD)이 실제로 맞았다는 신호. 색만 바뀌므로 모션이 아니다. */
+.hud__value--gold {
+  transition: color 120ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gold-flight {
+    will-change: auto;
+  }
+
+  .hud__value--gold {
+    transition: none;
+  }
+}

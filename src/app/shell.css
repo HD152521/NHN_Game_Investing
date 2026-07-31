@@ -46,7 +46,12 @@ body {
   padding: 16px;
 }
 
+/**
+ * `position: relative` 는 장식이 아니라 좌표계 선언이다.
+ * 시작 게이트(`.gate`)와 골드 비행 라벨(`.gold-flight`)이 이 박스를 기준으로 배치된다.
+ */
 .stage {
+  position: relative;
   width: min(1040px, 100%);
   display: flex;
   flex-direction: column;
