@@ -146,6 +146,61 @@ describe('StageSession — 배선', () => {
     }
   });
 
+  /**
+   * 추가 매수의 설계 목적 — 물타기로 평균 단가를 당기면 청산선이 밀린다.
+   * 이게 성립하지 않으면 추가 매수는 그냥 돈을 더 잃는 버튼일 뿐이다.
+   */
+  test('손실 중 추가 매수하면 청산선까지 거리가 늘어난다', () => {
+    const session = makeSession();
+    session.openTrade('long', 0.25, 0);
+
+    // 평가손실이 가장 깊은 시점을 찾는다.
+    let worstMs = 0;
+    let worstZ = 0;
+    for (let ms = 2_000; ms <= 200_000; ms += 2_000) {
+      const z = session.snapshot(ms).evaluation?.z ?? 0;
+      if (z < worstZ) {
+        worstZ = z;
+        worstMs = ms;
+      }
+    }
+    expect(worstZ).toBeLessThan(0); // 손실 구간이 존재해야 의미 있는 테스트다
+
+    const before = session.snapshot(worstMs);
+    session.addTrade(0.5, worstMs);
+    const after = session.snapshot(worstMs);
+
+    expect(after.position?.addCount).toBe(1);
+    expect(after.distanceToLiquidation).toBeGreaterThan(before.distanceToLiquidation);
+    // 버틴 대가로 AUM이 줄어든다 — 그만큼 타워를 못 세운다.
+    expect(after.wallet.aum).toBeLessThan(before.wallet.aum);
+  });
+
+  test('추가 매수는 원금을 키우고 방향·청산선 스냅샷은 유지한다', () => {
+    const session = makeSession();
+    session.openTrade('short', 0.25, 0);
+    const before = session.snapshot(0).position;
+
+    session.addTrade(0.5, 10_000);
+    const after = session.snapshot(10_000).position;
+
+    expect(after?.stake).toBeGreaterThan(before?.stake ?? 0);
+    expect(after?.direction).toBe('short');
+    expect(after?.liqLine).toBe(before?.liqLine);
+    expect(after?.openAtMs).toBe(before?.openAtMs);
+    expect(session.snapshot(10_000).openCount).toBe(2); // 진입 횟수를 소모한다
+  });
+
+  test('포지션이 없으면 추가 매수가 아무 일도 하지 않는다', () => {
+    const session = makeSession();
+    const before = session.snapshot(0).wallet;
+
+    session.addTrade(0.5, 0);
+
+    expect(session.snapshot(0).wallet).toEqual(before);
+    expect(session.canAdd()).toBe(false);
+  });
+
   test('AUM을 다시 채우는 유일한 경로는 적 처치 드롭이다', () => {
     const session = makeSession();
     session.build(0, 'basic');

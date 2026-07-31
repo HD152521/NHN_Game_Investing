@@ -22,6 +22,7 @@ function fixturePosition(overrides?: Partial<OpenPosition>): OpenPosition {
     openPrice: 100,
     openAtMs: 0,
     liqLine: 1.0,
+    addCount: 0,
     ...overrides,
   };
 }

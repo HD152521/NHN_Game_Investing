@@ -13,9 +13,13 @@ import {
   formatAmount,
   formatDistance,
   formatPnl,
+  formatPrice,
   formatStakeRatioLabel,
+  resolveAddButtonLabel,
+  resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
+  resolvePriceTone,
   resolveStateClasses,
   STAKE_RATIOS,
 } from './trade-panel-logic';
@@ -35,10 +39,14 @@ export {
   formatAmount,
   formatDistance,
   formatPnl,
+  formatPrice,
   formatStakeRatioLabel,
+  resolveAddButtonLabel,
+  resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
   resolvePnlTone,
+  resolvePriceTone,
   resolveStateClasses,
   STAKE_RATIOS,
 } from './trade-panel-logic';
@@ -55,10 +63,15 @@ interface PanelRefs {
   readonly holding: HTMLElement;
   readonly longButton: HTMLButtonElement;
   readonly shortButton: HTMLButtonElement;
+  readonly addButton: HTMLButtonElement;
   readonly closeButton: HTMLButtonElement;
   readonly stakeButtons: readonly HTMLButtonElement[];
   readonly direction: HTMLElement;
   readonly stakeAmount: HTMLElement;
+  readonly avgPrice: HTMLElement;
+  readonly currentPrice: HTMLElement;
+  readonly addCountField: HTMLElement;
+  readonly addCount: HTMLElement;
   readonly pnl: HTMLElement;
   readonly distance: HTMLElement;
   readonly positions: HTMLElement;
@@ -90,6 +103,18 @@ function buildMarkup(): string {
         <span class="trade-panel__stake-amount" data-ref="stake-amount">0</span>
       </span>
       <span class="trade-panel__field">
+        <span class="trade-panel__label">평단가 / 현재가</span>
+        <span class="trade-panel__price">
+          <span class="trade-panel__avg-price" data-ref="avg-price">-</span>
+          <span class="trade-panel__price-sep" aria-hidden="true">/</span>
+          <span class="trade-panel__current-price" data-ref="current-price">-</span>
+        </span>
+      </span>
+      <span class="trade-panel__field" data-ref="add-count-field" hidden>
+        <span class="trade-panel__label">추가 매수</span>
+        <span class="trade-panel__add-count" data-ref="add-count"></span>
+      </span>
+      <span class="trade-panel__field">
         <span class="trade-panel__label">평가손익</span>
         <span class="trade-panel__pnl" data-ref="pnl">0 G</span>
       </span>
@@ -97,6 +122,7 @@ function buildMarkup(): string {
         <span class="trade-panel__label">청산선까지</span>
         <span class="trade-panel__distance" data-ref="distance">0.00σ</span>
       </span>
+      <button class="trade-panel__btn trade-panel__btn--add" type="button" data-action="add">추가</button>
       <button class="trade-panel__btn trade-panel__btn--close" type="button" data-action="close">청산</button>
     </div>
     <div class="trade-panel__meta">
@@ -122,10 +148,15 @@ function collectRefs(root: HTMLElement): PanelRefs {
     holding: requireElement<HTMLElement>(root, '[data-ref="holding"]'),
     longButton: requireElement<HTMLButtonElement>(root, '[data-action="open-long"]'),
     shortButton: requireElement<HTMLButtonElement>(root, '[data-action="open-short"]'),
+    addButton: requireElement<HTMLButtonElement>(root, '[data-action="add"]'),
     closeButton: requireElement<HTMLButtonElement>(root, '[data-action="close"]'),
     stakeButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-ratio]')),
     direction: requireElement<HTMLElement>(root, '[data-ref="direction"]'),
     stakeAmount: requireElement<HTMLElement>(root, '[data-ref="stake-amount"]'),
+    avgPrice: requireElement<HTMLElement>(root, '[data-ref="avg-price"]'),
+    currentPrice: requireElement<HTMLElement>(root, '[data-ref="current-price"]'),
+    addCountField: requireElement<HTMLElement>(root, '[data-ref="add-count-field"]'),
+    addCount: requireElement<HTMLElement>(root, '[data-ref="add-count"]'),
     pnl: requireElement<HTMLElement>(root, '[data-ref="pnl"]'),
     distance: requireElement<HTMLElement>(root, '[data-ref="distance"]'),
     positions: requireElement<HTMLElement>(root, '[data-ref="positions"]'),
@@ -170,7 +201,16 @@ export function createTradePanel(handlers: TradePanelHandlers): TradePanel {
     button.addEventListener('click', () => handlers.onStakeRatioChange(ratio));
   }
 
-  let previous: TradePanelViewModel | null = null;
+  let latest: TradePanelViewModel | null = null;
+
+  // 추가 매수는 "현재 선택된 투입 비율"로 실행된다 — 클릭 시점의 최신 뷰모델에서
+  // stakeRatio를 읽는다 (update()가 매 프레임 latest를 갱신해두므로 항상 최신값).
+  refs.addButton.addEventListener('click', () => {
+    if (latest === null) {
+      return;
+    }
+    handlers.onAdd(latest.stakeRatio);
+  });
 
   function update(vm: TradePanelViewModel): void {
     element.className = ['trade-panel', ...resolveStateClasses(vm)].join(' ');
@@ -180,15 +220,29 @@ export function createTradePanel(handlers: TradePanelHandlers): TradePanel {
 
     refs.longButton.disabled = vm.holding || !vm.canOpen;
     refs.shortButton.disabled = vm.holding || !vm.canOpen;
+    refs.addButton.disabled = !vm.holding || !vm.canAdd;
     refs.closeButton.disabled = !vm.holding || !vm.canClose;
 
     for (const [button, ratio] of stakeButtonRatios) {
       button.classList.toggle('trade-panel__stake--active', ratio === vm.stakeRatio);
-      button.disabled = vm.holding;
     }
 
     refs.direction.textContent = resolveDirectionLabel(vm.direction);
     refs.stakeAmount.textContent = formatAmount(vm.stake);
+
+    refs.avgPrice.textContent = formatPrice(vm.avgEntryPrice);
+    refs.currentPrice.textContent = formatPrice(vm.currentPrice);
+    const priceTone = resolvePriceTone(vm.direction, vm.avgEntryPrice, vm.currentPrice);
+    refs.currentPrice.classList.toggle('trade-panel__current-price--profit', priceTone === 'profit');
+    refs.currentPrice.classList.toggle('trade-panel__current-price--loss', priceTone === 'loss');
+    refs.currentPrice.classList.toggle('trade-panel__current-price--flat', priceTone === 'flat');
+
+    const addCountLabel = resolveAddCountLabel(vm.addCount);
+    refs.addCountField.hidden = addCountLabel === '';
+    refs.addCount.textContent = addCountLabel;
+
+    refs.addButton.textContent = resolveAddButtonLabel(vm.direction);
+
     refs.pnl.textContent = formatPnl(vm.pnl);
     refs.distance.textContent = formatDistance(vm.distanceToLiquidation);
 
@@ -196,11 +250,11 @@ export function createTradePanel(handlers: TradePanelHandlers): TradePanel {
     refs.aum.textContent = `${formatAmount(vm.aum)} AUM`;
     refs.gold.textContent = `${formatAmount(vm.gold)} G`;
 
-    const announcement = resolveAnnouncement(previous, vm);
+    const announcement = resolveAnnouncement(latest, vm);
     if (announcement !== null) {
       refs.announce.textContent = announcement;
     }
-    previous = vm;
+    latest = vm;
   }
 
   function destroy(): void {

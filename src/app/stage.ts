@@ -227,6 +227,7 @@ export function mountStage(root: HTMLElement): () => void {
   const panel: TradePanel = createTradePanel({
     onOpen: (direction: Direction) => session?.openTrade(direction, stakeRatio, elapsedMs),
     onClose: () => session?.closeTrade(elapsedMs),
+    onAdd: (ratio) => session?.addTrade(ratio, elapsedMs),
     onStakeRatioChange: (ratio) => {
       stakeRatio = ratio;
     },
@@ -256,6 +257,10 @@ export function mountStage(root: HTMLElement): () => void {
       direction: snap.position?.direction ?? null,
       stake: snap.position?.stake ?? 0,
       stakeRatio,
+      avgEntryPrice: snap.position?.openPrice ?? 0,
+      currentPrice: snap.position ? current.priceAt(elapsedMs) : 0,
+      addCount: snap.position?.addCount ?? 0,
+      canAdd: current.canAdd(),
       aum: snap.wallet.aum,
       gold: snap.wallet.gold,
       pnl: snap.evaluation?.pnl ?? 0,

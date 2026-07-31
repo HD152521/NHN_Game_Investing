@@ -24,6 +24,9 @@ export { DEFAULT_POSITION_PARAMS, LIQ_WARN_RATIO, STAKE_PRESETS } from './consta
 export { evaluatePosition } from './evaluate';
 
 export type {
+  AddError,
+  AddToPositionInput,
+  AddToPositionResult,
   CloseError,
   ClosePositionInput,
   ClosePositionResult,
@@ -33,4 +36,4 @@ export type {
   OpenPositionInput,
   OpenPositionResult,
 } from './trade';
-export { closePosition, openPosition } from './trade';
+export { addToPosition, closePosition, openPosition } from './trade';

@@ -9,10 +9,14 @@ import {
   formatAmount,
   formatDistance,
   formatPnl,
+  formatPrice,
   formatStakeRatioLabel,
+  resolveAddButtonLabel,
+  resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
   resolvePnlTone,
+  resolvePriceTone,
   resolveStateClasses,
   STAKE_RATIOS,
 } from './trade-panel-logic';
@@ -25,6 +29,10 @@ function baseVm(overrides: Partial<TradePanelViewModel> = {}): TradePanelViewMod
     direction: null,
     stake: 0,
     stakeRatio: 0.25,
+    avgEntryPrice: 0,
+    currentPrice: 0,
+    addCount: 0,
+    canAdd: true,
     aum: 2000,
     gold: 200,
     pnl: 0,
@@ -123,6 +131,24 @@ describe('formatStakeRatioLabel', () => {
   });
 });
 
+describe('formatPrice', () => {
+  test('0은 대시로 표기한다 (미보유 상태 — "0원"과 구분)', () => {
+    expect(formatPrice(0)).toBe('-');
+  });
+
+  test('양수는 천 단위 구분자로 표기한다', () => {
+    expect(formatPrice(128300)).toBe('128,300');
+  });
+
+  test('소수는 반올림한다', () => {
+    expect(formatPrice(128300.6)).toBe('128,301');
+  });
+
+  test('음수도 방어적으로 대시로 표기한다', () => {
+    expect(formatPrice(-5)).toBe('-');
+  });
+});
+
 describe('resolveDirectionLabel', () => {
   test('long → "LONG ▲"', () => {
     expect(resolveDirectionLabel('long')).toBe('LONG ▲');
@@ -134,6 +160,38 @@ describe('resolveDirectionLabel', () => {
 
   test('null(미보유) → 대시', () => {
     expect(resolveDirectionLabel(null)).toBe('—');
+  });
+});
+
+describe('resolveAddButtonLabel', () => {
+  test('long → "LONG 추가" (방향이 라벨에 드러난다)', () => {
+    expect(resolveAddButtonLabel('long')).toBe('LONG 추가');
+  });
+
+  test('short → "SHORT 추가"', () => {
+    expect(resolveAddButtonLabel('short')).toBe('SHORT 추가');
+  });
+
+  test('null(미보유)은 방향 없이 "추가"', () => {
+    expect(resolveAddButtonLabel(null)).toBe('추가');
+  });
+});
+
+describe('resolveAddCountLabel', () => {
+  test('0회는 빈 문자열이다 (화면에서 굳이 안 보여줘도 됨)', () => {
+    expect(resolveAddCountLabel(0)).toBe('');
+  });
+
+  test('1회는 "추가 1회"', () => {
+    expect(resolveAddCountLabel(1)).toBe('추가 1회');
+  });
+
+  test('여러 회는 숫자가 그대로 반영된다', () => {
+    expect(resolveAddCountLabel(5)).toBe('추가 5회');
+  });
+
+  test('음수(비정상 입력)도 방어적으로 빈 문자열을 돌려준다', () => {
+    expect(resolveAddCountLabel(-1)).toBe('');
   });
 });
 
@@ -151,24 +209,64 @@ describe('resolvePnlTone', () => {
   });
 });
 
+describe('resolvePriceTone', () => {
+  test('LONG — 현재가가 평단가보다 높으면 유리(profit)', () => {
+    expect(resolvePriceTone('long', 100, 110)).toBe('profit');
+  });
+
+  test('LONG — 현재가가 평단가보다 낮으면 불리(loss)', () => {
+    expect(resolvePriceTone('long', 100, 90)).toBe('loss');
+  });
+
+  test('LONG — 현재가와 평단가가 정확히 같으면 flat', () => {
+    expect(resolvePriceTone('long', 100, 100)).toBe('flat');
+  });
+
+  test('SHORT — 현재가가 평단가보다 낮으면 유리(profit)', () => {
+    expect(resolvePriceTone('short', 100, 90)).toBe('profit');
+  });
+
+  test('SHORT — 현재가가 평단가보다 높으면 불리(loss)', () => {
+    expect(resolvePriceTone('short', 100, 110)).toBe('loss');
+  });
+
+  test('SHORT — 현재가와 평단가가 정확히 같으면 flat', () => {
+    expect(resolvePriceTone('short', 100, 100)).toBe('flat');
+  });
+
+  test('방향이 없으면(미보유) 항상 flat', () => {
+    expect(resolvePriceTone(null, 100, 110)).toBe('flat');
+  });
+});
+
 describe('resolveStateClasses', () => {
   test('미보유 상태는 idle 클래스만 붙는다', () => {
     const classes = resolveStateClasses(baseVm());
     expect(classes).toEqual(['trade-panel--idle']);
   });
 
-  test('보유 상태(LONG, 이익)는 holding·long·profit 클래스를 붙인다', () => {
+  test('보유 상태(LONG, 이익)는 holding·long·profit·add-ready 클래스를 붙인다', () => {
     const classes = resolveStateClasses(
-      baseVm({ holding: true, direction: 'long', pnl: 100 }),
+      baseVm({ holding: true, direction: 'long', pnl: 100, canAdd: true }),
     );
-    expect(classes).toEqual(['trade-panel--holding', 'trade-panel--long', 'trade-panel--profit']);
+    expect(classes).toEqual([
+      'trade-panel--holding',
+      'trade-panel--long',
+      'trade-panel--profit',
+      'trade-panel--add-ready',
+    ]);
   });
 
-  test('보유 상태(SHORT, 손실)는 holding·short·loss 클래스를 붙인다', () => {
+  test('보유 상태(SHORT, 손실)는 holding·short·loss·add-ready 클래스를 붙인다', () => {
     const classes = resolveStateClasses(
-      baseVm({ holding: true, direction: 'short', pnl: -50 }),
+      baseVm({ holding: true, direction: 'short', pnl: -50, canAdd: true }),
     );
-    expect(classes).toEqual(['trade-panel--holding', 'trade-panel--short', 'trade-panel--loss']);
+    expect(classes).toEqual([
+      'trade-panel--holding',
+      'trade-panel--short',
+      'trade-panel--loss',
+      'trade-panel--add-ready',
+    ]);
   });
 
   test('보유 상태에서 손익이 정확히 0이면 flat 클래스가 붙는다', () => {
@@ -185,19 +283,44 @@ describe('resolveStateClasses', () => {
 
   test('경고 + 보유 상태는 모든 클래스가 함께 붙는다', () => {
     const classes = resolveStateClasses(
-      baseVm({ holding: true, direction: 'short', pnl: -900, warning: true }),
+      baseVm({ holding: true, direction: 'short', pnl: -900, warning: true, canAdd: true }),
     );
     expect(classes).toEqual([
       'trade-panel--holding',
       'trade-panel--warning',
       'trade-panel--short',
       'trade-panel--loss',
+      'trade-panel--add-ready',
     ]);
   });
 
   test('direction이 null인 채로 holding=true(비정상 입력)여도 방향 클래스 없이 안전하게 처리한다', () => {
-    const classes = resolveStateClasses(baseVm({ holding: true, direction: null, pnl: 0 }));
-    expect(classes).toEqual(['trade-panel--holding', 'trade-panel--flat']);
+    const classes = resolveStateClasses(
+      baseVm({ holding: true, direction: null, pnl: 0, canAdd: true }),
+    );
+    expect(classes).toEqual(['trade-panel--holding', 'trade-panel--flat', 'trade-panel--add-ready']);
+  });
+
+  test('추가 매수 가능(canAdd=true)이면 add-ready 클래스가 붙는다', () => {
+    const classes = resolveStateClasses(
+      baseVm({ holding: true, direction: 'long', pnl: 0, canAdd: true }),
+    );
+    expect(classes).toContain('trade-panel--add-ready');
+    expect(classes).not.toContain('trade-panel--add-blocked');
+  });
+
+  test('추가 매수 불가(canAdd=false)이면 add-blocked 클래스가 붙는다', () => {
+    const classes = resolveStateClasses(
+      baseVm({ holding: true, direction: 'long', pnl: 0, canAdd: false }),
+    );
+    expect(classes).toContain('trade-panel--add-blocked');
+    expect(classes).not.toContain('trade-panel--add-ready');
+  });
+
+  test('미보유 상태에서는 canAdd 값과 무관하게 add-ready/add-blocked 클래스가 붙지 않는다', () => {
+    const classes = resolveStateClasses(baseVm({ holding: false, canAdd: false }));
+    expect(classes).not.toContain('trade-panel--add-ready');
+    expect(classes).not.toContain('trade-panel--add-blocked');
   });
 });
 
@@ -222,6 +345,18 @@ describe('resolveAnnouncement', () => {
     const previous = baseVm({ holding: true, direction: 'long', stake: 500 });
     const next = baseVm();
     expect(resolveAnnouncement(previous, next)).toBe('청산 완료');
+  });
+
+  test('보유 중 추가 매수로 addCount가 늘면 평균단가와 함께 알린다', () => {
+    const previous = baseVm({ holding: true, direction: 'long', addCount: 1, avgEntryPrice: 100 });
+    const next = baseVm({ holding: true, direction: 'long', addCount: 2, avgEntryPrice: 105 });
+    expect(resolveAnnouncement(previous, next)).toBe('추가 매수 — 평균단가 105');
+  });
+
+  test('addCount가 그대로면 추가 매수 문구를 내지 않는다 (매 프레임 스팸 방지)', () => {
+    const vm = baseVm({ holding: true, direction: 'long', addCount: 1, pnl: 10 });
+    const nextFrame = baseVm({ holding: true, direction: 'long', addCount: 1, pnl: 20 });
+    expect(resolveAnnouncement(vm, nextFrame)).toBeNull();
   });
 
   test('경고 진입 시 경고 문구를 낸다', () => {

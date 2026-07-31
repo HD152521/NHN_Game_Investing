@@ -127,6 +127,39 @@
   color: var(--tf-text);
 }
 
+/* 추가 매수 버튼 — 방향은 고정이므로 보유 방향 색을 그대로 물려받는다
+   (루트에 이미 붙는 .trade-panel--long / --short 를 재사용, 별도 토글 불필요) */
+.trade-panel__btn--add {
+  border-color: var(--tf-muted);
+  color: var(--tf-text);
+}
+
+.trade-panel--long .trade-panel__btn--add {
+  border-color: var(--tf-up-deep);
+  color: var(--tf-up-ally);
+}
+
+.trade-panel--long .trade-panel__btn--add:hover:not(:disabled) {
+  border-color: var(--tf-up-ally);
+  background: var(--tf-up-deep);
+  color: var(--tf-text);
+}
+
+.trade-panel--short .trade-panel__btn--add {
+  border-color: var(--tf-enemy-deep);
+  color: var(--tf-enemy-down);
+}
+
+.trade-panel--short .trade-panel__btn--add:hover:not(:disabled) {
+  border-color: var(--tf-enemy-down);
+  background: var(--tf-enemy-deep);
+  color: var(--tf-text);
+}
+
+.trade-panel--add-blocked .trade-panel__btn--add {
+  opacity: 0.5;
+}
+
 .trade-panel__btn--close {
   margin-left: auto;
   border-color: var(--tf-gold);
@@ -202,6 +235,44 @@
 
 .trade-panel__stake-amount {
   color: var(--tf-muted);
+  font-size: 11px;
+}
+
+/* ── 평균 단가 / 현재가 — 추가 매수 판단의 핵심 정보 ─────────── */
+.trade-panel__price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.trade-panel__avg-price {
+  color: var(--tf-muted);
+}
+
+.trade-panel__price-sep {
+  color: var(--tf-muted);
+}
+
+.trade-panel__current-price {
+  font-weight: 600;
+}
+
+/* LONG일 때 현재가 > 평단가, SHORT일 때 현재가 < 평단가면 유리(아군/빨강) */
+.trade-panel__current-price--profit {
+  color: var(--tf-up-ally);
+}
+
+.trade-panel__current-price--loss {
+  color: var(--tf-enemy-down);
+}
+
+.trade-panel__current-price--flat {
+  color: var(--tf-text);
+}
+
+.trade-panel__add-count {
+  color: var(--tf-gold);
   font-size: 11px;
 }
 

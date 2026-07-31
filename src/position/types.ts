@@ -63,6 +63,12 @@ export interface OpenPosition {
    * 바뀌어도 이미 보유 중인 포지션은 진입 당시 값으로 판정해야 하므로 별도 보관한다.
    */
   readonly liqLine: number;
+  /**
+   * 이 포지션에 추가 매수(물타기/불타기)가 적용된 횟수. 최초 진입 시 0이고,
+   * `addToPosition` 호출마다 1씩 늘어난다. UI가 "추가 N회" 같은 표시를 하거나
+   * 직전 스냅샷과 비교해 방금 추가 매수가 있었는지 판단하는 데 쓰인다.
+   */
+  readonly addCount: number;
 }
 
 /** `evaluatePosition`의 순수 계산 결과. 청산 여부와 무관하게 "지금 청산하면?"을 나타낸다. */

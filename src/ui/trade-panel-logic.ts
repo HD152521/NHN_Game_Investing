@@ -25,6 +25,14 @@ export interface TradePanelViewModel {
   readonly stake: number;
   /** 현재 선택된 투입 비율. */
   readonly stakeRatio: StakeRatio;
+  /** 평균 단가. 미보유면 0. */
+  readonly avgEntryPrice: number;
+  /** 현재가. 미보유면 0. */
+  readonly currentPrice: number;
+  /** 추가 매수(물타기/불타기) 횟수. */
+  readonly addCount: number;
+  /** 추가 매수 가능 여부. */
+  readonly canAdd: boolean;
   readonly aum: number;
   readonly gold: number;
   /** 평가손익 (골드 환산, 음수 가능). */
@@ -44,6 +52,8 @@ export interface TradePanelViewModel {
 export interface TradePanelHandlers {
   readonly onOpen: (direction: Direction) => void;
   readonly onClose: () => void;
+  /** 현재 선택된 투입 비율(`stakeRatio`)로 추가 매수한다. 방향은 기존 포지션 그대로. */
+  readonly onAdd: (ratio: StakeRatio) => void;
   readonly onStakeRatioChange: (ratio: StakeRatio) => void;
 }
 
@@ -81,6 +91,18 @@ export function formatStakeRatioLabel(ratio: StakeRatio): string {
   return `${Math.round(ratio * 100)}%`;
 }
 
+/**
+ * 가격 포맷 — 평균 단가·현재가 표시에 쓴다. 미보유 상태(0 이하)는 값이 없다는
+ * 뜻이므로 "0"이 아니라 대시로 표기해 "가격이 0원"과 구분한다.
+ * 예: 128300.6 → "128,301", 0 → "-", -5 → "-"(방어적).
+ */
+export function formatPrice(price: number): string {
+  if (price <= 0) {
+    return '-';
+  }
+  return formatAmount(price);
+}
+
 /** 방향 표시 라벨. 미보유(`null`)는 대시로 표기한다. */
 export function resolveDirectionLabel(direction: Direction | null): string {
   if (direction === 'long') {
@@ -90,6 +112,32 @@ export function resolveDirectionLabel(direction: Direction | null): string {
     return 'SHORT ▼';
   }
   return '—';
+}
+
+/**
+ * 추가 매수 버튼 라벨. 방향은 바꿀 수 없으므로 어느 방향으로 추가되는지
+ * 라벨에 그대로 드러낸다 (예: "LONG 추가").
+ */
+export function resolveAddButtonLabel(direction: Direction | null): string {
+  if (direction === 'long') {
+    return 'LONG 추가';
+  }
+  if (direction === 'short') {
+    return 'SHORT 추가';
+  }
+  return '추가';
+}
+
+/**
+ * 추가 매수 횟수 표시 문구. 0회면 굳이 보여줄 정보가 아니므로 빈 문자열을
+ * 돌려준다 — 호출부가 이를 근거로 요소를 숨길 수 있다.
+ * 예: 0 → "", 2 → "추가 2회".
+ */
+export function resolveAddCountLabel(addCount: number): string {
+  if (addCount <= 0) {
+    return '';
+  }
+  return `추가 ${addCount}회`;
 }
 
 /** 손익 부호에 따른 색 분류. */
@@ -103,6 +151,28 @@ export function resolvePnlTone(pnl: number): PnlTone {
     return 'loss';
   }
   return 'flat';
+}
+
+/**
+ * 평균 단가 대비 현재가가 유리한지 불리한지 판정한다 — 추가 매수("물타기/불타기")
+ * 판단에 필요한 핵심 정보다.
+ *
+ * LONG은 현재가가 평균 단가보다 높으면 유리(profit), SHORT는 낮으면 유리하다.
+ * 정확히 같으면 flat. 방향이 없으면(미보유) flat으로 방어 처리한다.
+ */
+export function resolvePriceTone(
+  direction: Direction | null,
+  avgEntryPrice: number,
+  currentPrice: number,
+): PnlTone {
+  if (direction === null || currentPrice === avgEntryPrice) {
+    return 'flat';
+  }
+
+  const isFavorable =
+    direction === 'long' ? currentPrice > avgEntryPrice : currentPrice < avgEntryPrice;
+
+  return isFavorable ? 'profit' : 'loss';
 }
 
 /**
@@ -126,6 +196,7 @@ export function resolveStateClasses(vm: TradePanelViewModel): readonly string[] 
       classes.push('trade-panel--short');
     }
     classes.push(`trade-panel--${resolvePnlTone(vm.pnl)}`);
+    classes.push(vm.canAdd ? 'trade-panel--add-ready' : 'trade-panel--add-blocked');
   }
 
   return classes;
@@ -152,6 +223,10 @@ export function resolveAnnouncement(
 
   if (previous.holding && !next.holding) {
     return '청산 완료';
+  }
+
+  if (previous.holding && next.holding && next.addCount > previous.addCount) {
+    return `추가 매수 — 평균단가 ${formatPrice(next.avgEntryPrice)}`;
   }
 
   if (!previous.warning && next.warning) {

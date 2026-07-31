@@ -17,6 +17,9 @@ export type OpenError = 'ALREADY_OPEN' | 'MAX_POSITIONS' | 'INSUFFICIENT_AUM' | 
 /** 청산 실패 사유. */
 export type CloseError = 'NO_OPEN_POSITION' | 'MIN_HOLD_NOT_MET';
 
+/** 추가 매수 실패 사유. */
+export type AddError = 'NO_OPEN_POSITION' | 'MAX_POSITIONS' | 'INSUFFICIENT_AUM' | 'INVALID_STAKE';
+
 export interface OpenPositionInput {
   readonly wallet: Wallet;
   /** 이미 보유 중인 포지션. 있으면(null이 아니면) `ALREADY_OPEN`으로 거부한다 (FR-5.2). */
@@ -77,6 +80,97 @@ export function openPosition(input: OpenPositionInput): OpenPositionResult {
     openPrice: input.openPrice,
     openAtMs: input.openAtMs,
     liqLine: input.params.liquidationLine,
+    addCount: 0,
+  };
+
+  return { ok: true, position, wallet };
+}
+
+export interface AddToPositionInput {
+  readonly wallet: Wallet;
+  /** 추가 매수 대상 포지션. 없으면(null) `NO_OPEN_POSITION`으로 거부한다. */
+  readonly position: OpenPosition | null;
+  /**
+   * 이번 스테이지에서 지금까지 진입한 횟수. 추가 매수도 신규 진입과 마찬가지로
+   * `MAX_POSITIONS` 카운트를 소모한다 — 물타기를 반복해서 진입 횟수 제한을 우회할 수 없다.
+   */
+  readonly openCount: number;
+  /** 현재 AUM 대비 추가 투입 비율. `0 < stakeRatio <= 1`. */
+  readonly stakeRatio: number;
+  /** 서버가 자기 시계로 계산한 현재가. */
+  readonly price: number;
+  /** 재생 경과 ms 기준 추가 매수 시각. */
+  readonly atMs: number;
+  readonly params: PositionParams;
+}
+
+export type AddToPositionResult =
+  | { readonly ok: true; readonly position: OpenPosition; readonly wallet: Wallet }
+  | { readonly ok: false; readonly error: AddError };
+
+/**
+ * 보유 중인 포지션에 추가 매수(물타기/불타기)한다. 방향은 바꿀 수 없다 — 항상 기존
+ * 포지션과 같은 방향으로만 더한다.
+ *
+ * ```
+ * addStake = floor(AUM × stakeRatio)
+ * addFee   = round(addStake × feeRate)
+ * newStake = stake + addStake
+ * newFee   = fee + addFee                 (수수료는 누적, 진입 시 선차감 규칙과 동일)
+ * newPrice = (stake × openPrice + addStake × price) / newStake   (stake 가중 평균 단가)
+ * AUM     -= addStake
+ * ```
+ *
+ * `liqLine`(청산선 스냅샷)·`seq`·`openAtMs`는 **최초 진입 값을 그대로 유지**한다.
+ * 특히 `openAtMs`를 갱신하면 안 된다 — 추가 매수 때마다 최소 보유 시간(`minHoldMs`)이
+ * 리셋되어 청산을 무한정 지연시키는 우회로가 생긴다.
+ *
+ * ★ 왜 청산선이 밀리는가 (설계 목적, 버그 아님) ★
+ * `evaluatePosition`은 `deltaPct`를 이 함수가 갱신하는 평균 단가(`openPrice`) 기준으로
+ * 계산한다. 손실 중에 추가 매수하면 평균 단가가 현재가 쪽으로 당겨지므로(위 가중평균 공식)
+ * `deltaPct`/`z`의 절대값이 줄어들고, 따라서 `r = payoutBase × clamp(z, ...)`이 청산선
+ * (`-liqLine`)에서 멀어진다. **"물타기로 버티면 강제 청산까지의 여유가 늘어난다"는 이 게임의
+ * 핵심 트레이드오프이며, 그 대가로 AUM(원래 골드로 바꿔 타워를 세울 돈)이 줄어든다.**
+ * 이 부작용처럼 보이는 동작을 "고쳐서" `openPrice`를 그대로 두거나 별도 필드로 분리하면
+ * 이 기능의 설계 의도 자체가 사라지므로 되돌리지 말 것.
+ */
+export function addToPosition(input: AddToPositionInput): AddToPositionResult {
+  if (input.position === null) {
+    return { ok: false, error: 'NO_OPEN_POSITION' };
+  }
+  if (input.openCount >= input.params.maxPositions) {
+    return { ok: false, error: 'MAX_POSITIONS' };
+  }
+  if (!(input.stakeRatio > 0) || input.stakeRatio > 1) {
+    return { ok: false, error: 'INVALID_STAKE' };
+  }
+
+  // stake는 정수 재화이므로 내림 처리한다 — openPosition과 동일한 이유(AUM 초과 방지).
+  const addStake = Math.floor(input.wallet.aum * input.stakeRatio);
+  if (addStake <= 0 || addStake > input.wallet.aum) {
+    return { ok: false, error: 'INSUFFICIENT_AUM' };
+  }
+
+  const addFee = Math.round(addStake * input.params.feeRate);
+  const newStake = input.position.stake + addStake;
+  const newFee = input.position.fee + addFee;
+  const newOpenPrice =
+    (input.position.stake * input.position.openPrice + addStake * input.price) / newStake;
+
+  const wallet: Wallet = {
+    gold: input.wallet.gold,
+    aum: input.wallet.aum - addStake,
+  };
+
+  const position: OpenPosition = {
+    seq: input.position.seq,
+    direction: input.position.direction,
+    stake: newStake,
+    fee: newFee,
+    openPrice: newOpenPrice,
+    openAtMs: input.position.openAtMs,
+    liqLine: input.position.liqLine,
+    addCount: input.position.addCount + 1,
   };
 
   return { ok: true, position, wallet };

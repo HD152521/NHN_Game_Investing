@@ -35,7 +35,13 @@ import type {
   PositionParams,
   Wallet,
 } from '../position';
-import { DEFAULT_POSITION_PARAMS, closePosition, evaluatePosition, openPosition } from '../position';
+import {
+  DEFAULT_POSITION_PARAMS,
+  addToPosition,
+  closePosition,
+  evaluatePosition,
+  openPosition,
+} from '../position';
 
 /** PRD §9.2 — 스테이지 시작 재화. */
 export const STARTING_GOLD = 200;
@@ -229,6 +235,45 @@ export class StageSession {
     this.wallet = result.wallet;
     this.openCount += 1;
     this.seq += 1;
+  }
+
+  /**
+   * 추가 매수 (물타기·불타기).
+   *
+   * 평균 단가가 움직이면 강제 청산선도 함께 밀린다 — 이건 부작용이 아니라 설계 목적이다.
+   * 대신 여기 들어간 AUM은 골드로 바꿔 타워를 세울 수 있었던 자원이므로,
+   * 버티는 대가로 방어가 얇아진다. 이 트레이드오프가 매매와 전투를 맞물리게 한다.
+   */
+  addTrade(stakeRatio: number, elapsedMs: number): void {
+    const result = addToPosition({
+      wallet: this.wallet,
+      position: this.position,
+      openCount: this.openCount,
+      stakeRatio,
+      price: this.replay.priceAt(elapsedMs),
+      atMs: elapsedMs,
+      params: this.params,
+    });
+
+    if (!result.ok) {
+      return;
+    }
+
+    this.position = result.position;
+    this.wallet = result.wallet;
+    this.openCount += 1;
+  }
+
+  /** 추가 매수가 가능한 상태인가 (버튼 활성 판정용). */
+  canAdd(): boolean {
+    return (
+      this.position !== null && this.openCount < this.params.maxPositions && this.wallet.aum > 0
+    );
+  }
+
+  /** 현재 재생 시각의 가격. UI가 평균 단가와 나란히 보여준다. */
+  priceAt(elapsedMs: number): number {
+    return this.replay.priceAt(elapsedMs);
   }
 
   closeTrade(elapsedMs: number): void {

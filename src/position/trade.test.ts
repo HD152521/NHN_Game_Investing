@@ -474,3 +474,4 @@ describe('closePosition — ClosedPosition 필드', () => {
     expect(closed.result.position.pnl).toBe(445);
   });
 });
+
