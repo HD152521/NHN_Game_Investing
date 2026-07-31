@@ -1,21 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
-import type { Enemy, Unit } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
+import { makeEnemy as enemy, makeUnit as unit } from './combat-fixtures.js';
 import { drawAllies, drawEnemies } from './draw-units.js';
 import { computeBattleLayout } from './layout.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
 const { palette } = createTheme();
 const layout = computeBattleLayout(800, 300);
-
-function unit(overrides: Partial<Unit> = {}): Unit {
-  return { id: 1, kind: 'intern', x: 0.4, hp: 50, maxHp: 50, cooldownMs: 0, ...overrides };
-}
-
-function enemy(overrides: Partial<Enemy> = {}): Enemy {
-  return { id: 1, lane: 'ground', x: 0.5, hp: 40, maxHp: 40, speed: 0.02, ...overrides };
-}
 
 describe('drawAllies — 역할별 실루엣이 서로 다르다', () => {
   test('intern(근접)은 몸통(원) + 무기선을 그린다', () => {

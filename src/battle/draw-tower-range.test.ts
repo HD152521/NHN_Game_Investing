@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
-import type { CombatState, Tower } from '../combat/types.js';
+import type { Tower } from '../combat/types.js';
 import { createTheme, parseHex } from '../design/index.js';
 import { drawBattle } from './battle.js';
+import { makeCombatState as combatState, makeTower } from './combat-fixtures.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
 const { palette } = createTheme();
@@ -10,25 +11,8 @@ const { palette } = createTheme();
 const WIDTH = 800;
 const HEIGHT = 300;
 
-function combatState(overrides: Partial<CombatState> = {}): CombatState {
-  return {
-    phase: 'running',
-    wave: 1,
-    waveCount: 5,
-    waveElapsedMs: 0,
-    enemies: [],
-    units: [],
-    towers: [],
-    baseHp: 100,
-    maxBaseHp: 100,
-    towerSlots: 6,
-    skillCooldownMs: 0,
-    ...overrides,
-  };
-}
-
 function basicTower(overrides: Partial<Tower> = {}): Tower {
-  return { slot: 0, kind: 'basic', level: 1, cooldownMs: 0, ...overrides };
+  return makeTower({ kind: 'basic', ...overrides });
 }
 
 /** 사거리 띠는 GOLD를 반투명(rgba)으로 파생한 색을 쓴다 — MUTED 계열 rgba(HUD 게이지 등)와

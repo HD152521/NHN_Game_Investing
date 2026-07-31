@@ -1,43 +1,19 @@
 import { describe, expect, test } from 'vitest';
 
-import type { CombatState, Enemy, Tower, Unit } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
 import { drawBattle } from './battle.js';
+import {
+  makeCombatState as combatState,
+  makeEnemy as enemy,
+  makeTower as tower,
+  makeUnit as unit,
+} from './combat-fixtures.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
 const { palette } = createTheme();
 
 const WIDTH = 800;
 const HEIGHT = 300;
-
-function combatState(overrides: Partial<CombatState> = {}): CombatState {
-  return {
-    phase: 'running',
-    wave: 1,
-    waveCount: 5,
-    waveElapsedMs: 0,
-    enemies: [],
-    units: [],
-    towers: [],
-    baseHp: 100,
-    maxBaseHp: 100,
-    towerSlots: 6,
-    skillCooldownMs: 0,
-    ...overrides,
-  };
-}
-
-function enemy(overrides: Partial<Enemy> = {}): Enemy {
-  return { id: 1, lane: 'ground', x: 0.7, hp: 50, maxHp: 100, speed: 0.02, ...overrides };
-}
-
-function unit(overrides: Partial<Unit> = {}): Unit {
-  return { id: 1, kind: 'intern', x: 0.3, hp: 30, maxHp: 30, cooldownMs: 0, ...overrides };
-}
-
-function tower(overrides: Partial<Tower> = {}): Tower {
-  return { slot: 0, kind: 'basic', level: 1, cooldownMs: 0, ...overrides };
-}
 
 function fillStyles(ctx: ReturnType<typeof createFakeBattleCtx>): string[] {
   return ctx.calls

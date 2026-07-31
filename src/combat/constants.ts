@@ -162,12 +162,18 @@ export const ENEMY_SPEED_GROUND = 1 / 22; // 라인(x:1→0) 완주 약 22초
 export const ENEMY_SPEED_AIR = 1 / 16; // 완주 약 16초
 
 /**
- * 적 근접 공격력(유닛과 교전 시 초당 피해). `Enemy` 타입(types.ts, 수정 금지)에는 쿨다운
- * 필드가 없어 이산 발사 대신 연속 DPS로 단순화했다. 웨이브 무관 고정값 — 후반 웨이브의
- * 난이도는 (baseHP × heat)로 오래 버티는 데서 나오게 하고, 공격력까지 올리면 조합 폭발적으로
- * 어려워진다.
+ * 적 근접 공격 1회 피해량과 공격 주기(ms). PM이 `Enemy` 타입(types.ts)에 damage/
+ * attackCooldownMs/cooldownMs 필드를 추가해, 이제 타워·유닛과 동일하게 "쿨다운 후 발사"하는
+ * 이산 모델로 통일한다(예전엔 Enemy에 쿨다운 필드가 없어 ENEMY_MELEE_DPS라는 연속 DPS로
+ * 단순화했었다).
+ *
+ * 기존 체감 DPS(9)를 그대로 유지하는 게 목표라 damage / (attackCooldownMs/1000) = 9가 되도록
+ * 역산했다 — 정수로 딱 떨어지는 조합 중 가장 단순한 damage=9, attackCooldownMs=1000(1초)을
+ * 골랐다. 웨이브 무관 고정값인 이유는 이전과 동일(후반 웨이브 난이도는 baseHP × heat로 오래
+ * 버티는 데서 나오게 하고, 공격력까지 올리면 조합 폭발적으로 어려워진다).
  */
-export const ENEMY_MELEE_DPS = 9;
+export const ENEMY_DAMAGE = 9;
+export const ENEMY_ATTACK_COOLDOWN_MS = 1000;
 
 /**
  * 적 1체가 본진(x<=0)에 도달했을 때 입히는 고정 피해. BASE_HP=100 기준으로, 마지막 웨이브

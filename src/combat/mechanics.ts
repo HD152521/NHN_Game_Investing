@@ -5,17 +5,7 @@
  * DOM·타이머·전역 상태는 참조하지 않으며, 경과 시간(dtMs)은 전부 호출자가 주입한다.
  */
 
-import {
-  BASE_DAMAGE_PER_LEAK,
-  ENEMY_MELEE_DPS,
-  TOWER_COOLDOWN_MS,
-  TOWER_DAMAGE,
-  TOWER_RANGE,
-  UNIT_COOLDOWN_MS,
-  UNIT_DAMAGE,
-  UNIT_MELEE_RANGE,
-  UNIT_RANGE,
-} from './constants';
+import { BASE_DAMAGE_PER_LEAK, TOWER_COOLDOWN_MS, TOWER_DAMAGE, TOWER_RANGE } from './constants';
 import type { Enemy, Tower, Unit } from './types';
 
 /** 남은 쿨다운(ms)을 dtMs만큼 줄인다. 0 아래로는 내려가지 않는다. */
@@ -97,11 +87,21 @@ export interface EngagementResult {
  * — 탱커가 원거리 유닛보다 먼저 적과 붙어야 "탱커가 앞에 서면 원거리가 보호받는" 구도가
  * 나온다(기획 의도).
  *
- * 각 쌍은 유닛의 사거리(`UNIT_RANGE`) 안에 적이 들어와야 교전을 시작한다 — 사거리 밖이면
+ * 스탯은 전부 개체(`unit.range`/`unit.damage`/`enemy.range`/`enemy.damage` 등)에서 읽는다 —
+ * `kind`로 전역 상수 테이블을 조회하지 않는다(types.ts 참고). 부서 업그레이드(FR-11)가
+ * 개체별로 다른 스탯을 요구하므로, 이 파일이 조회 대신 개체 필드를 읽어야 그 기능이 이 위에
+ * 자연스럽게 올라간다.
+ *
+ * 각 쌍은 유닛의 사거리(`unit.range`) 안에 적이 들어와야 교전을 시작한다 — 사거리 밖이면
  * 이번 틱에 아무 일도 없이 각자 이동한다. 사거리 안에 들어오면 유닛은 전진을 멈추고
- * 공격하지만, 적은 그보다 짧은 밀착 사거리(`UNIT_MELEE_RANGE`) 안까지 접근해야만 반격할 수
- * 있다 — 원거리 유닛(analyst)은 이 둘의 차이만큼 "일방적으로 때리기만 하는 구간"을 갖는다.
- * 근접·탱커는 사거리 자체가 밀착 거리와 같아 이 구간이 사실상 없다(밀착해야만 교전).
+ * 공격하지만, 적은 그보다 짧은 자신의 밀착 사거리(`enemy.range`, 근접이라 보통 유닛의 밀착
+ * 거리와 같은 값) 안까지 접근해야만 반격할 수 있다 — 원거리 유닛(analyst)은 이 둘의 차이만큼
+ * "일방적으로 때리기만 하는 구간"을 갖는다. 근접·탱커는 사거리 자체가 밀착 거리와 같아 이
+ * 구간이 사실상 없다(밀착해야만 교전).
+ *
+ * 유닛·적 모두 "쿨다운 후 발사" 모델이다(각자 `cooldownMs`를 dtMs만큼 줄이다가 0 이하가 되면
+ * 공격하고 자신의 `attackCooldownMs`로 재장전). 교전 중이 아니어도 쿨다운은 계속 줄어든다 —
+ * 사거리 안에 들어오는 순간 바로 쏠 수 있어야 하기 때문이다.
  *
  * 공중 적은 유닛과 절대 교전하지 않는다(FR-6.2 — 지상 유닛은 지상만 공격 가능, 원거리 유닛도
  * 예외 없음).
@@ -112,14 +112,14 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
     if (a.x !== b.x) {
       return b.x - a.x;
     }
-    return UNIT_RANGE[a.kind] - UNIT_RANGE[b.kind];
+    return a.range - b.range;
   });
   const pairCount = Math.min(groundEnemies.length, sortedUnits.length);
-  const dtSec = dtMs / 1000;
 
   const enemyHpDelta = new Map<number, number>();
   const unitHpDelta = new Map<number, number>();
   const unitCooldownOverride = new Map<number, number>();
+  const enemyCooldownOverride = new Map<number, number>();
   const blockedEnemyIds = new Set<number>();
   const blockedUnitIds = new Set<number>();
 
@@ -131,8 +131,7 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
     }
 
     const gap = enemy.x - unit.x;
-    const range = UNIT_RANGE[unit.kind];
-    if (gap > range) {
+    if (gap > unit.range) {
       // 사거리 밖 — 교전 없음. 둘 다 이번 틱에 자유롭게 이동한다.
       continue;
     }
@@ -140,28 +139,36 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
     // 사거리 안에 들어왔다 — 유닛은 전진을 멈추고 공격에 전념한다.
     blockedUnitIds.add(unit.id);
 
-    if (gap <= UNIT_MELEE_RANGE) {
-      // 밀착 거리 — 적도 멈춰서 반격한다. 근접·탱커는 사거리=밀착거리라 항상 이 분기다.
+    if (gap <= enemy.range) {
+      // 적의 밀착 거리 안 — 적도 멈춰서 반격한다. 근접·탱커는 사거리=밀착거리라 항상 이 분기다.
       blockedEnemyIds.add(enemy.id);
-      // 적 → 유닛: Enemy 타입(types.ts)에 쿨다운 필드가 없어 연속 DPS로 단순화한다.
-      unitHpDelta.set(unit.id, -(ENEMY_MELEE_DPS * dtSec));
+
+      // 적 → 유닛: 적도 쿨다운 후 발사 모델을 쓴다(Enemy.cooldownMs, types.ts).
+      const cooledEnemyCooldownMs = tickCooldown(enemy.cooldownMs, dtMs);
+      if (cooledEnemyCooldownMs <= 0) {
+        unitHpDelta.set(unit.id, -enemy.damage);
+        enemyCooldownOverride.set(enemy.id, enemy.attackCooldownMs);
+      } else {
+        enemyCooldownOverride.set(enemy.id, cooledEnemyCooldownMs);
+      }
     }
     // else: 사거리 안이지만 밀착 전 — 원거리 유닛의 일방적 사격 구간. 적은 멈추지도,
-    // 반격하지도 않고 계속 접근한다.
+    // 반격하지도 않고 계속 접근한다(쿨다운도 이 쌍에서는 다루지 않고 아래 fallback으로 흐른다).
 
-    // 유닛 → 적: Unit.cooldownMs를 살려 타워와 동일한 "쿨다운 후 발사" 모델을 쓴다.
-    const cooledCooldownMs = tickCooldown(unit.cooldownMs, dtMs);
-    if (cooledCooldownMs <= 0) {
-      enemyHpDelta.set(enemy.id, -UNIT_DAMAGE[unit.kind]);
-      unitCooldownOverride.set(unit.id, UNIT_COOLDOWN_MS);
+    // 유닛 → 적: 유닛도 자신의 attackCooldownMs로 재장전한다.
+    const cooledUnitCooldownMs = tickCooldown(unit.cooldownMs, dtMs);
+    if (cooledUnitCooldownMs <= 0) {
+      enemyHpDelta.set(enemy.id, -unit.damage);
+      unitCooldownOverride.set(unit.id, unit.attackCooldownMs);
     } else {
-      unitCooldownOverride.set(unit.id, cooledCooldownMs);
+      unitCooldownOverride.set(unit.id, cooledUnitCooldownMs);
     }
   }
 
   const nextEnemies = enemies.map((enemy) => {
-    const delta = enemyHpDelta.get(enemy.id);
-    return delta !== undefined ? { ...enemy, hp: enemy.hp + delta } : enemy;
+    const hpDelta = enemyHpDelta.get(enemy.id) ?? 0;
+    const cooldownMs = enemyCooldownOverride.get(enemy.id) ?? tickCooldown(enemy.cooldownMs, dtMs);
+    return { ...enemy, hp: enemy.hp + hpDelta, cooldownMs };
   });
 
   const nextUnits = units.map((unit) => {
@@ -184,12 +191,12 @@ export function moveEnemies(enemies: readonly Enemy[], blockedEnemyIds: Readonly
 }
 
 /** 교전 중이 아닌 유닛을 전진(x 증가)시킨다. x는 1 위로 올라가지 않는다. */
-export function moveUnits(units: readonly Unit[], blockedUnitIds: ReadonlySet<number>, dtSec: number, unitSpeed: number): Unit[] {
+export function moveUnits(units: readonly Unit[], blockedUnitIds: ReadonlySet<number>, dtSec: number): Unit[] {
   return units.map((unit) => {
     if (blockedUnitIds.has(unit.id)) {
       return unit;
     }
-    return { ...unit, x: Math.min(1, unit.x + unitSpeed * dtSec) };
+    return { ...unit, x: Math.min(1, unit.x + unit.speed * dtSec) };
   });
 }
 

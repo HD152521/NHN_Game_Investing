@@ -178,10 +178,20 @@ function jitterFor(id: number): number {
   return (bucket - 1) * UNIT_Y_JITTER;
 }
 
+/**
+ * 아군 유닛이 실제로 그려지는 화면 y(지상 고정 + id 기반 지터).
+ *
+ * 예광선(`draw-unit-tracers.ts`)이 공격선의 시작점을 이 실루엣의 실제 위치와 맞추려면
+ * 같은 지터 계산을 재사용해야 한다 — 여기서 export해 중복 계산을 막는다.
+ */
+export function allyUnitScreenY(unit: Unit, layout: BattleLayout): number {
+  return layout.groundY + jitterFor(unit.id);
+}
+
 export function drawAllies(ctx: BattleCtx, palette: Palette, layout: BattleLayout, units: readonly Unit[]): void {
   for (const unit of units) {
     const cx = progressToX(unit.x, layout);
-    const cy = layout.groundY + jitterFor(unit.id);
+    const cy = allyUnitScreenY(unit, layout);
 
     const draw = SHAPE_BY_UNIT_KIND[unit.kind];
     draw(ctx, palette, cx, cy);

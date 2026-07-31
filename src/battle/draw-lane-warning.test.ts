@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
-import type { CombatState, Enemy, Tower } from '../combat/types.js';
+import type { Enemy, Tower } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
 import { drawBattle } from './battle.js';
+import { makeCombatState as combatState, makeEnemy, makeTower } from './combat-fixtures.js';
 import { hasAirEnemy, hasAntiairTower, isAirLaneWarningActive } from './draw-lane-warning.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
@@ -11,37 +12,20 @@ const { palette } = createTheme();
 const WIDTH = 800;
 const HEIGHT = 300;
 
-function combatState(overrides: Partial<CombatState> = {}): CombatState {
-  return {
-    phase: 'running',
-    wave: 1,
-    waveCount: 5,
-    waveElapsedMs: 0,
-    enemies: [],
-    units: [],
-    towers: [],
-    baseHp: 100,
-    maxBaseHp: 100,
-    towerSlots: 6,
-    skillCooldownMs: 0,
-    ...overrides,
-  };
-}
-
 function airEnemy(overrides: Partial<Enemy> = {}): Enemy {
-  return { id: 1, lane: 'air', x: 0.6, hp: 40, maxHp: 40, speed: 0.03, ...overrides };
+  return makeEnemy({ lane: 'air', x: 0.6, speed: 0.03, ...overrides });
 }
 
 function groundEnemy(overrides: Partial<Enemy> = {}): Enemy {
-  return { id: 1, lane: 'ground', x: 0.6, hp: 40, maxHp: 40, speed: 0.02, ...overrides };
+  return makeEnemy({ lane: 'ground', x: 0.6, speed: 0.02, ...overrides });
 }
 
 function antiairTower(overrides: Partial<Tower> = {}): Tower {
-  return { slot: 0, kind: 'antiair', level: 1, cooldownMs: 0, ...overrides };
+  return makeTower({ kind: 'antiair', ...overrides });
 }
 
 function basicTower(overrides: Partial<Tower> = {}): Tower {
-  return { slot: 0, kind: 'basic', level: 1, cooldownMs: 0, ...overrides };
+  return makeTower({ kind: 'basic', ...overrides });
 }
 
 function warningTexts(ctx: ReturnType<typeof createFakeBattleCtx>): string[] {

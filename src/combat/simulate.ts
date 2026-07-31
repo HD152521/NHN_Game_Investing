@@ -8,7 +8,7 @@
  * `createCombat`/`step`이 만든 상태만 서로 주고받는다는 전제 하에 안전한 캐스팅이다.
  */
 
-import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS, UNIT_SPEED } from './constants';
+import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS } from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks, moveEnemies, moveUnits } from './mechanics';
 import type { CombatStateInternal } from './state';
 import type { CombatEvents, CombatParams, CombatState, Enemy } from './types';
@@ -61,7 +61,20 @@ function spawnDue(
     if (!spec) {
       continue;
     }
-    spawned.push({ id: nextEnemyId, lane: spec.lane, x: 1, hp: spec.hp, maxHp: spec.hp, speed: spec.speed });
+    spawned.push({
+      id: nextEnemyId,
+      lane: spec.lane,
+      x: 1,
+      hp: spec.hp,
+      maxHp: spec.hp,
+      speed: spec.speed,
+      damage: spec.damage,
+      range: spec.range,
+      attackCooldownMs: spec.attackCooldownMs,
+      // 유닛(summonUnit)은 소환 직후 워밍업 개념으로 cooldownMs를 attackCooldownMs로 채우지만,
+      // 적은 이미 행군해 온 상태로 등장하므로 밀착하자마자 바로 반격할 수 있게 0으로 스폰한다.
+      cooldownMs: 0,
+    });
     nextEnemyId += 1;
   }
 
@@ -132,7 +145,7 @@ function substep(
 
   const dtSec = dtMs / 1000;
   const movedEnemies = moveEnemies(engagement.enemies, engagement.blockedEnemyIds, dtSec);
-  const movedUnits = moveUnits(engagement.units, engagement.blockedUnitIds, dtSec, UNIT_SPEED);
+  const movedUnits = moveUnits(engagement.units, engagement.blockedUnitIds, dtSec);
 
   const leakResult = collectLeaks(movedEnemies);
   const aumPerKill = aumDropPerKill(waveInfo.wave, params);

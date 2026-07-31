@@ -16,6 +16,7 @@ import { drawEnemyBase, drawHq } from './draw-structures.js';
 import { drawTowerRangePreview } from './draw-tower-range.js';
 import { drawTowers } from './draw-towers.js';
 import { drawTracers } from './draw-tracers.js';
+import { drawUnitTracers } from './draw-unit-tracers.js';
 import { drawAllies, drawEnemies } from './draw-units.js';
 import { computeBattleLayout } from './layout.js';
 import type { BattleCtx } from './surface.js';
@@ -53,5 +54,6 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   drawAllies(ctx, palette, layout, state.units);
   // 예광선은 타워·유닛·적을 전부 그린 뒤 마지막에 그려 발사 연출이 항상 위에 보이게 한다.
   drawTracers(ctx, palette, layout, state);
+  drawUnitTracers(ctx, palette, layout, state);
   drawHud(ctx, palette, layout, state);
 }

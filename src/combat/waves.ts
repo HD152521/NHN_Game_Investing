@@ -9,18 +9,33 @@
 import {
   AIR_ENEMY_SHARE,
   AIR_WAVE_NUMBERS,
+  ENEMY_ATTACK_COOLDOWN_MS,
+  ENEMY_DAMAGE,
   ENEMY_SPEED_AIR,
   ENEMY_SPEED_GROUND,
+  UNIT_MELEE_RANGE,
   WAVE_BASE_COUNT,
   WAVE_BASE_HP,
 } from './constants';
 import type { CombatParams, Lane } from './types';
 
-/** 스폰될 적 1체의 스펙. */
+/**
+ * 스폰될 적 1체의 스펙.
+ *
+ * `damage`/`range`/`attackCooldownMs`는 개체(Enemy)에 실릴 전투 스탯의 출처다 — 지금은
+ * 전부 웨이브 무관 고정값(ENEMY_DAMAGE 등)이지만, 스펙을 여기서 명시적으로 채워둬야
+ * 나중에 웨이브별로 값을 다르게 주는 확장(부서 업그레이드 등)이 이 한 곳만 고치면 되게 된다.
+ */
 export interface EnemySpec {
   readonly lane: Lane;
   readonly hp: number;
   readonly speed: number;
+  /** 공격 1회 피해량. */
+  readonly damage: number;
+  /** 공격 사거리(진행도 단위). 근접이므로 유닛의 밀착 거리와 같다. */
+  readonly range: number;
+  /** 공격 주기(ms). */
+  readonly attackCooldownMs: number;
 }
 
 /**
@@ -43,10 +58,24 @@ export function spawnPlanFor(wave: number, params: CombatParams): EnemySpec[] {
 
   const specs: EnemySpec[] = [];
   for (let i = 0; i < groundCount; i += 1) {
-    specs.push({ lane: 'ground', hp, speed: ENEMY_SPEED_GROUND });
+    specs.push({
+      lane: 'ground',
+      hp,
+      speed: ENEMY_SPEED_GROUND,
+      damage: ENEMY_DAMAGE,
+      range: UNIT_MELEE_RANGE,
+      attackCooldownMs: ENEMY_ATTACK_COOLDOWN_MS,
+    });
   }
   for (let i = 0; i < airCount; i += 1) {
-    specs.push({ lane: 'air', hp, speed: ENEMY_SPEED_AIR });
+    specs.push({
+      lane: 'air',
+      hp,
+      speed: ENEMY_SPEED_AIR,
+      damage: ENEMY_DAMAGE,
+      range: UNIT_MELEE_RANGE,
+      attackCooldownMs: ENEMY_ATTACK_COOLDOWN_MS,
+    });
   }
   return specs;
 }

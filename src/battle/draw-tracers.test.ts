@@ -1,39 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
 import { TOWER_COOLDOWN_MS } from '../combat/index.js';
-import type { CombatState, Enemy, Tower } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
+import { makeCombatState as combatState, makeEnemy as enemy, makeTower as tower } from './combat-fixtures.js';
 import { drawTracers } from './draw-tracers.js';
 import { computeBattleLayout } from './layout.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
 const { palette } = createTheme();
 const layout = computeBattleLayout(1024, 300);
-
-function combatState(overrides: Partial<CombatState> = {}): CombatState {
-  return {
-    phase: 'running',
-    wave: 1,
-    waveCount: 5,
-    waveElapsedMs: 0,
-    enemies: [],
-    units: [],
-    towers: [],
-    baseHp: 100,
-    maxBaseHp: 100,
-    towerSlots: 6,
-    skillCooldownMs: 0,
-    ...overrides,
-  };
-}
-
-function tower(overrides: Partial<Tower> = {}): Tower {
-  return { slot: 0, kind: 'basic', level: 1, cooldownMs: 0, ...overrides };
-}
-
-function enemy(overrides: Partial<Enemy> = {}): Enemy {
-  return { id: 1, lane: 'ground', x: 0.3, hp: 50, maxHp: 100, speed: 0.02, ...overrides };
-}
 
 function hasTracerLine(ctx: ReturnType<typeof createFakeBattleCtx>): boolean {
   return ctx.calls.some((c) => c.kind === 'lineTo');

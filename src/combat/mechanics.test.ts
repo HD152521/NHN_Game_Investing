@@ -1,18 +1,50 @@
 import { describe, expect, test } from 'vitest';
 
+import {
+  ENEMY_ATTACK_COOLDOWN_MS,
+  ENEMY_DAMAGE,
+  UNIT_COOLDOWN_MS,
+  UNIT_DAMAGE,
+  UNIT_MELEE_RANGE,
+  UNIT_RANGE,
+  UNIT_SPEED,
+} from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks } from './mechanics';
 import type { Enemy, Tower, Unit } from './types';
 
+/** 기본값은 근접 적(밀착 사거리, 웨이브 무관 고정 DPS)의 실제 스폰 값과 같게 잡는다. */
 function makeEnemy(overrides: Partial<Enemy> & Pick<Enemy, 'id' | 'lane'>): Enemy {
-  return { x: 0.1, hp: 100, maxHp: 100, speed: 0, ...overrides };
+  return {
+    x: 0.1,
+    hp: 100,
+    maxHp: 100,
+    speed: 0,
+    damage: ENEMY_DAMAGE,
+    range: UNIT_MELEE_RANGE,
+    attackCooldownMs: ENEMY_ATTACK_COOLDOWN_MS,
+    cooldownMs: 0,
+    ...overrides,
+  };
 }
 
 function makeTower(overrides: Partial<Tower> & Pick<Tower, 'slot' | 'kind'>): Tower {
   return { level: 1, cooldownMs: 0, ...overrides };
 }
 
+/** 기본값은 해당 kind의 실제 소환 스탯(constants.ts)과 같게 잡아, 기존 테스트가 kind만으로도
+ * 올바른 사거리·데미지를 갖도록 한다. */
 function makeUnit(overrides: Partial<Unit> & Pick<Unit, 'id' | 'kind'>): Unit {
-  return { x: 0, hp: 100, maxHp: 100, cooldownMs: 0, ...overrides };
+  return {
+    x: 0,
+    hp: 100,
+    maxHp: 100,
+    speed: UNIT_SPEED,
+    damage: UNIT_DAMAGE[overrides.kind],
+    range: UNIT_RANGE[overrides.kind],
+    attackCooldownMs: UNIT_COOLDOWN_MS,
+    cooldownMs: 0,
+    ...overrides,
+  };
 }
 
 describe('applyTowerFire — FR-6.2 레인 표적 제한', () => {
@@ -96,16 +128,21 @@ describe('applyEngagement — FR-6.5 유닛-적 교전', () => {
     expect(result.units[0]?.hp).toBe(100);
   });
 
-  test('유닛 쿨다운이 남아 있으면 이번 틱에 적을 때리지 못하지만 밀착 상태면 적의 공격은 계속 받는다', () => {
+  test('유닛 쿨다운이 남아 있으면 이번 틱에 적을 때리지 못하지만, 밀착한 적은 준비되어 있으면 즉시 반격한다', () => {
     // gap = 0.1 - 0.06 = 0.04 ≤ UNIT_MELEE_RANGE(0.05) — 밀착 거리.
-    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.1, hp: 100, maxHp: 100 })];
+    // 적·유닛 모두 이산(쿨다운 후 발사) 모델이라, 준비된 쪽은 dtMs가 짧아도 1회분 전체 피해를
+    // 즉시 입힌다 — 예전의 연속 DPS(9 × dtSec) 근사는 더 이상 쓰지 않는다.
+    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.1, hp: 100, maxHp: 100, cooldownMs: 0 })];
     const units: Unit[] = [makeUnit({ id: 1, kind: 'intern', x: 0.06, hp: 100, maxHp: 100, cooldownMs: 500 })];
 
     const result = applyEngagement(enemies, units, 200);
 
     expect(result.enemies[0]?.hp).toBe(100); // 유닛 쿨다운(500) > dtMs(200)라 아직 못 쏨
     expect(result.units[0]?.cooldownMs).toBe(300);
-    expect(result.units[0]?.hp).toBeCloseTo(100 - 9 * 0.2);
+    // 적은 쿨다운 0(준비됨)이었으므로 dtMs와 무관하게 1회 공격(ENEMY_DAMAGE)을 즉시 넣고
+    // 자신의 쿨다운을 ENEMY_ATTACK_COOLDOWN_MS로 재장전한다.
+    expect(result.units[0]?.hp).toBe(100 - ENEMY_DAMAGE);
+    expect(result.enemies[0]?.cooldownMs).toBe(ENEMY_ATTACK_COOLDOWN_MS);
   });
 
   test('사거리 밖(교전 전)이면 서로 이동만 하고 피해를 주고받지 않는다', () => {

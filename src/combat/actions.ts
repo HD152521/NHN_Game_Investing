@@ -18,7 +18,10 @@ import {
   TOWER_UPGRADE_COST,
   UNIT_COOLDOWN_MS,
   UNIT_COST,
+  UNIT_DAMAGE,
   UNIT_HP,
+  UNIT_RANGE,
+  UNIT_SPEED,
 } from './constants';
 import type { CombatStateInternal } from './state';
 import type { CombatParams, CombatState, Tower, TowerKind, Unit, UnitKind } from './types';
@@ -87,8 +90,21 @@ export function summonUnit(state: CombatState, kind: UnitKind, gold: number): Ac
     return { state: internal, gold, ok: false };
   }
 
+  // 소환 시점의 상수 테이블 값을 개체에 그대로 실어 스냅샷한다 — 이후 부서 업그레이드(FR-11)로
+  // 상수가 바뀌어도 이미 소환된 유닛의 스탯은 소급되지 않아야 하므로, 조회가 아니라 복사다.
   const hp = UNIT_HP[kind];
-  const newUnit: Unit = { id: internal.nextUnitId, kind, x: 0, hp, maxHp: hp, cooldownMs: UNIT_COOLDOWN_MS };
+  const newUnit: Unit = {
+    id: internal.nextUnitId,
+    kind,
+    x: 0,
+    hp,
+    maxHp: hp,
+    speed: UNIT_SPEED,
+    damage: UNIT_DAMAGE[kind],
+    range: UNIT_RANGE[kind],
+    attackCooldownMs: UNIT_COOLDOWN_MS,
+    cooldownMs: UNIT_COOLDOWN_MS,
+  };
   const units: Unit[] = [...internal.units, newUnit];
   const nextState: CombatStateInternal = { ...internal, units, nextUnitId: internal.nextUnitId + 1 };
 

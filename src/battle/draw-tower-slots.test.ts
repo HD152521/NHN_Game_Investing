@@ -1,30 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
-import type { CombatState } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
+import { makeCombatState as combatState, makeTower } from './combat-fixtures.js';
 import { drawTowers } from './draw-towers.js';
 import { computeBattleLayout } from './layout.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
 const { palette } = createTheme();
 const layout = computeBattleLayout(1024, 300);
-
-function combatState(overrides: Partial<CombatState> = {}): CombatState {
-  return {
-    phase: 'running',
-    wave: 1,
-    waveCount: 5,
-    waveElapsedMs: 0,
-    enemies: [],
-    units: [],
-    towers: [],
-    baseHp: 100,
-    maxBaseHp: 100,
-    towerSlots: 6,
-    skillCooldownMs: 0,
-    ...overrides,
-  };
-}
 
 function fillTexts(ctx: ReturnType<typeof createFakeBattleCtx>): string[] {
   return ctx.calls.filter((c) => c.kind === 'fillText').map((c) => (c.kind === 'fillText' ? c.text : ''));
@@ -55,7 +38,7 @@ describe('drawTowers — 슬롯 받침 · 슬롯 번호(가시성 수정)', () =
 
   test('받침은 지어진 타워가 있는 슬롯에도 그려진다(항상 슬롯 자리를 표시)', () => {
     const ctx = createFakeBattleCtx();
-    const state = combatState({ towers: [{ slot: 0, kind: 'basic', level: 1, cooldownMs: 0 }] });
+    const state = combatState({ towers: [makeTower()] });
 
     drawTowers(ctx, palette, layout, state, null, null);
 

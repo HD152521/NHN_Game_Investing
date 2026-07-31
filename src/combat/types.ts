@@ -18,15 +18,37 @@ export type TowerKind = 'basic' | 'antiair' | 'splash';
 /** 유닛 3종 (FR-6.5). */
 export type UnitKind = 'intern' | 'analyst' | 'trader';
 
-export interface Enemy {
+/**
+ * 전투에 참여하는 개체가 공통으로 갖는 스탯.
+ *
+ * ★ 스탯은 **개체에 실린다.** 종류(kind)로 전역 상수 테이블을 찾아 쓰지 마라.
+ *   상수 테이블은 개체를 만들 때의 **기본값 출처**일 뿐이다.
+ *
+ *   이유: 부서 업그레이드(FR-11)가 R&D +피해 / 인사팀 +HP처럼 **개체마다 다른 스탯**을
+ *   요구한다. 스탯을 kind로 조회하면 같은 종류의 유닛이 전부 같은 값을 가질 수밖에 없어
+ *   이 기능을 표현할 수 없다. 소환 시점의 부서 레벨이 스냅샷되어야 하는 요구사항
+ *   (진행 중 업그레이드가 기존 유닛에 소급되지 않음)도 개체 스탯이라야 성립한다.
+ */
+export interface Combatant {
+  readonly hp: number;
+  readonly maxHp: number;
+  /** 초당 진행도 이동량. */
+  readonly speed: number;
+  /** 공격 1회 피해량. */
+  readonly damage: number;
+  /** 공격 사거리(진행도 단위). 이 거리 안에 표적이 들어오면 멈추고 공격한다. */
+  readonly range: number;
+  /** 공격 주기(ms). 이 값이 곧 재장전 시간이다. */
+  readonly attackCooldownMs: number;
+  /** 남은 재장전 시간(ms). 0이면 발사 가능. */
+  readonly cooldownMs: number;
+}
+
+export interface Enemy extends Combatant {
   readonly id: number;
   readonly lane: Lane;
   /** 1(적 본진)에서 0(아군 사옥) 쪽으로 감소한다. */
   readonly x: number;
-  readonly hp: number;
-  readonly maxHp: number;
-  /** 초당 진행도 감소량. */
-  readonly speed: number;
 }
 
 export interface Tower {
@@ -39,14 +61,11 @@ export interface Tower {
   readonly cooldownMs: number;
 }
 
-export interface Unit {
+export interface Unit extends Combatant {
   readonly id: number;
   readonly kind: UnitKind;
   /** 0(아군 사옥)에서 1(적 본진) 쪽으로 증가한다. */
   readonly x: number;
-  readonly hp: number;
-  readonly maxHp: number;
-  readonly cooldownMs: number;
 }
 
 /** 이번 프레임에 일어난 일. 렌더러의 이펙트와 셸의 재화 반영에 쓴다. */

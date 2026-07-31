@@ -8,16 +8,45 @@
 
 import { describe, expect, test } from 'vitest';
 
-import { UNIT_DAMAGE, UNIT_HP, UNIT_MELEE_RANGE, UNIT_RANGE } from './constants';
+import {
+  ENEMY_ATTACK_COOLDOWN_MS,
+  ENEMY_DAMAGE,
+  UNIT_COOLDOWN_MS,
+  UNIT_DAMAGE,
+  UNIT_HP,
+  UNIT_MELEE_RANGE,
+  UNIT_RANGE,
+  UNIT_SPEED,
+} from './constants';
 import { applyEngagement } from './mechanics';
 import type { Enemy, Unit } from './types';
 
 function makeEnemy(overrides: Partial<Enemy> & Pick<Enemy, 'id' | 'lane'>): Enemy {
-  return { x: 0.1, hp: 100, maxHp: 100, speed: 0, ...overrides };
+  return {
+    x: 0.1,
+    hp: 100,
+    maxHp: 100,
+    speed: 0,
+    damage: ENEMY_DAMAGE,
+    range: UNIT_MELEE_RANGE,
+    attackCooldownMs: ENEMY_ATTACK_COOLDOWN_MS,
+    cooldownMs: 0,
+    ...overrides,
+  };
 }
 
 function makeUnit(overrides: Partial<Unit> & Pick<Unit, 'id' | 'kind'>): Unit {
-  return { x: 0, hp: 100, maxHp: 100, cooldownMs: 0, ...overrides };
+  return {
+    x: 0,
+    hp: 100,
+    maxHp: 100,
+    speed: UNIT_SPEED,
+    damage: UNIT_DAMAGE[overrides.kind],
+    range: UNIT_RANGE[overrides.kind],
+    attackCooldownMs: UNIT_COOLDOWN_MS,
+    cooldownMs: 0,
+    ...overrides,
+  };
 }
 
 describe('유닛 스탯 — 역할 분화 (기획 요구사항)', () => {
@@ -51,6 +80,22 @@ describe('applyEngagement — 원거리 유닛의 일방적 사격 구간', () =
     expect(result.enemies[0]?.hp).toBe(100 - UNIT_DAMAGE.analyst);
     expect(result.units[0]?.hp).toBe(100); // 무피해 — 일방적 사격 구간
   });
+
+  test.each([0.1, 0.15, 0.18, 0.2])(
+    'analyst는 gap=%s(밀착 거리~사거리 전 구간)에서 일방적으로 사격한다 — 적은 반격하지 못한다',
+    (gap) => {
+      // UNIT_MELEE_RANGE(0.05) < gap ≤ UNIT_RANGE.analyst(0.2) 전 구간에서 일방적 사격이 유지돼야 한다.
+      const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: gap, hp: 100, maxHp: 100 })];
+      const units: Unit[] = [makeUnit({ id: 1, kind: 'analyst', x: 0, hp: 100, maxHp: 100 })];
+
+      const result = applyEngagement(enemies, units, 1000);
+
+      expect(result.blockedUnitIds.has(1)).toBe(true);
+      expect(result.blockedEnemyIds.has(1)).toBe(false);
+      expect(result.enemies[0]?.hp).toBe(100 - UNIT_DAMAGE.analyst);
+      expect(result.units[0]?.hp).toBe(100); // 무피해 — 일방적 사격 구간
+    },
+  );
 
   test('근거리(intern)는 같은 거리에서는 사거리 밖이라 아무 교전도 일어나지 않는다', () => {
     // gap = 0.15 > UNIT_RANGE.intern(UNIT_MELEE_RANGE=0.05) — 근거리는 이 거리에서 무력하다.
