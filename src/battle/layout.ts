@@ -33,13 +33,19 @@ const GROUND_Y_RATIO = 0.8;
 /** 타워 슬롯 줄 중심 y — 공중과 지상 사이(양쪽 레인을 모두 방어하는 위치). */
 const TOWER_ROW_Y_RATIO = 0.56;
 
-/** 슬롯 하나의 최대 폭/높이(px) — 슬롯이 아무리 넓어도 이 이상 커지지 않는다. */
-const SLOT_WIDTH_MAX = 56;
-const SLOT_HEIGHT_MAX = 44;
+/**
+ * 슬롯 하나의 최대 폭/높이(px) — 슬롯이 아무리 넓어도 이 이상 커지지 않는다.
+ *
+ * ★ 가시성 수정(플레이테스트: "포탑 슬롯도 안 보임"): 기존 56×44는 1024px 폭에 6칸이
+ *   배치될 때 칸(cell)당 약 130px 중 겨우 43%만 차지해 슬롯이 배경에 파묻혔다.
+ *   96×68로 키워 칸 대비 점유율을 크게 높인다(아래 SLOT_WIDTH_CELL_RATIO 참고).
+ */
+const SLOT_WIDTH_MAX = 96;
+const SLOT_HEIGHT_MAX = 68;
 /** 슬롯 칸(cell) 폭 대비 실제 그려질 슬롯 폭 비율 — 나머지는 슬롯 사이 여백이 된다. */
-const SLOT_WIDTH_CELL_RATIO = 0.72;
+const SLOT_WIDTH_CELL_RATIO = 0.82;
 /** 슬롯 높이 — 전장 영역 높이 대비 비율. */
-const SLOT_HEIGHT_RATIO = 0.22;
+const SLOT_HEIGHT_RATIO = 0.3;
 
 export interface BattleLayout {
   readonly width: number;

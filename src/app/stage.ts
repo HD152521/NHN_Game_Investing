@@ -26,7 +26,13 @@ import { STARTING_AUM, STARTING_GOLD, StageSession } from './session';
 const CHART_WIDTH = 1024;
 const CHART_HEIGHT = 200;
 const BATTLE_WIDTH = 1024;
-const BATTLE_HEIGHT = 300;
+/**
+ * 전장 높이 300 → 360.
+ *
+ * 슬롯이 96×68로 커지면서 300px에서는 타워 슬롯(146~214)과 공중(103~127)·지상(234~258)
+ * 사이 여유가 20px 밖에 남지 않아 요소가 서로 붙어 보였다. 360이면 위아래로 34px씩 확보된다.
+ */
+const BATTLE_HEIGHT = 360;
 
 /** FR-3.5 — 배속은 스테이지 시작 전에만 정해진다. */
 const SPEEDS = [1, 2, 4] as const;

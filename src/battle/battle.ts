@@ -9,11 +9,13 @@
 import type { CombatState, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import { drawBackground } from './draw-background.js';
+import { drawLaneGuides } from './draw-lane-guides.js';
 import { drawAirLaneWarning } from './draw-lane-warning.js';
 import { drawHud } from './draw-hud.js';
 import { drawEnemyBase, drawHq } from './draw-structures.js';
 import { drawTowerRangePreview } from './draw-tower-range.js';
 import { drawTowers } from './draw-towers.js';
+import { drawTracers } from './draw-tracers.js';
 import { drawAllies, drawEnemies } from './draw-units.js';
 import { computeBattleLayout } from './layout.js';
 import type { BattleCtx } from './surface.js';
@@ -41,6 +43,7 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   const layout = computeBattleLayout(width, height);
 
   drawBackground(ctx, palette, layout);
+  drawLaneGuides(ctx, palette, layout);
   drawAirLaneWarning(ctx, palette, layout, state);
   drawHq(ctx, palette, layout, state);
   drawEnemyBase(ctx, palette, layout);
@@ -48,5 +51,7 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   drawTowerRangePreview(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
   drawEnemies(ctx, palette, layout, state.enemies);
   drawAllies(ctx, palette, layout, state.units);
+  // 예광선은 타워·유닛·적을 전부 그린 뒤 마지막에 그려 발사 연출이 항상 위에 보이게 한다.
+  drawTracers(ctx, palette, layout, state);
   drawHud(ctx, palette, layout, state);
 }

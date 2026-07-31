@@ -5,6 +5,9 @@
  * "우리 쪽" 본진 체력이므로(적이 x=0 방향으로 밀고 들어와 baseDamage를 준다),
  * HP 바는 아군 사옥에만 그린다. 적 본진(우측)은 시각적 기준점일 뿐 체력 데이터가
  * 없으므로 HP 바를 그리지 않는다.
+ *
+ * ★ 가시성 수정: 몸통·액센트 비율을 키우고(0.62→0.68, 0.28→0.32) 전부 LINE 토큰
+ *   외곽선을 둘러 배경(스카이라인/지면)과 실루엣 경계를 확실히 분리한다.
  */
 
 import type { CombatState } from '../combat/types.js';
@@ -13,18 +16,20 @@ import { drawHpBar } from './draw-hp-bar.js';
 import type { BattleLayout } from './layout.js';
 import type { BattleCtx } from './surface.js';
 
-/** HP 바 높이(px). */
-const HP_BAR_HEIGHT = 5;
+/** HP 바 높이(px) — 가시성 수정으로 5→6. */
+const HP_BAR_HEIGHT = 6;
 /** HP 바와 건물 사이 여백(px). */
 const HP_BAR_GAP = 4;
-/** 건물 몸통이 영역 하단에서 차지하는 비율. */
-const BODY_HEIGHT_RATIO = 0.62;
+/** 건물 몸통이 영역 하단에서 차지하는 비율 — 가시성 수정으로 0.62→0.68. */
+const BODY_HEIGHT_RATIO = 0.68;
 /** 상단 액센트(음영) 블록의 폭 비율. */
 const ACCENT_WIDTH_RATIO = 0.55;
-/** 상단 액센트 블록의 높이 비율. */
-const ACCENT_HEIGHT_RATIO = 0.28;
+/** 상단 액센트 블록의 높이 비율 — 가시성 수정으로 0.28→0.32. */
+const ACCENT_HEIGHT_RATIO = 0.32;
 /** 좌우 여백(px) — 영역 가장자리에 완전히 붙지 않도록. */
 const SIDE_PADDING = 4;
+/** 실루엣 외곽선(LINE 토큰) 굵기(px). */
+const OUTLINE_LINE_WIDTH = 2;
 
 /** 아군 사옥 — 원형 실루엣 규약(§encoding `rounded`)을 반영해 상단 액센트에 둥근 느낌을 준다. */
 export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, state: CombatState): void {
@@ -37,13 +42,19 @@ export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, s
   const bodyTop = rect.y + rect.h - bodyHeight;
   ctx.fillStyle = palette.UP_ALLY;
   ctx.fillRect(x, bodyTop, w, bodyHeight);
+  ctx.strokeStyle = palette.LINE;
+  ctx.lineWidth = OUTLINE_LINE_WIDTH;
+  ctx.setLineDash([]);
+  ctx.strokeRect(x, bodyTop, w, bodyHeight);
 
   const accentWidth = w * ACCENT_WIDTH_RATIO;
   const accentHeight = rect.h * ACCENT_HEIGHT_RATIO;
   const accentX = x + (w - accentWidth) / 2;
-  const accentY = bodyTop - accentHeight;
+  const accentY = Math.max(rect.y, bodyTop - accentHeight);
   ctx.fillStyle = palette.UP_DEEP;
-  ctx.fillRect(accentX, Math.max(rect.y, accentY), accentWidth, accentHeight);
+  ctx.fillRect(accentX, accentY, accentWidth, accentHeight);
+  ctx.strokeStyle = palette.LINE;
+  ctx.strokeRect(accentX, accentY, accentWidth, accentHeight);
 
   drawHpBar(ctx, {
     x,
@@ -68,6 +79,10 @@ export function drawEnemyBase(ctx: BattleCtx, palette: Palette, layout: BattleLa
   const bodyTop = rect.y + rect.h - bodyHeight;
   ctx.fillStyle = palette.ENEMY_DOWN;
   ctx.fillRect(x, bodyTop, w, bodyHeight);
+  ctx.strokeStyle = palette.LINE;
+  ctx.lineWidth = OUTLINE_LINE_WIDTH;
+  ctx.setLineDash([]);
+  ctx.strokeRect(x, bodyTop, w, bodyHeight);
 
   // 각진 지붕(삼각형) — 적 진영의 뾰족한 실루엣.
   const roofHeight = rect.h * ACCENT_HEIGHT_RATIO;
@@ -78,4 +93,6 @@ export function drawEnemyBase(ctx: BattleCtx, palette: Palette, layout: BattleLa
   ctx.lineTo(x + w, bodyTop);
   ctx.closePath();
   ctx.fill();
+  ctx.strokeStyle = palette.LINE;
+  ctx.stroke();
 }

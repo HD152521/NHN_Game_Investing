@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import type { Unit } from '../combat/types.js';
+import type { Enemy, Unit } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
-import { drawAllies } from './draw-units.js';
+import { drawAllies, drawEnemies } from './draw-units.js';
 import { computeBattleLayout } from './layout.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
@@ -11,6 +11,10 @@ const layout = computeBattleLayout(800, 300);
 
 function unit(overrides: Partial<Unit> = {}): Unit {
   return { id: 1, kind: 'intern', x: 0.4, hp: 50, maxHp: 50, cooldownMs: 0, ...overrides };
+}
+
+function enemy(overrides: Partial<Enemy> = {}): Enemy {
+  return { id: 1, lane: 'ground', x: 0.5, hp: 40, maxHp: 40, speed: 0.02, ...overrides };
 }
 
 describe('drawAllies — 역할별 실루엣이 서로 다르다', () => {
@@ -70,5 +74,39 @@ describe('drawAllies — 역할별 실루엣이 서로 다르다', () => {
     if (internArc?.kind === 'arc') {
       expect(traderSpanY).toBeGreaterThan(internArc.radius * 2);
     }
+  });
+});
+
+describe('가시성 수정 — 모든 실루엣에 LINE 토큰 외곽선이 둘러진다', () => {
+  test('지상 적(마름모)에 LINE 색 외곽선이 그려진다', () => {
+    const ctx = createFakeBattleCtx();
+    drawEnemies(ctx, palette, layout, [enemy({ lane: 'ground' })]);
+
+    const outline = ctx.calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE);
+    expect(outline).toBe(true);
+  });
+
+  test('공중 적(쐐기)에 LINE 색 외곽선이 그려진다', () => {
+    const ctx = createFakeBattleCtx();
+    drawEnemies(ctx, palette, layout, [enemy({ lane: 'air' })]);
+
+    const outline = ctx.calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE);
+    expect(outline).toBe(true);
+  });
+
+  test('intern 몸통에 LINE 색 외곽선이 그려진다', () => {
+    const ctx = createFakeBattleCtx();
+    drawAllies(ctx, palette, layout, [unit({ kind: 'intern' })]);
+
+    const outline = ctx.calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE);
+    expect(outline).toBe(true);
+  });
+
+  test('analyst 몸통에 LINE 색 외곽선(strokeRect)이 그려진다', () => {
+    const ctx = createFakeBattleCtx();
+    drawAllies(ctx, palette, layout, [unit({ kind: 'analyst' })]);
+
+    const outline = ctx.calls.some((c) => c.kind === 'strokeRect' && c.strokeStyle === palette.LINE);
+    expect(outline).toBe(true);
   });
 });

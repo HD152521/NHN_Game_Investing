@@ -48,7 +48,8 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
   /**
    * 공통 시나리오: AUM 2000 → 25% 진입(stake 500, price 100, AUM 1500) →
    * 가격 90(손실 중)에서 AUM(1500)의 50% 추가 매수(addStake 750, addFee 8).
-   * newStake=1250, newFee=13, newOpenPrice=94(=(500*100+750*90)/1250).
+   * newStake=1250, newFee=13. 평균 단가는 "주식 수 가중"이다:
+   * shares=500/100=5, addShares=750/90=8.3333..., newOpenPrice=1250/13.3333...=93.75.
    */
   function openAndAddFixture() {
     const params = fixtureParams();
@@ -70,12 +71,12 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
     return { params, opened, added };
   }
 
-  test('1) 평균 단가가 stake 가중평균과 정확히 일치한다 (500·100 + 750·90 → 94)', () => {
+  test('1) 평균 단가가 주식 수 가중평균과 정확히 일치한다 (1250 / (5 + 8.3333...) → 93.75)', () => {
     const { added } = openAndAddFixture();
 
     expect(added.position.stake).toBe(1250);
     expect(added.position.fee).toBe(13);
-    expect(added.position.openPrice).toBeCloseTo(94, 10);
+    expect(added.position.openPrice).toBeCloseTo(93.75, 10);
   });
 
   test('2) 물타기로 청산선이 실제로 밀린다 — 추가 매수 후 r이 이전보다 덜 음수가 된다', () => {
@@ -83,11 +84,12 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
 
     // 추가 매수 전: openPrice=100 기준으로 현재가 90을 평가한다.
     const beforeEval = evaluatePosition(opened.position, 90, params);
-    // 추가 매수 후: 평균 단가가 94로 당겨진 상태에서 같은 현재가 90을 평가한다.
+    // 추가 매수 후: 평균 단가가 93.75로 당겨진 상태에서 같은 현재가 90을 평가한다.
+    // deltaPct=(90-93.75)/93.75*100=-4, z=-0.4, r=0.9*-0.4=-0.36 (정확한 값, 반올림 없음).
     const afterEval = evaluatePosition(added.position, 90, params);
 
     expect(beforeEval.r).toBeCloseTo(-0.9, 10);
-    expect(afterEval.r).toBeCloseTo(-0.382978723404, 8);
+    expect(afterEval.r).toBeCloseTo(-0.36, 10);
     // 청산선(-liqLine=-1.0)까지 남은 거리가 늘어났다 — 절댓값이 작아졌다(덜 음수).
     expect(afterEval.r).toBeGreaterThan(beforeEval.r);
     expect(Math.abs(afterEval.r)).toBeLessThan(Math.abs(beforeEval.r));
@@ -110,8 +112,9 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
 
     expect(added.ok).toBe(true);
     if (!added.ok) return;
-    // (500*100 + 750*110) / 1250 = 106 > 100 → LONG에서 평균 단가가 더 비싸진다(불리한 이동).
-    expect(added.position.openPrice).toBeCloseTo(106, 10);
+    // shares=500/100=5, addShares=750/110=75/11, newOpenPrice=1250/(5+75/11)=13750/130
+    // = 105.7692307692... > 100 → LONG에서 평균 단가가 더 비싸진다(불리한 이동).
+    expect(added.position.openPrice).toBeCloseTo(105.76923076923077, 10);
     expect(added.position.openPrice).toBeGreaterThan(opened.position.openPrice);
   });
 
@@ -260,9 +263,11 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
 
     expect(closed.ok).toBe(true);
     if (!closed.ok) return;
-    expect(closed.result.evaluation.pnl).toBe(1902);
+    // openPrice=93.75, closePrice=110 → deltaPct=(110-93.75)/93.75*100=17.3333...%,
+    // z=1.73333..., r=0.9*z=1.56(정확), pnl=1250*1.56-13=1937(반올림 불필요, 정수로 딱 떨어짐).
+    expect(closed.result.evaluation.pnl).toBe(1937);
     expect(closed.result.goldGained).toBe(Math.max(added.position.stake + closed.result.evaluation.pnl, 0));
-    expect(closed.result.goldGained).toBe(3152);
+    expect(closed.result.goldGained).toBe(3187);
   });
 
   test('11) 추가 매수 후에도 손실은 newStake(원금)를 초과하지 않는다', () => {
@@ -307,5 +312,52 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
     if (!added.ok) return;
     expect(added.wallet).not.toBe(opened.wallet);
     expect(added.position).not.toBe(opened.position);
+  });
+
+  test('13) openPrice나 price가 0 이하이면 INVALID_PRICE이고 상태가 변하지 않는다 (0나눗셈 방어)', () => {
+    const params = fixtureParams();
+    const wallet = fixtureWallet();
+    const opened = openFixturePosition(params, wallet);
+    const walletSnapshot = { ...opened.wallet };
+    const positionSnapshot = { ...opened.position };
+
+    // (a) 추가 매수 가격 자체가 0 이하인 경우.
+    const zeroPrice = addToPosition({
+      wallet: opened.wallet,
+      position: opened.position,
+      openCount: 1,
+      stakeRatio: 0.5,
+      price: 0,
+      atMs: 5000,
+      params,
+    });
+    const negativePrice = addToPosition({
+      wallet: opened.wallet,
+      position: opened.position,
+      openCount: 1,
+      stakeRatio: 0.5,
+      price: -10,
+      atMs: 5000,
+      params,
+    });
+
+    expect(zeroPrice).toEqual({ ok: false, error: 'INVALID_PRICE' });
+    expect(negativePrice).toEqual({ ok: false, error: 'INVALID_PRICE' });
+    expect(opened.wallet).toEqual(walletSnapshot);
+    expect(opened.position).toEqual(positionSnapshot);
+
+    // (b) 기존 포지션의 openPrice가 (비정상 경로로) 0 이하로 들어온 경우.
+    const corruptedPosition: OpenPosition = { ...opened.position, openPrice: 0 };
+    const corruptedResult = addToPosition({
+      wallet: opened.wallet,
+      position: corruptedPosition,
+      openCount: 1,
+      stakeRatio: 0.5,
+      price: 90,
+      atMs: 5000,
+      params,
+    });
+
+    expect(corruptedResult).toEqual({ ok: false, error: 'INVALID_PRICE' });
   });
 });

@@ -17,8 +17,17 @@ export type OpenError = 'ALREADY_OPEN' | 'MAX_POSITIONS' | 'INSUFFICIENT_AUM' | 
 /** 청산 실패 사유. */
 export type CloseError = 'NO_OPEN_POSITION' | 'MIN_HOLD_NOT_MET';
 
-/** 추가 매수 실패 사유. */
-export type AddError = 'NO_OPEN_POSITION' | 'MAX_POSITIONS' | 'INSUFFICIENT_AUM' | 'INVALID_STAKE';
+/**
+ * 추가 매수 실패 사유.
+ * `INVALID_PRICE`: 평균 단가 계산(주식 수 가중)에 쓰이는 `openPrice`/`price` 중
+ * 하나라도 0 이하면 나눗셈이 NaN/Infinity로 새는 것을 막기 위해 진입 자체를 거부한다.
+ */
+export type AddError =
+  | 'NO_OPEN_POSITION'
+  | 'MAX_POSITIONS'
+  | 'INSUFFICIENT_AUM'
+  | 'INVALID_STAKE'
+  | 'INVALID_PRICE';
 
 export interface OpenPositionInput {
   readonly wallet: Wallet;
@@ -113,13 +122,25 @@ export type AddToPositionResult =
  * 포지션과 같은 방향으로만 더한다.
  *
  * ```
- * addStake = floor(AUM × stakeRatio)
- * addFee   = round(addStake × feeRate)
- * newStake = stake + addStake
- * newFee   = fee + addFee                 (수수료는 누적, 진입 시 선차감 규칙과 동일)
- * newPrice = (stake × openPrice + addStake × price) / newStake   (stake 가중 평균 단가)
- * AUM     -= addStake
+ * addStake  = floor(AUM × stakeRatio)
+ * addFee    = round(addStake × feeRate)
+ * newStake  = stake + addStake
+ * newFee    = fee + addFee                (수수료는 누적, 진입 시 선차감 규칙과 동일)
+ * shares    = stake / openPrice           (최초 진입분의 주식 수)
+ * addShares = addStake / price            (추가분의 주식 수)
+ * newPrice  = (stake + addStake) / (shares + addShares)   (주식 수 가중 평균 단가)
+ * AUM      -= addStake
  * ```
+ *
+ * ★ 왜 "투입금액 가중"이 아니라 "주식 수 가중"인가 ★
+ * 두 로트를 **합치지 않고 따로 들고 있다면** 손익 합은
+ * `stake×(P−openPrice)/openPrice + addStake×(P−price)/price` 다.
+ * 합친 포지션의 손익은 `newStake×(P−newPrice)/newPrice`로 계산되는데, 이 두 식이
+ * 모든 가격 P에서 항등이 되는 newPrice는 오직 "주식 수 가중 평균"
+ * `(stake+addStake)/(stake/openPrice + addStake/price)` 뿐이다. 즉 이 평균만이
+ * "로트를 합쳐서 들고 있는 것"과 "따로 들고 있는 것"을 손익 관점에서 동일하게 만든다.
+ * 투입금액 가중(`(stake×openPrice+addStake×price)/newStake`)은 이 항등식을 깨서
+ * 없는 손익을 만들어내므로 틀린 공식이다 — 직관적으로 보인다고 되돌리지 말 것.
  *
  * `liqLine`(청산선 스냅샷)·`seq`·`openAtMs`는 **최초 진입 값을 그대로 유지**한다.
  * 특히 `openAtMs`를 갱신하면 안 된다 — 추가 매수 때마다 최소 보유 시간(`minHoldMs`)이
@@ -144,6 +165,12 @@ export function addToPosition(input: AddToPositionInput): AddToPositionResult {
   if (!(input.stakeRatio > 0) || input.stakeRatio > 1) {
     return { ok: false, error: 'INVALID_STAKE' };
   }
+  // 주식 수 가중 평균은 openPrice/price로 나눗셈을 하므로, 둘 중 하나라도 0 이하면
+  // shares가 NaN/Infinity로 새서 평균 단가·이후의 청산 판정 전체가 오염된다.
+  // openPosition은 openPrice 유효성을 검증하지 않으므로 여기서 다시 방어한다.
+  if (!(input.position.openPrice > 0) || !(input.price > 0)) {
+    return { ok: false, error: 'INVALID_PRICE' };
+  }
 
   // stake는 정수 재화이므로 내림 처리한다 — openPosition과 동일한 이유(AUM 초과 방지).
   const addStake = Math.floor(input.wallet.aum * input.stakeRatio);
@@ -154,8 +181,11 @@ export function addToPosition(input: AddToPositionInput): AddToPositionResult {
   const addFee = Math.round(addStake * input.params.feeRate);
   const newStake = input.position.stake + addStake;
   const newFee = input.position.fee + addFee;
-  const newOpenPrice =
-    (input.position.stake * input.position.openPrice + addStake * input.price) / newStake;
+
+  // 주식 수 가중 평균 단가 — 상세 근거는 위 함수 JSDoc의 등가성 논증 참고.
+  const shares = input.position.stake / input.position.openPrice;
+  const addShares = addStake / input.price;
+  const newOpenPrice = newStake / (shares + addShares);
 
   const wallet: Wallet = {
     gold: input.wallet.gold,
