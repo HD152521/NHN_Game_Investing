@@ -20,6 +20,26 @@ export type {
 
 export * from './constants';
 
+export type {
+  BossIdentity,
+  EnemyIdentity,
+  EnemyKind,
+  EntityCode,
+  EntityIdentity,
+  TowerIdentity,
+} from './identity';
+export {
+  ALLY_IDENTITY,
+  BOSS_IDENTITY,
+  ENEMY_IDENTITY,
+  ENEMY_KINDS,
+  IDENTITY_BY_CODE,
+  TOWER_IDENTITY,
+  allIdentities,
+  enemyKindsForLane,
+  identityForCode,
+} from './identity';
+
 export type { StageConfig, StageId } from './stages';
 export { STAGES, WAVE_BASE_HP_R1, scaleWaveHp, totalBaseIncome, totalGoldFor } from './stages';
 

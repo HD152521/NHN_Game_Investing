@@ -18,7 +18,7 @@ import '../ui/gold-flight.css';
 
 import { drawBattle, computeBattleLayout, slotAt } from '../battle';
 import { drawChart } from '../chart';
-import { TOWER_UPGRADE_COST } from '../combat';
+import { TOWER_IDENTITY, TOWER_UPGRADE_COST } from '../combat';
 import type { TowerKind, UnitKind } from '../combat';
 import { changePercent } from '../market';
 import { applyPalette, createTheme } from '../design';
@@ -34,7 +34,6 @@ import {
   CHART_HEIGHT,
   CHART_WIDTH,
   SPEEDS,
-  TOWER_LABELS,
   buildStageMarkup,
   collectStageRefs,
   formatSessionClock,
@@ -254,7 +253,7 @@ export function mountStage(root: HTMLElement): () => void {
     button.addEventListener('click', () => {
       selectedTower = (button.dataset['tower'] as TowerKind | undefined) ?? 'basic';
       syncButtons();
-      refs.log.textContent = `${TOWER_LABELS[selectedTower].name} 선택 (${TOWER_LABELS[selectedTower].lane}) — 빈 슬롯을 클릭하세요`;
+      refs.log.textContent = `${TOWER_IDENTITY[selectedTower].displayName} 선택 (${TOWER_IDENTITY[selectedTower].laneLabel}) — 빈 슬롯을 클릭하세요`;
     });
   }
 
@@ -299,7 +298,7 @@ export function mountStage(root: HTMLElement): () => void {
     }
     if (existing.level === 1) {
       current.upgrade(slot);
-      refs.log.textContent = `${TOWER_LABELS[existing.kind].name} 업그레이드 (${TOWER_UPGRADE_COST[existing.kind]}G)`;
+      refs.log.textContent = `${TOWER_IDENTITY[existing.kind].displayName} 업그레이드 (${TOWER_UPGRADE_COST[existing.kind]}G)`;
     }
   });
 

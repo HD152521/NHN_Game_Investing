@@ -5,8 +5,8 @@
  * ② 마크업은 게임 루프와 수명이 완전히 다르다(마운트 시 1회).
  */
 
-import { SKILL_COST, TOWER_BUILD_COST, UNIT_COST } from '../combat';
-import type { TowerKind, UnitKind } from '../combat';
+import { SKILL_COST } from '../combat';
+import { buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import { buildStartGateMarkup } from './start-gate';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
@@ -31,17 +31,14 @@ export const SPEEDS = [1, 2, 4] as const;
  * 잡히는데(FR-6.2) 화면 어디에도 그 사실이 없었던 것이 원인이다. 라벨에서 이 정보를
  * 빼면 같은 문제가 그대로 재발한다.
  */
-export const TOWER_LABELS: Record<TowerKind, { name: string; lane: string }> = {
-  basic: { name: '기본 포탑', lane: '지상' },
-  antiair: { name: '대공 포대', lane: '공중' },
-  splash: { name: '광역 포탑', lane: '지상·범위' },
-};
-
-export const UNIT_LABELS: Record<UnitKind, { name: string; role: string }> = {
-  intern: { name: '인턴', role: '근거리' },
-  analyst: { name: '애널리스트', role: '원거리' },
-  trader: { name: '트레이더', role: '탱커' },
-};
+/*
+ * 표시 이름·역할·플레이버는 전부 `src/combat/identity.ts` 가 단일 출처다
+ * (아트 프로덕션 시트 v1.1 §04·§06). 여기서 다시 정의하지 마라 —
+ * 예전에는 이 파일이 자체 라벨('인턴', '기본 포탑')을 들고 있어서
+ * 시트가 정한 정체성이 화면에 닿지 않았다.
+ *
+ * 위 주석의 레인 표기 요구사항은 `TOWER_IDENTITY[kind].laneLabel` 이 이어받는다.
+ */
 
 export interface StageRefs {
   readonly stage: HTMLElement;
@@ -81,19 +78,8 @@ export function buildStageMarkup(): string {
     (s) => `<button class="btn" type="button" data-speed="${s}">${s}x</button>`,
   ).join('');
 
-  const towers = (Object.keys(TOWER_LABELS) as TowerKind[])
-    .map((kind) => {
-      const { name, lane } = TOWER_LABELS[kind];
-      return `<button class="btn btn--build" type="button" data-tower="${kind}">${name}<small>${lane}</small><em>${TOWER_BUILD_COST[kind]}</em></button>`;
-    })
-    .join('');
-
-  const units = (Object.keys(UNIT_LABELS) as UnitKind[])
-    .map((kind) => {
-      const { name, role } = UNIT_LABELS[kind];
-      return `<button class="btn btn--summon" type="button" data-unit="${kind}">${name}<small>${role}</small><em>${UNIT_COST[kind]}</em></button>`;
-    })
-    .join('');
+  const towers = buildTowerRosterMarkup();
+  const units = buildUnitRosterMarkup();
 
   return `
     <div class="stage stage--gated" data-ref="stage">

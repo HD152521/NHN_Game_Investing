@@ -3,7 +3,9 @@
  */
 
 export { drawBattle } from './battle.js';
-export type { DrawBattleOptions } from './battle.js';
+export type { BattleWeather, DrawBattleOptions } from './battle.js';
+
+export { drawWeather, weatherViewport } from './draw-weather.js';
 
 export { computeBattleLayout, laneY, progressToX, slotRect } from './layout.js';
 export type { BattleLayout, Rect } from './layout.js';

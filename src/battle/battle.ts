@@ -8,7 +8,9 @@
 
 import type { CombatState, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
+import type { WeatherField, WeatherView } from '../weather/index.js';
 import { drawBackground } from './draw-background.js';
+import { drawWeather, weatherViewport } from './draw-weather.js';
 import { drawLaneGuides } from './draw-lane-guides.js';
 import { drawAirLaneWarning } from './draw-lane-warning.js';
 import { drawHud } from './draw-hud.js';
@@ -34,6 +36,20 @@ export interface DrawBattleOptions {
    * 슬롯을 선택했을 때는 이 값 대신 실제 타워 종류가 우선한다.
    */
   readonly selectedTowerKind?: TowerKind | null;
+  /**
+   * 시장 상태 표시(날씨) — 판정 결과 + 재사용 버퍼. 없으면 오버레이를 그리지 않는다.
+   *
+   * ★ 선택 항목인 이유: 판정은 `src/weather`(순수 함수)와 세션이 소유하고, 전장은
+   *   그리기만 한다. 전장이 차트를 직접 읽기 시작하면 판정/렌더 분리가 무너진다.
+   */
+  readonly weather?: BattleWeather | null;
+}
+
+/** `drawBattle`이 날씨를 그리는 데 필요한 최소 입력. */
+export interface BattleWeather {
+  readonly view: WeatherView;
+  /** 앱 수명 동안 하나만 만들어 재사용하는 입자·광선 버퍼. */
+  readonly field: WeatherField;
 }
 
 /** 전장 한 프레임을 그린다. 적/유닛 0명, 캔버스 극소 크기에서도 크래시하지 않아야 한다. */
@@ -55,5 +71,10 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   // 예광선은 타워·유닛·적을 전부 그린 뒤 마지막에 그려 발사 연출이 항상 위에 보이게 한다.
   drawTracers(ctx, palette, layout, state);
   drawUnitTracers(ctx, palette, layout, state);
+  // 날씨는 전장 위, HUD 아래다 — 시장 상태는 전장을 물들이되 수치 판독은 가리지 않는다.
+  const weather = opts.weather ?? null;
+  if (weather) {
+    drawWeather(ctx, palette, weatherViewport(layout), weather.view, weather.field);
+  }
   drawHud(ctx, palette, layout, state);
 }

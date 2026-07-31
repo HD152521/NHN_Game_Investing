@@ -5,6 +5,21 @@
 export { createTradePanel } from './trade-panel';
 export type { TradePanel } from './trade-panel';
 
+export {
+  ROSTER_FLAVOR_ATTR,
+  TOWER_ROSTER,
+  UNIT_ROSTER,
+  buildRosterButton,
+  buildRosterMarkup,
+  buildTowerRosterMarkup,
+  buildUnitRosterMarkup,
+  createRosterFlavorTip,
+  formatCostLabel,
+  resolveFlavorText,
+  rosterEntryFor,
+} from './roster';
+export type { RosterEntry, RosterFlavorTip, RosterFlavorTipOptions } from './roster';
+
 export { createGoldMeter, prefersReducedMotion } from './gold-flight';
 export type {
   FlightScheduler,
