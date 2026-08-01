@@ -202,6 +202,10 @@ export function mountStage(root: HTMLElement): () => void {
       selectedSlot: hoveredSlot,
       // 빈 슬롯에 호버하면 지금 고른 타워의 사거리·실루엣을 미리 보여준다.
       selectedTowerKind: selectedTower,
+      // 슬롯 데칼이 '배치 가능/불가'를 가르는 기준. 살 돈이 없으면 불가로 보인다.
+      gold: snap.wallet.gold,
+      timeMs: state.elapsedMs,
+      reducedMotion: prefersReducedMotion(),
     });
 
     const delta = changePercent(session.set.bars, state.barIndex);

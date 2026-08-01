@@ -15,8 +15,14 @@ const SKYLINE_COUNT = 7;
 const SKYLINE_HEIGHT_RATIO = 0.22;
 /** 건물 최소 높이 — 전장 높이 대비 비율(변화 폭과 더해져 실제 높이가 된다). */
 const SKYLINE_BASE_RATIO = 0.08;
-/** 지면(BG_2) 층이 지상 레인 위로 얼마나 올라오는지(px). */
-const GROUND_BAND_RISE = 18;
+/**
+ * 지면(BG_2) 층이 지상 레인 위로 얼마나 올라오는지(px).
+ *
+ * ★ 이 값이 곧 **발판 상단 모서리**의 위치다. 발판 상태 렌더러(`draw-ground.ts`)가
+ *   림 라이트를 같은 선에 놓아야 하므로 export 한다 — 두 파일이 각자 18을 들고 있으면
+ *   한쪽만 바뀌었을 때 지면선과 발판이 어긋난다.
+ */
+export const GROUND_BAND_RISE = 18;
 
 /** 건물 인덱스로부터 결정적 높이 비율(0~1)을 뽑아낸다 — 시드 랜덤 대신 사인 곡선. */
 function skylineHeightRatio(index: number): number {

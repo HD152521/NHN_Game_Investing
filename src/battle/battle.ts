@@ -9,7 +9,10 @@
 import type { CombatState, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import type { WeatherField, WeatherView } from '../weather/index.js';
+import { classifyGroundState, maxEnemyAdvance } from '../ground/index.js';
 import { drawBackground } from './draw-background.js';
+import { drawGroundState } from './draw-ground.js';
+import { drawSlotDecals } from './draw-slot-decal.js';
 import { drawWeather, weatherViewport } from './draw-weather.js';
 import { drawLaneGuides } from './draw-lane-guides.js';
 import { drawAirLaneWarning } from './draw-lane-warning.js';
@@ -43,6 +46,18 @@ export interface DrawBattleOptions {
    *   그리기만 한다. 전장이 차트를 직접 읽기 시작하면 판정/렌더 분리가 무너진다.
    */
   readonly weather?: BattleWeather | null;
+  /**
+   * 현재 보유 골드. 타워 슬롯 데칼이 **배치 가능/불가**를 가르는 데 쓴다 (시트 02).
+   *
+   * 이게 없으면 슬롯이 전부 '비활성'으로만 보인다. 시작 골드가 정확히 포탑 1기라,
+   * 두 번째 슬롯부터는 매매로 벌어야 켜진다 — "매매를 해야 방어가 선다"를 화면이
+   * 직접 말해주는 유일한 장치다.
+   */
+  readonly gold?: number | null;
+  /** 발판 잔광 맥동 위상용 시각. 없으면 0(정지). */
+  readonly timeMs?: number;
+  /** `prefers-reduced-motion`. 맥동만 멈추고 발판 상태 정보는 그대로 유지한다. */
+  readonly reducedMotion?: boolean;
 }
 
 /** `drawBattle`이 날씨를 그리는 데 필요한 최소 입력. */
@@ -60,10 +75,24 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   const layout = computeBattleLayout(width, height);
 
   drawBackground(ctx, palette, layout);
+  // 발판은 배경 직후 · 유닛보다 먼저. 발이 지면선 위에 서 보이려면 이 순서여야 한다.
+  drawGroundState(
+    ctx,
+    palette,
+    layout,
+    classifyGroundState({
+      maxAdvance: maxEnemyAdvance(state.enemies),
+      wave: state.wave,
+      waveCount: state.waveCount,
+    }),
+    opts.reducedMotion ?? false,
+    opts.timeMs ?? 0,
+  );
   drawLaneGuides(ctx, palette, layout);
   drawAirLaneWarning(ctx, palette, layout, state);
   drawHq(ctx, palette, layout, state);
   drawEnemyBase(ctx, palette, layout);
+  drawSlotDecals(ctx, palette, layout, state, opts.gold ?? 0, selectedTowerKind);
   drawTowers(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
   drawTowerRangePreview(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
   drawEnemies(ctx, palette, layout, state.enemies);
