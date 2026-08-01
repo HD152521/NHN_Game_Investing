@@ -147,7 +147,10 @@ describe('pose calculation performance', () => {
    * 버퍼 동일성(identity)을 보는 쪽이 힙 측정보다 더 정확하고 부하와 무관하다.
    * 힙 수치는 참고용으로 계속 출력하되 단언하지 않는다.
    */
-  test('steady-state solving does not allocate per frame', () => {
+  // 20,000 프레임 x 68 엔티티는 병렬 부하에서 기본 5초 제한을 넘긴다 —
+  // 스위트 전체 실행 때만 실패하는 플레이키의 원인이었다. 단언 자체는 결정적이므로
+  // 제한만 넉넉히 둔다(측정 표본 수를 줄이면 보고값의 의미가 약해진다).
+  test('steady-state solving does not allocate per frame', { timeout: 60_000 }, () => {
     const batch = new SkeletonBatch(rig, ENTITY_COUNT);
     const entities = buildEntities();
     const frames = 20_000;
