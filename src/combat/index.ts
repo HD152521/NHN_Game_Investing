@@ -44,7 +44,15 @@ export {
 } from './identity';
 
 export type { StageConfig, StageId } from './stages';
-export { STAGES, WAVE_BASE_HP_R1, scaleWaveHp, totalBaseIncome, totalGoldFor } from './stages';
+export {
+  STAGES,
+  WAVE_BASE_HP_R1,
+  noTradeGold,
+  scaleWaveHp,
+  sessionTotalStake,
+  totalBaseIncome,
+  totalGoldFor,
+} from './stages';
 
 export type { EnemySpec } from './waves';
 export { aumDropPerKill, spawnPlanFor, waveIncomeFor } from './waves';

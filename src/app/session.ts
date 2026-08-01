@@ -81,10 +81,11 @@ export interface SessionSnapshot {
 /** 방금 일어난 청산을 UI가 한 번만 연출할 수 있도록 물고 있는 큐. */
 export interface CloseNotice {
   readonly position: ClosedPosition;
-  /** 골드로 넘어간 금액. **이익분만**이며 원금은 포함하지 않는다 (FR-5.7). */
+  /**
+   * 골드로 넘어간 금액 = `floor(max(원금 + 손익, 0) × GOLD_CONVERSION)` (FR-5.7).
+   * **AUM 복귀분은 존재하지 않는다** — 청산은 AUM을 늘리지 않으므로 알릴 것이 없다.
+   */
   readonly goldGained: number;
-  /** AUM으로 복귀한 금액. `(원금 + 손실) × REFUND_RATIO`. 강제 청산 시 0. */
-  readonly aumReturned: number;
 }
 
 /**
@@ -146,8 +147,9 @@ export class StageSession {
   /**
    * 전투를 한 프레임 진행하고 벌어들인 재화를 지갑에 반영한다.
    *
-   * AUM은 적 처치 드롭으로만 늘어난다(FR-6.8-a). 골드는 웨이브 기본 수입과
-   * 매매 순이익 두 경로뿐이다 — 여기서 AUM을 골드로 바꾸는 일은 절대 없다.
+   * ★ AUM이 늘어나는 **유일한** 경로가 여기다 ★ 청산(`settle`)은 AUM을 되돌리지 않으므로
+   * (FR-5.7), 적 처치 드롭(FR-6.8-a)이 끊기면 매매 실탄도 같이 끊긴다.
+   * 골드는 웨이브 기본 수입과 청산 대금 두 경로뿐이며, 여기서 AUM을 골드로 바꾸는 일은 없다.
    */
   stepCombatFrame(dtMs: number): void {
     if (this.combat.phase !== 'running') {
@@ -377,7 +379,6 @@ export class StageSession {
     this.pendingNotice = {
       position: result.result.position,
       goldGained: result.result.goldGained,
-      aumReturned: result.result.aumReturned,
     };
   }
 

@@ -19,9 +19,10 @@ import {
   WAVE_DURATION_MS,
   WAVE_PREP_MS,
 } from './constants';
+import { GOLD_CONVERSION } from '../position';
 import { createSkillCooldowns, isShieldActive, skillCooldownOf, tickSkillCooldowns } from './skills';
 import { createCombat } from './simulate';
-import { STAGES } from './stages';
+import { STAGES, sessionTotalStake } from './stages';
 import type { CombatParams, CombatState } from './types';
 
 function params(): CombatParams {
@@ -77,15 +78,36 @@ describe('밸런스 근거 고정', () => {
     expect(SKILL_SPECS['S-03'].cost).toBe(AUM_DROP_PER_WAVE);
   });
 
-  test('S-03의 실효 골드 비용은 S-01의 골드 비용과 같은 급이다 (±15% 이내)', () => {
-    // 원금 1 AUM은 세션 동안 S / startingAum 회 투입된다.
-    const turns = STAGES.R1.sessionTotalStake / STAGES.R1.startingAum;
-    const forgoneGold = SKILL_SPECS['S-03'].cost * turns * STAGES.R1.targetReturnRate;
+  /**
+   * S-03의 실효 골드 비용 `[v1.3 재산출]`.
+   *
+   * 원금이 재순환하지 않으므로 1 AUM은 세션 동안 **정확히 한 번** 투입된다. 따라서 태운
+   * AUM이 포기하게 만드는 골드는 `cost × (1 + ρ) × GOLD_CONVERSION`으로 딱 떨어진다.
+   *
+   * ⚠️ **알려진 밸런스 이슈**: 예전에는 원금이 5.95회 재순환한다는 가정 위에서 실효 비용을
+   * 약 179 G로 계산해 `S-01`(200 G)과 같은 급이라고 봤다. 재순환이 사라지면서 실효 비용이
+   * 90 G로 내려가 **`S-03`이 `S-01`의 절반 값이 됐다.** 비용을 300 AUM(웨이브 2개분 드롭)으로
+   * 올리면 180 G가 되어 균형이 회복되지만, 그건 이번 개정(정산식·게이트)의 범위 밖이라
+   * 손대지 않았다. 봇 시뮬레이터(§10 ⑥)로 실드 남용 여부를 확인한 뒤 결정할 것.
+   */
+  test('S-03의 실효 골드 비용은 cost × (1 + ρ) × 전환율로 딱 떨어진다 (R1 기준 90 G)', () => {
+    const forgoneGold =
+      SKILL_SPECS['S-03'].cost * (1 + STAGES.R1.targetReturnRate) * GOLD_CONVERSION;
 
-    expect(forgoneGold).toBeGreaterThan(0);
-    const ratio = forgoneGold / SKILL_SPECS['S-01'].cost;
-    expect(ratio).toBeGreaterThan(0.85);
-    expect(ratio).toBeLessThan(1.15);
+    expect(forgoneGold).toBe(90);
+    expect(forgoneGold).toBeLessThan(SKILL_SPECS['S-01'].cost); // 현재는 S-01보다 싸다
+  });
+
+  test('실드를 최대로 돌려도 포기 골드가 R1 필요지출의 25%를 넘지 않는다', () => {
+    const stageMs = WAVE_DURATION_MS * 13;
+    const maxCasts = Math.floor(stageMs / SKILL_SPECS['S-03'].cooldownMs) + 1;
+    const forgoneGold =
+      maxCasts * SKILL_SPECS['S-03'].cost * (1 + STAGES.R1.targetReturnRate) * GOLD_CONVERSION;
+
+    // 7회 × 150 AUM = 1,050 AUM → 630 G 포기 = 필요지출 2,700의 23%.
+    // 실드에 자원을 다 쏟으면 방어를 살 골드가 사라진다는 트레이드오프가 성립해야 한다.
+    expect(forgoneGold / STAGES.R1.requiredSpend).toBeLessThan(0.25);
+    expect(forgoneGold / STAGES.R1.requiredSpend).toBeGreaterThan(0.15);
   });
 
   test('S-03을 최대한 돌려도 실드가 스테이지의 20%를 넘게 덮지는 못한다', () => {
@@ -97,13 +119,16 @@ describe('밸런스 근거 고정', () => {
     expect((maxCasts * SKILL_SHIELD_DURATION_MS) / stageMs).toBeLessThan(0.2);
   });
 
-  test('S-03 최대 소모 AUM은 시작 원금의 55%를 넘지 않는다', () => {
+  test('S-03 최대 소모 AUM은 세션 총 투입 가능액의 30%를 넘지 않는다', () => {
     const stageMs = WAVE_DURATION_MS * 13;
     const maxCasts = Math.floor(stageMs / SKILL_SPECS['S-03'].cooldownMs) + 1;
 
-    // 최대 7회 × 150 = 1,050 AUM (시작 2,000의 52.5%). 매매 원금의 과반이 실드로 사라지면
-    // 코어 루프(예측 → 골드 → 방어)가 스킬 하나에 잡아먹힌다.
-    expect(maxCasts * SKILL_SPECS['S-03'].cost).toBeLessThanOrEqual(STAGES.R1.startingAum * 0.55);
+    // 최대 7회 × 150 = 1,050 AUM. 분모는 시작 AUM이 아니라 **세션 총 투입 가능액 S**다 —
+    // 드롭까지 포함한 실제 실탄 총량이 S이므로(v1.3에서 재순환이 사라져 S가 확정값이 됐다),
+    // "실드가 매매 자본을 얼마나 먹는가"는 S 대비로 봐야 정확하다. 1,050 / 3,950 = 26.6%.
+    expect(maxCasts * SKILL_SPECS['S-03'].cost).toBeLessThanOrEqual(
+      sessionTotalStake(STAGES.R1) * 0.3,
+    );
   });
 
   test('S-02 회복량은 저가 유닛을 완전 회복시키고 trader는 절반도 못 채운다', () => {

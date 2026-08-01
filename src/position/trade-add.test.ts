@@ -7,7 +7,7 @@
  */
 import { describe, expect, test } from 'vitest';
 
-import { DEFAULT_POSITION_PARAMS, REFUND_RATIO } from './constants';
+import { DEFAULT_POSITION_PARAMS, GOLD_CONVERSION } from './constants';
 import { evaluatePosition } from './evaluate';
 import { addToPosition, closePosition, openPosition } from './trade';
 import type { OpenPosition, PositionParams, Wallet } from './types';
@@ -249,7 +249,7 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
     expect(position).toEqual(positionSnapshot);
   });
 
-  test('10) 추가 매수 후 청산하면 이익만 골드가 되고 원금은 70%만 AUM으로 복귀한다', () => {
+  test('10) 추가 매수 후 청산해도 대금 전액이 골드가 되고 AUM은 늘지 않는다', () => {
     const { params, added } = openAndAddFixture();
 
     const closed = closePosition({
@@ -266,11 +266,13 @@ describe('addToPosition — 추가 매수(물타기/불타기)', () => {
     // openPrice=93.75, closePrice=110 → deltaPct=(110-93.75)/93.75*100=17.3333...%,
     // z=1.73333..., r=0.9*z=1.56(정확), pnl=1250*1.56-13=1937(반올림 불필요, 정수로 딱 떨어짐).
     expect(closed.result.evaluation.pnl).toBe(1937);
-    // 골드는 이익 그대로(승수 없음), 원금 1250은 REFUND_RATIO 0.70만큼만 AUM으로 복귀한다.
-    expect(closed.result.goldGained).toBe(Math.max(closed.result.evaluation.pnl, 0));
-    expect(closed.result.goldGained).toBe(1937);
-    expect(closed.result.aumReturned).toBe(Math.floor(added.position.stake * REFUND_RATIO));
-    expect(closed.result.aumReturned).toBe(875);
+    // 대금 = 원금 1250 + 손익 1937 = 3187 → floor(3187 × 0.50) = 1593.
+    expect(closed.result.goldGained).toBe(
+      Math.floor((added.position.stake + closed.result.evaluation.pnl) * GOLD_CONVERSION),
+    );
+    expect(closed.result.goldGained).toBe(1593);
+    // 물타기로 원금이 커져도 AUM으로 되돌아오는 것은 없다 — 버틴 대가는 그대로 남는다.
+    expect(closed.result.wallet.aum).toBe(added.wallet.aum);
   });
 
   test('11) 추가 매수 후에도 손실은 newStake(원금)를 초과하지 않는다', () => {

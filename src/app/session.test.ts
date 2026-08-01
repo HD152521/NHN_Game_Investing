@@ -39,15 +39,15 @@ describe('StageSession — 배선', () => {
   /**
    * ★ 이 프로젝트의 코어 경제 규칙 (FR-5.7, 2026-08-01 개정).
    *
-   * **이익만이 골드가 된다.** 원금은 골드로 넘어가지 않고, 손실을 물고
-   * `REFUND_RATIO`(0.70)만큼만 AUM으로 복귀한다.
+   * **원금과 손익이 통째로 `GOLD_CONVERSION`(0.50)만큼 골드가 되고, AUM으로는 아무것도
+   * 돌아오지 않는다.** AUM은 골드로 흐르는 일방통행 파이프이며, 다시 채우는 유일한 경로는
+   * 적 처치 드롭(FR-6.8-a)이다.
    *
-   * 이전 규칙("원금+손익이 통째로 골드")은 폐기됐다 — 진입 후 2초 만에 청산하면
-   * 수수료 1%만 내고 AUM의 99%가 골드가 되어, **차트를 한 번도 안 보고**
-   * 자금을 조달할 수 있었다. 합리적 플레이어의 최적해가 "차트 무시"가 되면서
-   * PRD §9.3의 "예측을 건너뛴 플레이는 존재할 수 없다"는 코어 보증이 반전됐다.
+   * 이전 규칙("이익만 골드, 원금은 70%만 AUM 복귀")은 세탁을 막으려는 땜빵이었고 개념이
+   * 어긋나 있었다 — 투자를 했으면 결과는 전부 골드가 되어야 한다. 세탁은 이제 전환율
+   * 하나로 억제한다(무판단 전환 = 투입액의 약 49%).
    */
-  test('청산하면 이익만 골드가 되고 원금은 환급률만큼만 AUM으로 복귀한다', () => {
+  test('청산하면 대금 전액이 전환율만큼 골드가 되고 AUM은 늘지 않는다', () => {
     const session = makeSession();
     const minHoldMs = session.params.minHoldMs;
 
@@ -60,43 +60,47 @@ describe('StageSession — 배선', () => {
 
     expect(snap.position).toBeNull();
     expect(snap.wallet.gold).toBe(STARTING_GOLD + (notice?.goldGained ?? 0));
-    expect(snap.wallet.aum).toBe(aumAfterOpen + (notice?.aumReturned ?? 0));
+    // ★ 핵심 단언 ★ 청산 후 AUM은 진입 직후 값 그대로다.
+    expect(snap.wallet.aum).toBe(aumAfterOpen);
   });
 
   /**
-   * 세탁 경로(진입 → 최소 보유 → 즉시 청산)가 죽었는지 확인한다.
-   * 이 테스트가 깨지면 코어 루프가 다시 우회 가능해진 것이다.
+   * 세탁 경로(진입 → 최소 보유 → 즉시 청산)의 억제를 확인한다.
+   * 골드는 얻지만 투입액의 절반 아래이고, **원금이 돌아오지 않아 반복이 불가능하다.**
    */
-  test('진입 즉시 청산은 골드를 거의 못 벌고 원금의 약 30%를 잃는다', () => {
+  test('진입 즉시 청산은 투입액의 절반 이하만 골드로 만들고 원금을 되돌려주지 않는다', () => {
     const session = makeSession();
     const minHoldMs = session.params.minHoldMs;
 
     const aumBeforeOpen = session.snapshot(0).wallet.aum;
     session.openTrade('long', 0.25, 0);
     const stake = session.snapshot(0).position?.stake ?? 0;
+    const aumAfterOpen = session.snapshot(0).wallet.aum;
     session.closeTrade(minHoldMs);
 
     const gained = session.takeNotice()?.goldGained ?? 0;
     const aumAfter = session.snapshot(minHoldMs).wallet.aum;
 
-    // 2초(=시장 2분) 보유로는 큰 변동이 없으므로 이익이 거의 안 난다.
-    expect(gained).toBeLessThan(stake * 0.3);
-    // 왕복 한 번에 투입 원금의 30% 안팎이 증발한다 — 세탁을 반복할수록 AUM이 마른다.
-    expect(aumAfter).toBeLessThan(aumBeforeOpen);
-    expect(aumBeforeOpen - aumAfter).toBeGreaterThan(stake * 0.2);
+    // 2초(=시장 2분) 보유로는 큰 변동이 없으므로 대금이 원금 근처에 머문다 → 골드는 절반 언저리.
+    expect(gained).toBeLessThan(stake * 0.6);
+    // 투입한 AUM은 통째로 사라진 채 돌아오지 않는다 — 같은 돈을 두 번 세탁할 수 없다.
+    expect(aumAfter).toBe(aumAfterOpen);
+    expect(aumBeforeOpen - aumAfter).toBe(stake);
   });
 
-  /** 어디서 청산하든 왕복 후 AUM이 진입 전보다 많아질 수는 없다. */
-  test('전 재생 구간 어디서 청산해도 왕복 후 AUM이 진입 전을 넘지 않는다', () => {
+  /** 어디서 청산하든 왕복은 AUM을 정확히 stake만큼 줄이며, 절대 늘리지 않는다. */
+  test('전 재생 구간 어디서 청산해도 왕복 후 AUM은 진입 직후 값과 같다', () => {
     for (const closeAt of [2_000, 30_000, 120_000, 300_000]) {
       const session = makeSession();
       const aumBeforeOpen = session.snapshot(0).wallet.aum;
       session.openTrade('long', 0.25, 0);
+      const aumAfterOpen = session.snapshot(0).wallet.aum;
 
       session.syncLiquidation(closeAt);
       session.closeTrade(closeAt);
 
-      expect(session.snapshot(closeAt).wallet.aum).toBeLessThanOrEqual(aumBeforeOpen);
+      expect(session.snapshot(closeAt).wallet.aum).toBe(aumAfterOpen);
+      expect(session.snapshot(closeAt).wallet.aum).toBeLessThan(aumBeforeOpen);
     }
   });
 

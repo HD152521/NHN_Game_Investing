@@ -2,20 +2,20 @@
  * 포지션 진입·청산 — 순수·불변 상태 전이 함수 (PRD FR-5).
  *
  * 입력으로 받은 `wallet`/`position` 객체는 절대 변형하지 않고, 항상 새 객체를 반환한다.
- * 이 파일이 이 게임의 경제 코어다 — **골드와 AUM은 서로 다른 파이프를 탄다**:
- * 진입 시 AUM에서 stake가 빠지고, 청산 시 **이익만 골드가 되며**
- * **원금은 손실을 문 뒤 `REFUND_RATIO`(0.70)만큼만 AUM으로 복귀**한다.
- * AUM을 늘리는 다른 경로는 적 처치 드롭(`src/combat`)이며, 이 파일은 그 경로를 다루지 않는다.
+ * 이 파일이 이 게임의 경제 코어다 — **AUM은 골드로 흐르는 일방통행 파이프다**:
+ * 진입 시 AUM에서 stake가 빠지고, 청산 시 **원금과 손익이 통째로**
+ * `GOLD_CONVERSION`(0.50)만큼 골드가 된다. **청산은 AUM을 단 1도 늘리지 않는다.**
+ * AUM을 늘리는 유일한 경로는 적 처치 드롭(`src/combat`)이며, 이 파일은 그 경로를 다루지 않는다.
  *
- * ★ 예전 구조(`goldGained = max(stake + pnl, 0)`)를 되돌리지 마라 ★
- * 그 식에서는 원금 자체가 골드로 바뀌었기 때문에, **AUM 전액 진입 → 2초 대기 →
- * z≈0 청산**만 반복하면 수수료 1%만 내고 AUM의 99%를 골드로 세탁할 수 있었다.
- * 차트를 한 번도 보지 않는 플레이가 최적 전략이 되어 "예측을 건너뛴 플레이는
- * 존재할 수 없다"(PRD §9.3)는 코어 보증이 정확히 반전됐다. 아래 정산식은 그 경로를
- * 죽이기 위한 것이다 — 자세한 근거는 `closePosition` JSDoc 참고.
+ * ★ `aumReturned`(원금의 AUM 복귀)를 되살리지 마라 ★
+ * 한때 "이익만 골드, 원금은 손실을 문 뒤 70%만 AUM 복귀"였다. 그건 세탁을 막으려는
+ * **땜빵**이었고 개념이 어긋나 있었다 — 투자를 했으면 결과는 전부 골드가 되어야 한다.
+ * 게다가 원금이 복귀하면 AUM이 재순환해 세션 총 투입이 시작 AUM의 5~6배로 불어나고,
+ * 그 배수가 밸런스의 숨은 변수가 됐다. 지금은 세션 총 투입이
+ * `시작 AUM + 드롭 총액`으로 못 박혀 있고, 세탁은 전환율 하나로 억제한다.
  */
 
-import { REFUND_RATIO } from './constants';
+import { GOLD_CONVERSION } from './constants';
 import { evaluatePosition } from './evaluate';
 import type { CloseReason, Direction, OpenPosition, PositionEval, PositionParams, Wallet } from './types';
 
@@ -227,15 +227,10 @@ export interface CloseResult {
   readonly wallet: Wallet;
   readonly evaluation: PositionEval;
   /**
-   * 이번 청산으로 골드에 더해진 금액 = `max(pnl, 0)`. 승수 없음.
-   * **원금은 여기 포함되지 않는다** — 이익이 없으면(pnl ≤ 0) 정확히 0이다.
+   * 이번 청산으로 골드에 더해진 금액 = `floor(max(stake + pnl, 0) × GOLD_CONVERSION)`.
+   * **원금과 손익이 통째로 들어 있다.** 강제 청산(`pnl === -stake`)이면 정확히 0이다.
    */
   readonly goldGained: number;
-  /**
-   * 이번 청산으로 AUM에 되돌아온 금액 = `floor((stake + min(pnl, 0)) × REFUND_RATIO)`.
-   * 원금이 손실을 문 뒤 70%만 남은 값이다. 강제 청산(`pnl === -stake`)이면 0이 된다.
-   */
-  readonly aumReturned: number;
   readonly reason: CloseReason;
 }
 
@@ -257,28 +252,29 @@ export type ClosePositionResult =
 /**
  * 포지션 청산.
  *
- * **이익만이 골드가 되고, 원금은 손실을 문 뒤 일부만 AUM으로 복귀한다.**
+ * **원금과 손익이 통째로 골드가 되고, AUM으로는 아무것도 돌아오지 않는다.**
  * ```
- * goldGained  = max(pnl, 0)                                 // 승수 없음
- * aumReturned = floor((stake + min(pnl, 0)) × REFUND_RATIO) // 0.70
+ * goldGained = floor(max(stake + pnl, 0) × GOLD_CONVERSION)   // 0.50
  *
  * gold += goldGained
- * aum  += aumReturned
+ * aum  += 0                                                    ← 복귀 없음
  * ```
  *
  * ★ 설계 의도 ★
- * - **매매를 안 하면 골드가 전혀 안 나온다.** 골드는 `pnl > 0`에서만 생기므로,
- *   차트를 안 보고는 타워·유닛을 살 수 없다. 예측이 전투의 유일한 자금줄이다.
- * - **무의미한 진입·청산 반복은 큰 순손실이다.** z≈0 왕복은 `pnl = -fee`라 골드는 0인데
- *   원금은 수수료를 문 뒤 30%가 더 타서 사라진다(2,000 → 1,386). 예전
- *   `max(stake + pnl, 0)` 식이 열어준 "세탁" 경로가 여기서 완전히 끊긴다.
- * - **환급률이 승수보다 옳은 이유는 재순환이다.** 원금이 AUM으로 돌아오면 같은 돈을
- *   몇 번이고 다시 투입할 수 있어(세션 총 투입 S ≈ 초기 AUM의 5~6배) 이익 쪽에 승수를
- *   얹으면 골드가 폭발한다. 골드는 `pnl` 그대로 두고 원금 쪽을 태우는 것이 정합하다.
- *   자세한 수치 근거는 `constants.ts`의 `REFUND_RATIO` 주석 참고.
+ * - **투자하면 결과가 전부 골드가 된다.** 원금 일부가 다시 매매 재화로 돌아오는 건
+ *   개념적으로 틀렸다 — 청산은 포지션을 닫는 행위이지 자본을 회수하는 행위가 아니다.
+ * - **AUM은 매매로 절대 늘지 않는다.** 세션 동안 굴릴 수 있는 총액은
+ *   `시작 AUM + AUM_DROP_PER_WAVE × 13`으로 고정이고, 그 이상은 **적을 잡아야만** 생긴다.
+ *   "매매를 적게 할수록 AUM이 쌓인다"는 예전의 역인센티브가 사라진다.
+ * - **세탁을 막는 건 전환율 하나다.** z≈0 왕복은 `pnl = −fee`라 대금이 `stake × 0.99`이고,
+ *   전환에서 절반이 깎여 골드는 `stake × 0.495`에 그친다. 원금이 재순환하지 않으므로
+ *   이 왕복을 반복할 수도 없다 — 가진 AUM을 한 번 태우면 끝이다. R1 기준 무판단 전액
+ *   전환의 상한은 2,270 G로 필요지출 2,700 G에 **닿지 못한다**(`stages.test.ts`가 고정).
+ * - **매매를 아예 안 하면 골드가 시작 120 + 기본수입 195 = 315 G뿐이다** — 필요지출의 12%.
+ *   AUM을 굴리지 않는 선택지는 존재하지 않는다.
  *
- * 강제 청산이면 `pnl === -stake`가 되어 `goldGained`와 `aumReturned`가 **둘 다 0**이다 —
- * 원금을 전부 잃었으니 어느 쪽으로도 넘어갈 것이 없다.
+ * 강제 청산이면 `pnl === -stake`라 대금이 0이므로 `goldGained`도 정확히 0이다.
+ * 골드는 정수 재화이므로 내림한다 — 올림/반올림은 전환율을 미세하게 유리하게 만든다.
  *
  * `reason`이 `liquidated`/`stage_end`(서버 강제 청산)이면 `minHoldMs` 검사를 건너뛴다 —
  * 플레이어의 의사와 무관하게 서버가 즉시 정리해야 하는 상황이기 때문이다.
@@ -296,15 +292,15 @@ export function closePosition(input: ClosePositionInput): ClosePositionResult {
 
   const evaluation = evaluatePosition(input.position, input.closePrice, input.params);
 
-  // 이익만 골드가 된다. pnl ≤ 0이면 0 — 원금은 이 파이프를 절대 타지 않는다.
-  const goldGained = Math.max(evaluation.pnl, 0);
-  // 원금은 손실을 문 뒤 REFUND_RATIO만큼만 AUM으로 복귀한다(정수 재화이므로 내림).
-  // 이익은 여기 더해지지 않는다 — 위 골드 파이프로 간다.
-  const aumReturned = Math.floor((input.position.stake + Math.min(evaluation.pnl, 0)) * REFUND_RATIO);
+  // 청산 대금 = 원금 + 손익. 강제 청산(pnl = −stake)에서 정확히 0이 된다.
+  const proceeds = Math.max(input.position.stake + evaluation.pnl, 0);
+  // 대금 전액이 골드로 넘어간다. 골드는 정수 재화이므로 내림한다.
+  const goldGained = Math.floor(proceeds * GOLD_CONVERSION);
 
+  // ★ AUM은 손대지 않는다 ★ 청산이 AUM을 늘리는 경로는 존재하지 않는다.
   const wallet: Wallet = {
     gold: input.wallet.gold + goldGained,
-    aum: input.wallet.aum + aumReturned,
+    aum: input.wallet.aum,
   };
 
   const closedPosition: ClosedPosition = {
@@ -322,7 +318,6 @@ export function closePosition(input: ClosePositionInput): ClosePositionResult {
       wallet,
       evaluation,
       goldGained,
-      aumReturned,
       reason: input.reason,
     },
   };

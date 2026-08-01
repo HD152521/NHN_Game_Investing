@@ -8,15 +8,46 @@
 
 import { describe, expect, test } from 'vitest';
 
-import { STAGES, WAVE_BASE_HP_R1, scaleWaveHp, totalBaseIncome, totalGoldFor } from './stages';
+import {
+  AUM_DROP_PER_WAVE,
+  STAGES,
+  WAVE_BASE_HP_R1,
+  noTradeGold,
+  scaleWaveHp,
+  sessionTotalStake,
+  totalBaseIncome,
+  totalGoldFor,
+} from './stages';
 import type { StageConfig, StageId } from './stages';
 
 const STAGE_IDS: readonly StageId[] = ['R1', 'R2', 'R3'];
 
-/** 목표에 닿았다고 볼 하한 — 필요지출의 99%. R1·R3는 5 G 안팎으로 아슬아슬하게 걸친다. */
+/** 목표에 닿았다고 볼 하한 — 필요지출의 99%. 세 지역 모두 20 G 안팎으로 아슬아슬하게 걸친다. */
 const PASS_THRESHOLD = 0.99;
-/** 명확한 실패로 볼 상한 — 필요지출의 90%. */
-const FAIL_THRESHOLD = 0.9;
+/**
+ * 실패로 볼 상한 — 필요지출의 97%.
+ *
+ * ⚠️ `[v1.3]` 예전 값은 0.90이었다. 낮춘 것이 아니라 **경제 구조가 바뀌어 대역이 좁아졌다.**
+ * 원금-이익 분리 시절 총골드는 `C + S × ρ`라 ρ가 유일한 항이었고, ρ 5%p는 총골드를 20% 넘게
+ * 흔들었다. 지금은 원금까지 골드가 되므로 총골드가 `C + S × (1 + ρ) × GC`이고, ρ는 **1 위에
+ * 얹히는 항**이라 5%p 변화가 총골드를 3~4%만 움직인다:
+ * ```
+ * 격차 / 필요지출 = 0.05 × (1 − C/필요지출) / (1 + ρ)
+ *   R1 0.05 × 0.883 / 1.20 = 3.7%   R2 0.05 × 0.931 / 1.30 = 3.6%
+ *   R3 0.05 × 0.960 / 1.45 = 3.3%
+ * ```
+ * 이 값은 `GOLD_CONVERSION`이나 S를 어떻게 잡아도 변하지 않는 **구조적 상수**다(둘 다 분자와
+ * 분모에서 약분된다). 게이트의 실질은 "목표에서 반드시 미달"이며, 0.97은 그 미달이 반올림
+ * 오차가 아님을 확인하는 보조 단언이다.
+ */
+const FAIL_THRESHOLD = 0.97;
+/**
+ * 세탁(z≈0 왕복)의 실효 수익률. 수수료 1%를 물고 나오므로 ρ = −FEE_RATE다.
+ * 세탁 상한의 정확한 시뮬레이션은 `src/position/economy-exploit.test.ts`가 담당한다.
+ */
+const WASH_RETURN_RATE = -0.01;
+/** 세탁이 명확히 미달임을 보는 상한 — 필요지출의 85%. */
+const WASH_THRESHOLD = 0.85;
 
 describe('스테이지 상수표', () => {
   test('시작 골드는 전 지역 120 G로 동일하다 (기본 포탑 1기)', () => {
@@ -25,10 +56,12 @@ describe('스테이지 상수표', () => {
     }
   });
 
-  test('시작 AUM은 R1 2000 / R2 2400 / R3 2800', () => {
+  test('시작 AUM은 R1 2000 / R2 4050 / R3 6900 (v1.3 재산출)', () => {
+    // R1은 앵커(PRD §9.2 AUM_BY_DESK_LV Lv1)라 고정하고, GOLD_CONVERSION을 여기 맞춰 역산했다.
+    // R2·R3는 그 전환율 아래에서 게이트가 물도록 역산한 값이다.
     expect(STAGES.R1.startingAum).toBe(2000);
-    expect(STAGES.R2.startingAum).toBe(2400);
-    expect(STAGES.R3.startingAum).toBe(2800);
+    expect(STAGES.R2.startingAum).toBe(4050);
+    expect(STAGES.R3.startingAum).toBe(6900);
   });
 
   test('기본 수입 총액은 R1 195 / R2 170 / R3 145', () => {
@@ -48,10 +81,29 @@ describe('스테이지 상수표', () => {
     expect(STAGES.R3.targetReturnRate).toBe(0.45);
   });
 
-  test('세션 총 투입 S는 R1 11,900 / R2 13,080 / R3 14,290', () => {
-    expect(STAGES.R1.sessionTotalStake).toBe(11_900);
-    expect(STAGES.R2.sessionTotalStake).toBe(13_080);
-    expect(STAGES.R3.sessionTotalStake).toBe(14_290);
+  test('세션 총 투입 S는 R1 3,950 / R2 6,000 / R3 8,850 (v1.3 재산출)', () => {
+    expect(sessionTotalStake(STAGES.R1)).toBe(3950);
+    expect(sessionTotalStake(STAGES.R2)).toBe(6000);
+    expect(sessionTotalStake(STAGES.R3)).toBe(8850);
+  });
+
+  /**
+   * ★ 이번 개정의 핵심 항등식 ★
+   * 청산이 AUM을 되돌리지 않으므로(FR-5.7) 세션 동안 굴릴 수 있는 총액은 **세션 동안 받은
+   * AUM 총액과 정확히 같다.** 예전의 S(11,900 등)는 "원금을 5~6회 재순환시킨다"는 손으로
+   * 관리하던 가정값이었고, 그 배수가 밸런스의 숨은 변수였다. 이제 S는 파생값이다.
+   */
+  test('S는 가정값이 아니라 파생값이다 — S = 시작 AUM + 드롭 총액', () => {
+    expect(AUM_DROP_PER_WAVE).toBe(150);
+    for (const id of STAGE_IDS) {
+      expect(sessionTotalStake(STAGES[id])).toBe(STAGES[id].startingAum + AUM_DROP_PER_WAVE * 13);
+    }
+  });
+
+  test('매매 미실행 골드는 R1 315 / R2 290 / R3 265다 (시작 골드 + 기본수입)', () => {
+    expect(noTradeGold(STAGES.R1)).toBe(315);
+    expect(noTradeGold(STAGES.R2)).toBe(290);
+    expect(noTradeGold(STAGES.R3)).toBe(265);
   });
 });
 
@@ -90,11 +142,18 @@ describe('웨이브 HP 곡선', () => {
 });
 
 describe('R1/R2/R3 게이트 — 목표에서 통과, 목표−5%p에서 실패', () => {
-  /** 코디네이터 검산표 그대로. [목표−5%p, 목표, 목표+5%p] 총골드. */
+  /** 검산표 `[v1.3 재산출]`. [목표−5%p, 목표, 목표+5%p] 총골드. */
   const expected: Readonly<Record<StageId, readonly [number, number, number]>> = {
-    R1: [2100, 2695, 3290],
-    R2: [3560, 4214, 4868],
-    R3: [5981, 6696, 7410],
+    R1: [2586, 2685, 2784],
+    R2: [4040, 4190, 4340],
+    R3: [6460, 6681, 6903],
+  };
+
+  /** 세탁(ρ = −1%) 총골드. 셋 다 필요지출에 닿지 못한다. */
+  const washExpected: Readonly<Record<StageId, number>> = {
+    R1: 2270,
+    R2: 3260,
+    R3: 4646,
   };
 
   function goldAt(stage: StageConfig, delta: number): number {
@@ -120,14 +179,31 @@ describe('R1/R2/R3 게이트 — 목표에서 통과, 목표−5%p에서 실패'
       expect(short / stage.requiredSpend).toBeLessThan(FAIL_THRESHOLD);
     });
 
-    test(`${id} — 매매를 전혀 안 하면(ρ=0) 필요지출의 12% 이하다`, () => {
-      const noTrade = totalGoldFor(stage, 0);
+    test(`${id} — 매매를 아예 안 하면(AUM 미투입) 필요지출의 12% 이하다`, () => {
+      // ⚠️ `totalGoldFor(stage, 0)`이 아니다. ρ=0은 "본전치기로 전액 전환"이라는 전혀 다른
+      // 플레이이며, 원금까지 골드가 되는 지금 경제에서는 상당한 골드를 만든다.
+      // "매매 미실행"은 S 자체가 0인 경우이고, 그 값이 `noTradeGold`다.
+      const noTrade = noTradeGold(stage);
       expect(noTrade).toBe(stage.startingGold + totalBaseIncome(stage));
       expect(noTrade / stage.requiredSpend).toBeLessThan(0.12);
+      // 타워 2기(240 G) 언저리 — 13웨이브를 막을 수 있는 예산이 아니다(economy-floor.test.ts).
+      expect(noTrade).toBeLessThan(400);
     });
 
-    test(`${id} — 세탁(ρ<0)은 매매 미실행보다도 못하다`, () => {
-      expect(totalGoldFor(stage, -0.01)).toBeLessThan(totalGoldFor(stage, 0));
+    test(`${id} — 세탁(z≈0 왕복)만으로는 필요지출에 닿지 못한다 (${washExpected[id]} G)`, () => {
+      const wash = Math.round(totalGoldFor(stage, WASH_RETURN_RATE));
+      expect(wash).toBe(washExpected[id]);
+      expect(wash).toBeLessThan(stage.requiredSpend);
+      expect(wash / stage.requiredSpend).toBeLessThan(WASH_THRESHOLD);
+      // 세탁은 목표 플레이보다 항상 적다 — 전환율은 상수이므로 격차는 순수하게 ρ에서 온다.
+      expect(wash).toBeLessThan(goldAt(stage, 0));
+    });
+
+    test(`${id} — 세탁이 매매 미실행보다 낫다는 사실 자체는 정상이다 (AUM→골드는 정상 파이프)`, () => {
+      // v1.2에서는 세탁 골드가 0이라 "매매 미실행보다도 못하다"가 성립했다. v1.3에서는
+      // AUM을 골드로 바꾸는 것이 게임의 정상 경로이므로 세탁이 미실행보다 나은 것이 옳다.
+      // 게이트를 지키는 것은 "세탁이 손해다"가 아니라 **"세탁으로는 필요지출에 못 닿는다"**다.
+      expect(Math.round(totalGoldFor(stage, WASH_RETURN_RATE))).toBeGreaterThan(noTradeGold(stage));
     });
   }
 

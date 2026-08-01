@@ -22,9 +22,9 @@ export type { CloseReason, Direction, OpenPosition, PositionEval, PositionParams
 export {
   AUM_SETTLEMENT_RATIO,
   DEFAULT_POSITION_PARAMS,
+  GOLD_CONVERSION,
   LIQ_WARN_RATIO,
   MIN_PROFIT_CLOSES_FOR_AUM_CREDIT,
-  REFUND_RATIO,
   STAKE_PRESETS,
 } from './constants';
 
