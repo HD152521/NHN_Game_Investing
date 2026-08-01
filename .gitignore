@@ -13,3 +13,6 @@ coverage/
 # assets/cut/ 도 커밋 대상입니다
 assets/atlas/*
 !assets/atlas/.gitkeep
+
+# 스프라이트 정답지는 추적한다 (이식 대조 근거)
+!docs/design-reference/grids.json
