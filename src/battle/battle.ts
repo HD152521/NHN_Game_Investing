@@ -91,7 +91,8 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   drawLaneGuides(ctx, palette, layout);
   drawAirLaneWarning(ctx, palette, layout, state);
   drawHq(ctx, palette, layout, state);
-  drawEnemyBase(ctx, palette, layout);
+  // state 를 넘겨야 마지막 웨이브에 보스(마진콜 심판관)가 요새 앞에 등장한다.
+  drawEnemyBase(ctx, palette, layout, state);
   drawSlotDecals(ctx, palette, layout, state, opts.gold ?? 0, selectedTowerKind);
   drawTowers(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
   drawTowerRangePreview(ctx, palette, layout, state, selectedSlot, selectedTowerKind);

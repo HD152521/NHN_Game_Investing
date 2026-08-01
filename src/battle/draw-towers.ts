@@ -11,13 +11,12 @@
  *   2) 그 위에 굵고 밝은(TEXT, LINE 대비 17:1) 점선 윤곽 + 슬롯 번호를 그려 "빈 슬롯 =
  *      클릭 가능한 건설 자리"라는 정보를 명확히 전달한다.
  *
- * 종류별 실루엣은 아트 프로덕션 시트 v1.1 §06을 그대로 옮긴 것이며, 실제 형태 코드는
- * `src/battle/shapes/tower-shapes.ts`에 있다(이 파일은 배치·상태 표시만 담당한다):
- *   - basic(T-01 지지선 앵커포)  : 낮고 단정한 단발 앵커 발사기 + 지면에 박은 쐐기 두 개
- *   - antiair(T-02 공시 리피터)  : 위로 세운 3연 수직 발사관 + 작은 접시 — 확실히 높고 얇다
- *   - splash(T-03 물타기 살포기) : 나팔처럼 벌어진 총구 + 노출된 탄통 — 셋 중 가장 뭉툭
- * 셋 다 동일한 정사각 베이스 플레이트 위에 서고, 조종사는 없다(시트 §06).
- * 모든 실루엣에 LINE 토큰 외곽선을 둘러 배경과 분리한다(가시성 수정 2번째 항목).
+ * 종류별 그림은 디자인 원본의 `towerBasic` / `towerAA` / `towerSplash` 스프라이트를
+ * 그대로 쓴다(`src/sprites/tower.ts`, 매핑은 `entity-sprites.ts`). 예전에는 시트의 *글로 된
+ * 묘사*만 보고 `src/battle/shapes/tower-shapes.ts`에서 도형을 새로 발명했는데, 그래서 화면이
+ * 디자인과 달랐다(PLAN Step 3). 이 파일은 배치·상태 표시만 담당한다.
+ * 외곽선(LINE 토큰)은 스프라이트 그리드가 `outline('0')`으로 이미 갖고 있다 — 배경과의
+ * 분리는 원본 픽셀 안에서 해결된다.
  *
  * ★ 레인 조준 표시(FR-6.2 UX 보완): 대공 포대만 공중을 잡고 나머지는 지상만 잡는데
  *   화면에 이 사실이 드러나지 않아 "공중 적을 못 잡는" 사고가 반복됐다. 지어진 타워마다
@@ -26,9 +25,10 @@
 
 import type { CombatState, Tower, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
+import { drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
+import { TOWER_SPRITES } from './entity-sprites.js';
 import type { BattleLayout, Rect } from './layout.js';
 import { slotRect } from './layout.js';
-import { TOWER_SHAPES } from './shapes/index.js';
 import { rgba } from './style.js';
 import type { BattleCtx } from './surface.js';
 
@@ -46,8 +46,15 @@ const FULL_CIRCLE_END = Math.PI * 2;
 const AIM_LINE_WIDTH = 1.5;
 /** 조준선 끝 마커(원) 반지름(px). */
 const AIM_MARKER_RADIUS = 2.5;
-/** 빈 슬롯 미리보기 실루엣 투명도. */
-const PREVIEW_ALPHA = 0.35;
+/**
+ * 빈 슬롯 미리보기를 "아직 없는 것"으로 읽히게 하는 어둡게 덮기(불투명도).
+ *
+ * 스프라이트는 굽는 시점에 알파가 정해지므로 예전처럼 `rgba(...)` 반투명 채움으로 실루엣을
+ * 그릴 수 없다. 대신 **실제 타워 그림을 그대로 그린 뒤 슬롯 위에 어두운 반투명 판을 덮어**
+ * 흐리게 만든다 — 어떤 타워가 지어질지(종류 정보)는 그대로 남고, 지어진 타워와는 확실히
+ * 구분된다.
+ */
+const PREVIEW_DIM_ALPHA = 0.55;
 /** 받침(플랫폼)이 슬롯 사각형보다 사방으로 얼마나 더 넓게 깔리는지(px). */
 const PLATFORM_PADDING = 6;
 const SLOT_NUMBER_FONT = 'bold 12px monospace';
@@ -97,19 +104,11 @@ function drawSlotNumber(ctx: BattleCtx, palette: Palette, rect: Rect, slot: numb
 }
 
 /**
- * 종류별 실루엣을 그린다. 색을 인자로 받으므로 실제 타워(불투명)와 빈 슬롯
- * 미리보기(반투명 rgba)가 같은 모양 코드를 공유한다.
+ * 종류별 스프라이트를 슬롯 받침 위에 세운다. 배율·좌표는 전부 인자로 받은 슬롯 사각형에서
+ * 나온다(`drawSpriteStanding`) — 여기서 좌표를 새로 만들지 않는다.
  */
-function drawTowerShape(
-  ctx: BattleCtx,
-  rect: Rect,
-  kind: TowerKind,
-  chassis: string,
-  armor: string,
-  accent: string,
-  line: string,
-): void {
-  TOWER_SHAPES[kind].draw(ctx, rect, chassis, armor, accent, line);
+function drawTowerSprite(ctx: BattleCtx, rect: Rect, kind: TowerKind): void {
+  drawSpriteStanding(ctx, TOWER_SPRITES[kind].key, rect, rect.y + rect.h);
 }
 
 /** 업그레이드(level 2) 강조 — GOLD 외곽선 + 우상단 점. 재화 색과 진영 색을 혼동하지 않도록 GOLD만 사용. */
@@ -164,25 +163,21 @@ function drawLaneAimIndicator(ctx: BattleCtx, palette: Palette, layout: BattleLa
 }
 
 function drawTowerAt(ctx: BattleCtx, palette: Palette, layout: BattleLayout, rect: Rect, tower: Tower): void {
-  // 시트 §06: 차콜 금속 본체(BG_2) + 적색 장갑 패널(UP_ALLY) + 음영(UP_DEEP).
-  drawTowerShape(ctx, rect, tower.kind, palette.BG_2, palette.UP_ALLY, palette.UP_DEEP, palette.LINE);
+  drawTowerSprite(ctx, rect, tower.kind);
   if (tower.level === 2) {
     drawUpgradeAccent(ctx, palette, rect);
   }
   drawLaneAimIndicator(ctx, palette, layout, rect, tower.kind);
 }
 
-/** 빈 슬롯 미리보기 — 툴바에서 고른 타워 종류를 반투명 실루엣으로 먼저 보여준다. */
+/** 빈 슬롯 미리보기 — 툴바에서 고른 타워를 그린 뒤 어둡게 덮어 "예정"으로 읽히게 한다. */
 function drawEmptySlotPreview(ctx: BattleCtx, palette: Palette, rect: Rect, kind: TowerKind): void {
-  drawTowerShape(
-    ctx,
-    rect,
-    kind,
-    rgba(palette.BG_2, PREVIEW_ALPHA),
-    rgba(palette.UP_ALLY, PREVIEW_ALPHA),
-    rgba(palette.UP_DEEP, PREVIEW_ALPHA),
-    rgba(palette.LINE, PREVIEW_ALPHA),
-  );
+  drawTowerSprite(ctx, rect, kind);
+
+  ctx.save();
+  ctx.fillStyle = rgba(palette.BG_0, PREVIEW_DIM_ALPHA);
+  ctx.fillRect(rect.x - PLATFORM_PADDING, rect.y - PLATFORM_PADDING, rect.w + PLATFORM_PADDING * 2, rect.h + PLATFORM_PADDING * 2);
+  ctx.restore();
 }
 
 export function drawTowers(
@@ -196,6 +191,8 @@ export function drawTowers(
   const towerSlots = state.towerSlots;
   if (towerSlots <= 0) return;
 
+  syncSpriteColorMode(palette);
+
   for (let slot = 0; slot < towerSlots; slot += 1) {
     const rect = slotRect(slot, layout, towerSlots);
     const tower = state.towers.find((t) => t.slot === slot);
@@ -204,11 +201,12 @@ export function drawTowers(
     drawSlotPlatform(ctx, palette, rect);
 
     if (!tower) {
-      drawEmptySlotOutline(ctx, palette, rect, isSelected);
-      drawSlotNumber(ctx, palette, rect, slot);
+      // 미리보기는 윤곽선·슬롯 번호보다 **먼저** — 어둡게 덮는 판이 그 둘을 흐리지 않게 한다.
       if (isSelected && selectedTowerKind !== null) {
         drawEmptySlotPreview(ctx, palette, rect, selectedTowerKind);
       }
+      drawEmptySlotOutline(ctx, palette, rect, isSelected);
+      drawSlotNumber(ctx, palette, rect, slot);
       continue;
     }
 

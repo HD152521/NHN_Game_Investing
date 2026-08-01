@@ -1,125 +1,185 @@
-import { describe, expect, test } from 'vitest';
+/**
+ * 유닛 렌더 검사 — **그려진 픽셀이 스프라이트 그리드와 같은지**를 본다.
+ *
+ * 예전 이 파일은 `arc` 개수·바운딩 박스 같은 **벡터 호출 기록**으로 실루엣을 검사했다.
+ * 그림이 픽셀 아트로 바뀌면서 그 검사는 의미를 잃었으므로(PLAN Step 3), 이제 소프트웨어
+ * 캔버스에 실제로 그린 뒤 픽셀을 읽어 원본 그리드와 대조한다 — "화면이 디자인과 같은가"를
+ * 직접 묻는 검사다.
+ */
+
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { createTheme } from '../design/index.js';
+import { spriteGrid } from '../sprites/index.js';
+import { spriteRasters } from '../sprites/render/index.js';
+import type { RenderableSpriteKey } from '../sprites/render/index.js';
+import { createSoftwareSurface } from '../sprites/render/testing/software-canvas.js';
 import { makeEnemy as enemy, makeUnit as unit } from './combat-fixtures.js';
-import { drawAllies, drawEnemies } from './draw-units.js';
-import { computeBattleLayout } from './layout.js';
+import { allyUnitScreenY, drawAllies, drawEnemies } from './draw-units.js';
+import { ALLY_SPRITES, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
-import type { FakeBattleCtx } from './fake-ctx.js';
-import { boundsOf, hasArc } from './shapes/bbox-probe.js';
-import { enemyKindForId } from './shapes/index.js';
+import { cellRgb, createSpriteBattleSurface, hashRegion, pixelAt } from './sprite-fake-ctx.js';
+import type { SpriteBattleSurface } from './sprite-fake-ctx.js';
+import { computeBattleLayout, laneY, progressToX } from './layout.js';
 
 const { palette } = createTheme();
 const layout = computeBattleLayout(800, 300);
 
-function allyCalls(kind: 'intern' | 'analyst' | 'trader'): FakeBattleCtx {
-  const ctx = createFakeBattleCtx();
-  drawAllies(ctx, palette, layout, [unit({ kind })]);
-  return ctx;
+/**
+ * Node 에는 `OffscreenCanvas` 도 `<canvas>` 도 없어 게임이 공유하는 `spriteRasters` 가
+ * 아무것도 굽지 못한다. 소프트웨어 캔버스를 그 자리에 꽂아 실제 래스터를 만든다.
+ */
+const scope = globalThis as { OffscreenCanvas?: unknown };
+const previousOffscreen = scope.OffscreenCanvas;
+
+beforeAll(() => {
+  scope.OffscreenCanvas = function OffscreenCanvasStub(width: number, height: number) {
+    return createSoftwareSurface(width, height);
+  };
+  spriteRasters.clear();
+});
+
+afterAll(() => {
+  scope.OffscreenCanvas = previousOffscreen;
+  spriteRasters.clear();
+});
+
+/** 그리드 폭(첫 행 길이). 빈 그리드는 0. */
+function gridWidth(key: RenderableSpriteKey): number {
+  return spriteGrid(key)[0]?.length ?? 0;
 }
 
-function maxStrokeWidth(ctx: FakeBattleCtx): number {
-  return ctx.calls.reduce((widest, call) => (call.kind === 'stroke' ? Math.max(widest, call.lineWidth) : widest), 0);
+/** 배율 s 로 그려진 스프라이트를 각 셀의 **중심 픽셀**로 표본 검사한다(경계 반올림 회피). */
+function expectSpriteMatchesGrid(
+  target: SpriteBattleSurface,
+  key: RenderableSpriteKey,
+  originX: number,
+  originY: number,
+  scale: number,
+): void {
+  const grid = spriteGrid(key);
+  const half = Math.floor(scale / 2);
+  let painted = 0;
+
+  for (let y = 0; y < grid.length; y += 1) {
+    const row = grid[y];
+    if (row === undefined) continue;
+    for (let x = 0; x < row.length; x += 1) {
+      const cell = row[x];
+      if (cell === undefined) continue;
+      const expected = cellRgb(palette, cell);
+      const pixel = pixelAt(target.surface, originX + x * scale + half, originY + y * scale + half);
+      if (expected === null) {
+        expect(pixel[3], `투명해야 할 (${x}, ${y})`).toBe(0);
+        continue;
+      }
+      expect([pixel[0], pixel[1], pixel[2]], `(${x}, ${y})`).toEqual([...expected]);
+      painted += 1;
+    }
+  }
+
+  expect(painted).toBeGreaterThan(0);
 }
 
-describe('drawAllies — 시트 §04 아군 3종', () => {
-  test('크기 서열이 시트와 같다: 사환 < 통신원 < 반장', () => {
-    const intern = boundsOf(allyCalls('intern').calls);
-    const analyst = boundsOf(allyCalls('analyst').calls);
-    const trader = boundsOf(allyCalls('trader').calls);
+describe('drawAllies — 아군 3종이 원본 스프라이트 그대로 나온다', () => {
+  test('개장벨 사환(A-01)의 모든 픽셀이 tf-ally-01 그리드와 일치한다', () => {
+    const target = createSpriteBattleSurface(800, 300);
+    const ally = unit({ kind: 'intern', id: 0, x: 0.5 });
+    drawAllies(target.ctx, palette, layout, [ally]);
 
-    expect(intern.height).toBeLessThan(analyst.height);
-    expect(analyst.height).toBeLessThan(trader.height);
-    expect(intern.width).toBeLessThan(trader.width);
+    const key = ALLY_SPRITES.intern.key;
+    const originX = Math.round(progressToX(ally.x, layout) - gridWidth(key) / 2);
+    const originY = Math.round(allyUnitScreenY(ally, layout) - spriteGrid(key).length / 2);
+
+    expectSpriteMatchesGrid(target, key, originX, originY, 1);
   });
 
-  test('개장벨 사환(A-01)은 종 모양 머리(반원)와 벨 채 곤봉(선 + 끝 원)을 그린다', () => {
-    const ctx = allyCalls('intern');
-    const arcs = ctx.calls.filter((c) => c.kind === 'arc');
+  test('락업 반장(A-03)의 모든 픽셀이 tf-ally-03 그리드와 일치한다', () => {
+    const target = createSpriteBattleSurface(800, 300);
+    const ally = unit({ kind: 'trader', id: 0, x: 0.5 });
+    drawAllies(target.ctx, palette, layout, [ally]);
 
-    // 종 돔 · 몸통 · 곤봉 끝 채 — 곡선 부품이 최소 셋이다.
-    expect(arcs.length).toBeGreaterThanOrEqual(3);
-    expect(ctx.calls.some((c) => c.kind === 'lineTo')).toBe(true);
+    const key = ALLY_SPRITES.trader.key;
+    const originX = Math.round(progressToX(ally.x, layout) - gridWidth(key) / 2);
+    const originY = Math.round(allyUnitScreenY(ally, layout) - spriteGrid(key).length / 2);
+
+    expectSpriteMatchesGrid(target, key, originX, originY, 1);
   });
 
-  test('호가 통신원(A-02)은 등의 릴(원형 백팩)을 몸통 뒤쪽(-x)에 그린다', () => {
-    const ctx = allyCalls('analyst');
-    const cx = boundsOf(ctx.calls).minX + boundsOf(ctx.calls).width / 2;
-    const arcs = ctx.calls.filter((c) => c.kind === 'arc');
-    const behindBody = arcs.some((c) => c.kind === 'arc' && c.x < cx);
+  test('세 종류가 서로 다른 그림으로 나온다', () => {
+    const hashes = (['intern', 'analyst', 'trader'] as const).map((kind) => {
+      const target = createSpriteBattleSurface(800, 300);
+      drawAllies(target.ctx, palette, layout, [unit({ kind, id: 0, x: 0.5 })]);
+      return hashRegion(target.surface, 360, 200, 80, 60);
+    });
 
-    expect(behindBody).toBe(true);
-    // 접이식 집게 안테나 — 모든 곡선 부품(머리 포함)보다 위(작은 y)까지 뻗는 선이 있다.
-    const highestCurveTop = arcs.reduce((top, c) => (c.kind === 'arc' ? Math.min(top, c.y - c.radius) : top), Number.POSITIVE_INFINITY);
-    const highestLine = ctx.calls.reduce((top, c) => (c.kind === 'lineTo' ? Math.min(top, c.y) : top), Number.POSITIVE_INFINITY);
-    expect(highestLine).toBeLessThan(highestCurveTop);
+    expect(new Set(hashes).size).toBe(3);
   });
 
-  test('락업 반장(A-03)은 가장 두꺼운 외곽선의 큰 원형 방패를 가진다', () => {
-    const traderCtx = allyCalls('trader');
-    const internCtx = allyCalls('intern');
+  test('HP 바가 스프라이트 위쪽에 함께 그려진다', () => {
+    const ctx = createFakeBattleCtx();
+    drawAllies(ctx, palette, layout, [unit({ hp: 25, maxHp: 50 })]);
 
-    expect(maxStrokeWidth(traderCtx)).toBeGreaterThan(maxStrokeWidth(internCtx));
-
-    const internMaxRadius = internCtx.calls.reduce((r, c) => (c.kind === 'arc' ? Math.max(r, c.radius) : r), 0);
-    const traderMaxRadius = traderCtx.calls.reduce((r, c) => (c.kind === 'arc' ? Math.max(r, c.radius) : r), 0);
-    expect(traderMaxRadius).toBeGreaterThan(internMaxRadius);
-  });
-
-  test('아군 3종 모두 둥근 실루엣(원)을 포함한다 — 색약 모드의 진영 신호', () => {
-    expect(hasArc(allyCalls('intern').calls)).toBe(true);
-    expect(hasArc(allyCalls('analyst').calls)).toBe(true);
-    expect(hasArc(allyCalls('trader').calls)).toBe(true);
+    const bars = ctx.calls.filter((call) => call.kind === 'fillRect' && call.fillStyle === palette.UP_ALLY);
+    expect(bars.length).toBe(1);
   });
 });
 
-describe('drawEnemies — 시트 §05 악당', () => {
-  test('지상 적 실루엣에 LINE 색 외곽선이 그려진다', () => {
+describe('drawEnemies — 악당 스프라이트가 좌우 반전 없이 나온다', () => {
+  /**
+   * ★ 반전하지 않는 것이 정답인 근거 ★
+   * 원본 그리드가 이미 좌향이다(`enemyRusher` 의 창이 x=2~6 왼쪽, `enemyBlocker` 의 방패가
+   * x=1~5 왼쪽). 여기서 뒤집으면 악당이 자기가 밀고 가는 방향(좌측 아군 사옥)의 반대쪽을
+   * 본다. 아래 검사는 **뒤집지 않은** 그리드와 픽셀이 일치함을 확인해 그 결정을 못 박는다.
+   */
+  test('갭하락 첨병(E-01)의 픽셀이 뒤집히지 않은 tf-enemy-01 그리드와 일치한다', () => {
+    const target = createSpriteBattleSurface(800, 300);
+    // id 0 → 지상 목록의 첫 종류(gapScout).
+    const foe = enemy({ id: 0, lane: 'ground', x: 0.5 });
+    drawEnemies(target.ctx, palette, layout, [foe]);
+
+    expect(enemyKindForId('ground', 0)).toBe('gapScout');
+    const key = ENEMY_SPRITES.gapScout.key;
+    const originX = Math.round(progressToX(foe.x, layout) - gridWidth(key) / 2);
+    const originY = Math.round(laneY('ground', layout) - spriteGrid(key).length / 2);
+
+    expectSpriteMatchesGrid(target, key, originX, originY, 1);
+  });
+
+  test('공중 악당은 공중 레인 y에 그려진다', () => {
+    const target = createSpriteBattleSurface(800, 300);
+    const foe = enemy({ id: 0, lane: 'air', x: 0.5 });
+    drawEnemies(target.ctx, palette, layout, [foe]);
+
+    const key = ENEMY_SPRITES[enemyKindForId('air', 0)].key;
+    const originX = Math.round(progressToX(foe.x, layout) - gridWidth(key) / 2);
+    const originY = Math.round(laneY('air', layout) - spriteGrid(key).length / 2);
+
+    expectSpriteMatchesGrid(target, key, originX, originY, 1);
+  });
+
+  test('HP 바는 적 진영색(ENEMY_DOWN)으로 그린다', () => {
     const ctx = createFakeBattleCtx();
-    drawEnemies(ctx, palette, layout, [enemy({ lane: 'ground' })]);
+    drawEnemies(ctx, palette, layout, [enemy({ hp: 30, maxHp: 60 })]);
 
-    expect(ctx.calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE)).toBe(true);
-  });
-
-  test('공중 적 실루엣에 LINE 색 외곽선이 그려진다', () => {
-    const ctx = createFakeBattleCtx();
-    drawEnemies(ctx, palette, layout, [enemy({ lane: 'air' })]);
-
-    expect(ctx.calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE)).toBe(true);
-  });
-
-  test('적 실루엣에는 원이 없다 — 각진 진영 신호(시트 00 이중 인코딩)', () => {
-    const ground = createFakeBattleCtx();
-    drawEnemies(ground, palette, layout, [enemy({ id: 0 }), enemy({ id: 1 }), enemy({ id: 2 })]);
-    const air = createFakeBattleCtx();
-    drawEnemies(air, palette, layout, [enemy({ id: 0, lane: 'air' }), enemy({ id: 1, lane: 'air' })]);
-
-    expect(hasArc(ground.calls)).toBe(false);
-    expect(hasArc(air.calls)).toBe(false);
-  });
-
-  test('id가 다르면 다른 종류의 실루엣이 나오고, 같은 id는 항상 같은 종류다', () => {
-    expect(enemyKindForId('ground', 0)).not.toBe(enemyKindForId('ground', 1));
-    expect(enemyKindForId('ground', 7)).toBe(enemyKindForId('ground', 7));
-    expect(enemyKindForId('air', 0)).not.toBe(enemyKindForId('air', 1));
-  });
-
-  test('음수 id도 유효한 종류로 접힌다(크래시 방지)', () => {
-    expect(enemyKindForId('ground', -5)).toBeTruthy();
-    expect(enemyKindForId('air', -1)).toBeTruthy();
+    expect(ctx.calls.some((call) => call.kind === 'fillRect' && call.fillStyle === palette.ENEMY_DOWN)).toBe(true);
   });
 });
 
-describe('아군 실루엣 — 배경과의 분리(가시성)', () => {
-  test('사환 몸통에 LINE 색 외곽선이 그려진다', () => {
-    expect(allyCalls('intern').calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE)).toBe(true);
+describe('스프라이트를 못 그리는 환경', () => {
+  test('벡터 전용 컨텍스트에서도 예외 없이 HP 바까지는 그린다', () => {
+    const ctx = createFakeBattleCtx();
+
+    expect(() => drawAllies(ctx, palette, layout, [unit()])).not.toThrow();
+    expect(() => drawEnemies(ctx, palette, layout, [enemy()])).not.toThrow();
+    expect(ctx.calls.some((call) => call.kind === 'fillRect')).toBe(true);
   });
 
-  test('통신원 몸통에 LINE 색 외곽선이 그려진다', () => {
-    expect(allyCalls('analyst').calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE)).toBe(true);
-  });
+  test('극소 캔버스에서도 크래시하지 않는다', () => {
+    const tiny = computeBattleLayout(4, 4);
+    const target = createSpriteBattleSurface(4, 4);
 
-  test('반장 몸통에 LINE 색 외곽선이 그려진다', () => {
-    expect(allyCalls('trader').calls.some((c) => c.kind === 'stroke' && c.strokeStyle === palette.LINE)).toBe(true);
+    expect(() => drawAllies(target.ctx, palette, tiny, [unit()])).not.toThrow();
+    expect(() => drawEnemies(target.ctx, palette, tiny, [enemy()])).not.toThrow();
   });
 });

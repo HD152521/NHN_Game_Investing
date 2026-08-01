@@ -1,40 +1,45 @@
 /**
- * 아군 사옥(좌) · 적 본진(우) 그리기 — 아트 프로덕션 시트 v1.1 §07.
+ * 아군 사옥(좌) · 베어 요새(우) · 보스 그리기 — 디자인 원본의 `baseAlly` / `baseEnemy` /
+ * `boss` 스프라이트를 그대로 쓴다(`src/sprites/base.ts`, 매핑은 `entity-sprites.ts`).
  *
- * 실제 형태는 `src/battle/shapes/base-shapes.ts`에 있고, 이 파일은 레이아웃 사각형과
- * 전투 상태를 형태 코드에 넘기는 얇은 층이다.
+ * 예전에는 `src/battle/shapes/base-shapes.ts`에서 시트의 *글로 된 묘사*만 보고 도형을 새로
+ * 발명했다("위로 자라는 첨탑", "꺾여 내려가는 차트선", HP에 반응하는 창 조명). 원본 드로잉
+ * 코드에는 그런 동적 창 조명이 없다 — 이식본은 원본 픽셀을 그대로 쓰므로 그 연출은 사라지고,
+ * 사옥의 피해 표현은 **HP 바 하나**로 남는다(PLAN 공통 제약: "이식은 재해석 금지").
  *
- * `CombatState`에는 `baseHp`/`maxBaseHp` 하나만 있다 — 이는 적이 공격하는
- * "우리 쪽" 본진 체력이므로(적이 x=0 방향으로 밀고 들어와 baseDamage를 준다),
- * HP 바는 아군 사옥에만 그린다. 적 본진(우측)은 시각적 기준점일 뿐 체력 데이터가
- * 없으므로 HP 바를 그리지 않는다.
+ * `CombatState`에는 `baseHp`/`maxBaseHp` 하나만 있다 — 이는 적이 공격하는 "우리 쪽" 본진
+ * 체력이므로, HP 바는 아군 사옥에만 그린다. 베어 요새(우측)는 시각적 기준점일 뿐 체력
+ * 데이터가 없다.
  *
- * ★ 시트 §07의 두 가지 요구를 실제로 구현한 곳 ★
- *   - 사옥: **위로 자란다** + "피격 시 창 조명이 하나씩 꺼진다" → HP 비율이 곧 창 조명 수다.
- *   - 요새: **아래로 꺾인다** → 상단 실루엣이 계단식으로 내려가는 차트선이다.
+ * ★ 바닥선 ★ 두 건물 모두 **지면선(`layout.groundY`)** 위에 세운다. 유닛이 걷는 선과 같은
+ *   선에 서야 건물이 전장 바닥에 붙어 보인다. 좌우 위치와 폭은 레이아웃 사각형 그대로다.
  */
 
 import type { CombatState } from '../combat/types.js';
+import { BOSS_IDENTITY } from '../combat/identity.js';
 import type { Palette } from '../design/index.js';
+import { drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
+import { BOSS_SPRITE, ENEMY_BASE_SPRITE, HQ_SPRITE } from './entity-sprites.js';
 import { drawHpBar } from './draw-hp-bar.js';
 import type { BattleLayout } from './layout.js';
-import { BASE_SIDE_PADDING, drawBearFortressShape, drawHqShape } from './shapes/base-shapes.js';
-import { hpRatio } from './style.js';
 import type { BattleCtx } from './surface.js';
 
 /** HP 바 높이(px) — 가시성 수정으로 5→6. */
 const HP_BAR_HEIGHT = 6;
-/** HP 바와 건물 사이 여백(px). */
+/** HP 바와 사옥 영역 가장자리 사이 여백(px). */
 const HP_BAR_GAP = 4;
+/** HP 바를 사옥 영역보다 좌우로 얼마나 들여 그리는지(px). */
+const HP_BAR_SIDE_PADDING = 6;
 
-/** 아군 사옥 — 둥근 첨탑 관 + 창 조명(HP 비율만큼 켜짐) + 상단 HP 바. */
+/** 아군 사옥 — 원본 `baseAlly` 스프라이트 + 상단 HP 바. */
 export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, state: CombatState): void {
   const rect = layout.hqRect;
-  const x = rect.x + BASE_SIDE_PADDING;
-  const w = Math.max(0, rect.w - BASE_SIDE_PADDING * 2);
+  const x = rect.x + HP_BAR_SIDE_PADDING;
+  const w = Math.max(0, rect.w - HP_BAR_SIDE_PADDING * 2);
   if (w <= 0 || rect.h <= 0) return;
 
-  drawHqShape(ctx, palette, rect, hpRatio(state.baseHp, state.maxBaseHp));
+  syncSpriteColorMode(palette);
+  drawSpriteStanding(ctx, HQ_SPRITE.key, rect, layout.groundY);
 
   drawHpBar(ctx, {
     x,
@@ -48,7 +53,26 @@ export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, s
   });
 }
 
-/** 적 본진 — 브루탈리즘 덩어리 + 꺾여 내려가는 상단 차트선(각진 실루엣). */
-export function drawEnemyBase(ctx: BattleCtx, palette: Palette, layout: BattleLayout): void {
-  drawBearFortressShape(ctx, palette, layout.baseRect);
+/**
+ * 베어 요새 — 원본 `baseEnemy` 스프라이트. 마지막 웨이브에는 그 앞에 보스(B-03 마진콜
+ * 심판관, 원본 `boss`)가 선다.
+ *
+ * ★ `state`가 선택 항목인 이유 ★ 보스는 시뮬레이션 개체가 아니다 — `Enemy`로 스폰되지
+ *   않고 `identity.ts`에만 있는 **연출**이다(등장 웨이브 = `BOSS_IDENTITY.appearWave`).
+ *   그래서 웨이브를 알아야 그릴 수 있는데, 기존 호출부(`battle.ts`)는 인자 셋만 넘긴다.
+ *   필수 인자로 바꾸면 빌드가 깨지므로 **뒤에 선택 인자로 붙였다**: 호출부가 `state`를
+ *   넘기기 시작하면 그때부터 보스가 화면에 선다.
+ */
+export function drawEnemyBase(
+  ctx: BattleCtx,
+  palette: Palette,
+  layout: BattleLayout,
+  state?: CombatState | null,
+): void {
+  syncSpriteColorMode(palette);
+  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, layout.baseRect, layout.groundY);
+
+  if (state && state.wave >= BOSS_IDENTITY.appearWave) {
+    drawSpriteStanding(ctx, BOSS_SPRITE.key, layout.baseRect, layout.groundY);
+  }
 }
