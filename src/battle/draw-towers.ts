@@ -11,10 +11,12 @@
  *   2) 그 위에 굵고 밝은(TEXT, LINE 대비 17:1) 점선 윤곽 + 슬롯 번호를 그려 "빈 슬롯 =
  *      클릭 가능한 건설 자리"라는 정보를 명확히 전달한다.
  *
- * 종류별 실루엣은 스프라이트가 없는 상태에서도 성격이 드러나도록 모양을 다르게 한다:
- *   - basic  : 사각 몸통 + 포신 하나(단일표적)
- *   - antiair: 위로 솟은 뾰족한 스파이크(하늘을 노림)
- *   - splash : 넓게 퍼진 사다리꼴 포신(광역)
+ * 종류별 실루엣은 아트 프로덕션 시트 v1.1 §06을 그대로 옮긴 것이며, 실제 형태 코드는
+ * `src/battle/shapes/tower-shapes.ts`에 있다(이 파일은 배치·상태 표시만 담당한다):
+ *   - basic(T-01 지지선 앵커포)  : 낮고 단정한 단발 앵커 발사기 + 지면에 박은 쐐기 두 개
+ *   - antiair(T-02 공시 리피터)  : 위로 세운 3연 수직 발사관 + 작은 접시 — 확실히 높고 얇다
+ *   - splash(T-03 물타기 살포기) : 나팔처럼 벌어진 총구 + 노출된 탄통 — 셋 중 가장 뭉툭
+ * 셋 다 동일한 정사각 베이스 플레이트 위에 서고, 조종사는 없다(시트 §06).
  * 모든 실루엣에 LINE 토큰 외곽선을 둘러 배경과 분리한다(가시성 수정 2번째 항목).
  *
  * ★ 레인 조준 표시(FR-6.2 UX 보완): 대공 포대만 공중을 잡고 나머지는 지상만 잡는데
@@ -26,6 +28,7 @@ import type { CombatState, Tower, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import type { BattleLayout, Rect } from './layout.js';
 import { slotRect } from './layout.js';
+import { TOWER_SHAPES } from './shapes/index.js';
 import { rgba } from './style.js';
 import type { BattleCtx } from './surface.js';
 
@@ -39,16 +42,12 @@ const UPGRADE_OUTLINE_LINE_WIDTH = 2;
 const UPGRADE_DOT_RADIUS = 3;
 const FULL_CIRCLE_START = 0;
 const FULL_CIRCLE_END = Math.PI * 2;
-/** basic 포신(터렛) 반지름 — 슬롯 폭 대비 비율. */
-const TURRET_RADIUS_RATIO = 0.22;
 /** 조준선 굵기(px). */
 const AIM_LINE_WIDTH = 1.5;
 /** 조준선 끝 마커(원) 반지름(px). */
 const AIM_MARKER_RADIUS = 2.5;
 /** 빈 슬롯 미리보기 실루엣 투명도. */
 const PREVIEW_ALPHA = 0.35;
-/** 타워/미리보기 실루엣 외곽선 굵기(px) — LINE 토큰으로 배경과 분리한다. */
-const OUTLINE_LINE_WIDTH = 1.5;
 /** 받침(플랫폼)이 슬롯 사각형보다 사방으로 얼마나 더 넓게 깔리는지(px). */
 const PLATFORM_PADDING = 6;
 const SLOT_NUMBER_FONT = 'bold 12px monospace';
@@ -97,81 +96,21 @@ function drawSlotNumber(ctx: BattleCtx, palette: Palette, rect: Rect, slot: numb
   ctx.restore();
 }
 
-/** 타워 실루엣 그리기 함수 시그니처 — 미리보기(반투명)와 실제 타워가 같은 모양 로직을 공유한다. */
-type ShapeDrawer = (ctx: BattleCtx, rect: Rect, bodyColor: string, accentColor: string, lineColor: string) => void;
-
-/** 단일표적 타워 — 사각 몸통 + 중앙 포신(원). 몸통·포신 모두 LINE 외곽선으로 배경과 분리한다. */
-function drawBasicShape(ctx: BattleCtx, rect: Rect, bodyColor: string, accentColor: string, lineColor: string): void {
-  const bodyY = rect.y + rect.h * 0.35;
-  const bodyH = rect.h * 0.65;
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(rect.x, bodyY, rect.w, bodyH);
-  ctx.strokeStyle = lineColor;
-  ctx.lineWidth = OUTLINE_LINE_WIDTH;
-  ctx.setLineDash([]);
-  ctx.strokeRect(rect.x, bodyY, rect.w, bodyH);
-
-  const turretRadius = Math.max(1, rect.w * TURRET_RADIUS_RATIO);
-  const cx = rect.x + rect.w / 2;
-  const cy = bodyY;
-  ctx.fillStyle = accentColor;
-  ctx.beginPath();
-  ctx.arc(cx, cy, turretRadius, FULL_CIRCLE_START, FULL_CIRCLE_END);
-  ctx.fill();
-  ctx.strokeStyle = lineColor;
-  ctx.stroke();
+/**
+ * 종류별 실루엣을 그린다. 색을 인자로 받으므로 실제 타워(불투명)와 빈 슬롯
+ * 미리보기(반투명 rgba)가 같은 모양 코드를 공유한다.
+ */
+function drawTowerShape(
+  ctx: BattleCtx,
+  rect: Rect,
+  kind: TowerKind,
+  chassis: string,
+  armor: string,
+  accent: string,
+  line: string,
+): void {
+  TOWER_SHAPES[kind].draw(ctx, rect, chassis, armor, accent, line);
 }
-
-/** 대공 타워 — 위로 솟은 스파이크(삼각형). */
-function drawAntiairShape(ctx: BattleCtx, rect: Rect, bodyColor: string, accentColor: string, lineColor: string): void {
-  const bodyY = rect.y + rect.h * 0.55;
-  const bodyH = rect.h * 0.45;
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(rect.x, bodyY, rect.w, bodyH);
-  ctx.strokeStyle = lineColor;
-  ctx.lineWidth = OUTLINE_LINE_WIDTH;
-  ctx.setLineDash([]);
-  ctx.strokeRect(rect.x, bodyY, rect.w, bodyH);
-
-  ctx.fillStyle = accentColor;
-  ctx.beginPath();
-  ctx.moveTo(rect.x + rect.w / 2, rect.y);
-  ctx.lineTo(rect.x + rect.w * 0.8, bodyY);
-  ctx.lineTo(rect.x + rect.w * 0.2, bodyY);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = lineColor;
-  ctx.stroke();
-}
-
-/** 광역 타워 — 넓게 퍼진 사다리꼴 포신. */
-function drawSplashShape(ctx: BattleCtx, rect: Rect, bodyColor: string, accentColor: string, lineColor: string): void {
-  const bodyY = rect.y + rect.h * 0.5;
-  const bodyH = rect.h * 0.5;
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(rect.x, bodyY, rect.w, bodyH);
-  ctx.strokeStyle = lineColor;
-  ctx.lineWidth = OUTLINE_LINE_WIDTH;
-  ctx.setLineDash([]);
-  ctx.strokeRect(rect.x, bodyY, rect.w, bodyH);
-
-  ctx.fillStyle = accentColor;
-  ctx.beginPath();
-  ctx.moveTo(rect.x + rect.w * 0.1, bodyY);
-  ctx.lineTo(rect.x + rect.w * 0.9, bodyY);
-  ctx.lineTo(rect.x + rect.w, rect.y + rect.h * 0.1);
-  ctx.lineTo(rect.x, rect.y + rect.h * 0.1);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = lineColor;
-  ctx.stroke();
-}
-
-const SHAPE_BY_KIND: Readonly<Record<TowerKind, ShapeDrawer>> = {
-  basic: drawBasicShape,
-  antiair: drawAntiairShape,
-  splash: drawSplashShape,
-};
 
 /** 업그레이드(level 2) 강조 — GOLD 외곽선 + 우상단 점. 재화 색과 진영 색을 혼동하지 않도록 GOLD만 사용. */
 function drawUpgradeAccent(ctx: BattleCtx, palette: Palette, rect: Rect): void {
@@ -225,8 +164,8 @@ function drawLaneAimIndicator(ctx: BattleCtx, palette: Palette, layout: BattleLa
 }
 
 function drawTowerAt(ctx: BattleCtx, palette: Palette, layout: BattleLayout, rect: Rect, tower: Tower): void {
-  const draw = SHAPE_BY_KIND[tower.kind];
-  draw(ctx, rect, palette.UP_ALLY, palette.UP_DEEP, palette.LINE);
+  // 시트 §06: 차콜 금속 본체(BG_2) + 적색 장갑 패널(UP_ALLY) + 음영(UP_DEEP).
+  drawTowerShape(ctx, rect, tower.kind, palette.BG_2, palette.UP_ALLY, palette.UP_DEEP, palette.LINE);
   if (tower.level === 2) {
     drawUpgradeAccent(ctx, palette, rect);
   }
@@ -235,8 +174,15 @@ function drawTowerAt(ctx: BattleCtx, palette: Palette, layout: BattleLayout, rec
 
 /** 빈 슬롯 미리보기 — 툴바에서 고른 타워 종류를 반투명 실루엣으로 먼저 보여준다. */
 function drawEmptySlotPreview(ctx: BattleCtx, palette: Palette, rect: Rect, kind: TowerKind): void {
-  const draw = SHAPE_BY_KIND[kind];
-  draw(ctx, rect, rgba(palette.UP_ALLY, PREVIEW_ALPHA), rgba(palette.UP_DEEP, PREVIEW_ALPHA), rgba(palette.LINE, PREVIEW_ALPHA));
+  drawTowerShape(
+    ctx,
+    rect,
+    kind,
+    rgba(palette.BG_2, PREVIEW_ALPHA),
+    rgba(palette.UP_ALLY, PREVIEW_ALPHA),
+    rgba(palette.UP_DEEP, PREVIEW_ALPHA),
+    rgba(palette.LINE, PREVIEW_ALPHA),
+  );
 }
 
 export function drawTowers(

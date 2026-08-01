@@ -1,60 +1,40 @@
 /**
- * 아군 사옥(좌) · 적 본진(우) 그리기.
+ * 아군 사옥(좌) · 적 본진(우) 그리기 — 아트 프로덕션 시트 v1.1 §07.
+ *
+ * 실제 형태는 `src/battle/shapes/base-shapes.ts`에 있고, 이 파일은 레이아웃 사각형과
+ * 전투 상태를 형태 코드에 넘기는 얇은 층이다.
  *
  * `CombatState`에는 `baseHp`/`maxBaseHp` 하나만 있다 — 이는 적이 공격하는
  * "우리 쪽" 본진 체력이므로(적이 x=0 방향으로 밀고 들어와 baseDamage를 준다),
  * HP 바는 아군 사옥에만 그린다. 적 본진(우측)은 시각적 기준점일 뿐 체력 데이터가
  * 없으므로 HP 바를 그리지 않는다.
  *
- * ★ 가시성 수정: 몸통·액센트 비율을 키우고(0.62→0.68, 0.28→0.32) 전부 LINE 토큰
- *   외곽선을 둘러 배경(스카이라인/지면)과 실루엣 경계를 확실히 분리한다.
+ * ★ 시트 §07의 두 가지 요구를 실제로 구현한 곳 ★
+ *   - 사옥: **위로 자란다** + "피격 시 창 조명이 하나씩 꺼진다" → HP 비율이 곧 창 조명 수다.
+ *   - 요새: **아래로 꺾인다** → 상단 실루엣이 계단식으로 내려가는 차트선이다.
  */
 
 import type { CombatState } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import { drawHpBar } from './draw-hp-bar.js';
 import type { BattleLayout } from './layout.js';
+import { BASE_SIDE_PADDING, drawBearFortressShape, drawHqShape } from './shapes/base-shapes.js';
+import { hpRatio } from './style.js';
 import type { BattleCtx } from './surface.js';
 
 /** HP 바 높이(px) — 가시성 수정으로 5→6. */
 const HP_BAR_HEIGHT = 6;
 /** HP 바와 건물 사이 여백(px). */
 const HP_BAR_GAP = 4;
-/** 건물 몸통이 영역 하단에서 차지하는 비율 — 가시성 수정으로 0.62→0.68. */
-const BODY_HEIGHT_RATIO = 0.68;
-/** 상단 액센트(음영) 블록의 폭 비율. */
-const ACCENT_WIDTH_RATIO = 0.55;
-/** 상단 액센트 블록의 높이 비율 — 가시성 수정으로 0.28→0.32. */
-const ACCENT_HEIGHT_RATIO = 0.32;
-/** 좌우 여백(px) — 영역 가장자리에 완전히 붙지 않도록. */
-const SIDE_PADDING = 4;
-/** 실루엣 외곽선(LINE 토큰) 굵기(px). */
-const OUTLINE_LINE_WIDTH = 2;
 
-/** 아군 사옥 — 원형 실루엣 규약(§encoding `rounded`)을 반영해 상단 액센트에 둥근 느낌을 준다. */
+/** 아군 사옥 — 둥근 첨탑 관 + 창 조명(HP 비율만큼 켜짐) + 상단 HP 바. */
 export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, state: CombatState): void {
   const rect = layout.hqRect;
-  const x = rect.x + SIDE_PADDING;
-  const w = Math.max(0, rect.w - SIDE_PADDING * 2);
+  const x = rect.x + BASE_SIDE_PADDING;
+  const w = Math.max(0, rect.w - BASE_SIDE_PADDING * 2);
   if (w <= 0 || rect.h <= 0) return;
 
-  const bodyHeight = rect.h * BODY_HEIGHT_RATIO;
-  const bodyTop = rect.y + rect.h - bodyHeight;
-  ctx.fillStyle = palette.UP_ALLY;
-  ctx.fillRect(x, bodyTop, w, bodyHeight);
-  ctx.strokeStyle = palette.LINE;
-  ctx.lineWidth = OUTLINE_LINE_WIDTH;
-  ctx.setLineDash([]);
-  ctx.strokeRect(x, bodyTop, w, bodyHeight);
-
-  const accentWidth = w * ACCENT_WIDTH_RATIO;
-  const accentHeight = rect.h * ACCENT_HEIGHT_RATIO;
-  const accentX = x + (w - accentWidth) / 2;
-  const accentY = Math.max(rect.y, bodyTop - accentHeight);
-  ctx.fillStyle = palette.UP_DEEP;
-  ctx.fillRect(accentX, accentY, accentWidth, accentHeight);
-  ctx.strokeStyle = palette.LINE;
-  ctx.strokeRect(accentX, accentY, accentWidth, accentHeight);
+  drawHqShape(ctx, palette, rect, hpRatio(state.baseHp, state.maxBaseHp));
 
   drawHpBar(ctx, {
     x,
@@ -68,31 +48,7 @@ export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, s
   });
 }
 
-/** 적 본진 — 각진 실루엣 규약(§encoding `angular`)을 반영해 지붕을 뾰족한 삼각으로 그린다. */
+/** 적 본진 — 브루탈리즘 덩어리 + 꺾여 내려가는 상단 차트선(각진 실루엣). */
 export function drawEnemyBase(ctx: BattleCtx, palette: Palette, layout: BattleLayout): void {
-  const rect = layout.baseRect;
-  const x = rect.x + SIDE_PADDING;
-  const w = Math.max(0, rect.w - SIDE_PADDING * 2);
-  if (w <= 0 || rect.h <= 0) return;
-
-  const bodyHeight = rect.h * BODY_HEIGHT_RATIO;
-  const bodyTop = rect.y + rect.h - bodyHeight;
-  ctx.fillStyle = palette.ENEMY_DOWN;
-  ctx.fillRect(x, bodyTop, w, bodyHeight);
-  ctx.strokeStyle = palette.LINE;
-  ctx.lineWidth = OUTLINE_LINE_WIDTH;
-  ctx.setLineDash([]);
-  ctx.strokeRect(x, bodyTop, w, bodyHeight);
-
-  // 각진 지붕(삼각형) — 적 진영의 뾰족한 실루엣.
-  const roofHeight = rect.h * ACCENT_HEIGHT_RATIO;
-  ctx.fillStyle = palette.ENEMY_DEEP;
-  ctx.beginPath();
-  ctx.moveTo(x, bodyTop);
-  ctx.lineTo(x + w / 2, Math.max(rect.y, bodyTop - roofHeight));
-  ctx.lineTo(x + w, bodyTop);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = palette.LINE;
-  ctx.stroke();
+  drawBearFortressShape(ctx, palette, layout.baseRect);
 }
