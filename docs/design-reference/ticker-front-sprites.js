@@ -501,6 +501,204 @@ class Component extends DCLogic {
     return c.outline('0').rim('w').g;
   }
 
+  MOOD = {
+    dawn: { sky: ['#161B3A', '#232A55', '#3B3F6E', '#6E5A7E', '#B07A78'], sun: null, moon: '#D8CFE6',
+            far: '#4A4468', mid: '#2A2C4A', near: '#171B30', win: '#F2C98A', winDim: '#3A3C60', gnd: '#101427' },
+    noon: { sky: ['#5C8FA8', '#79A8BC', '#94BECD', '#AFD1DB', '#C9E1E7'], sun: '#FFFFFF',
+            far: '#7FA3AE', mid: '#3F6B72', near: '#22454B', win: '#CFE9EE', winDim: '#2F5A61', gnd: '#1B383C' },
+    dusk: { sky: ['#F0704F', '#F58A5E', '#FBA875', '#FFC79A', '#FFE0B8'], sun: '#FFF6DC',
+            far: '#F08A72', mid: '#2F5F55', near: '#16332F', win: '#FFD9A0', winDim: '#3E6E62', gnd: '#122A27' },
+    night: { sky: ['#070A12', '#0B0F1C', '#101728', '#161F35', '#1D2842'], sun: null, moon: '#E8ECF4',
+            far: '#1A2340', mid: '#101728', near: '#080B14', win: '#FFD9A0', winDim: '#2E86FF', gnd: '#060810' },
+    rain: { sky: ['#16283F', '#1B3350', '#214063', '#284D76', '#325A85'], sun: null,
+            far: '#2E5075', mid: '#1B3350', near: '#0F2136', win: '#8FC4E8', winDim: '#23405F', gnd: '#0C1A2B' },
+    snow: { sky: ['#8E9BAB', '#9EAAB9', '#AFBAC7', '#C0C9D4', '#D2D9E2'], sun: null,
+            far: '#AEB8C6', mid: '#63707F', near: '#3A444F', win: '#FFE9C4', winDim: '#4E5A67', gnd: '#C8D2DD', snow: '#E6ECF2' },
+    dust: { sky: ['#8A6A2E', '#A5813A', '#BE9B4C', '#D4B466', '#E4CB8A'], sun: '#F3E0A8',
+            far: null, mid: '#6B5527', near: '#3E3216', win: '#F0D89A', winDim: '#5C4A22', gnd: '#2C2412' }
+  };
+
+  scene(key, w, h, opts) {
+    const m = this.MOOD[key], o = opts || {};
+    const c = this.mk(w, h);
+    const bands = m.sky.length, top = 0, skyH = Math.round(h * 0.62);
+    for (let y = 0; y < skyH; y++) {
+      const f = y / skyH * (bands - 1), i = Math.min(bands - 2, Math.floor(f)), t = f - i;
+      for (let x = 0; x < w; x++) {
+        const dith = ((x + y) % 2 === 0 ? 0.35 : 0.65);
+        c.px(x, y, t > dith ? m.sky[i + 1] : m.sky[i]);
+      }
+    }
+    if (m.sun) { const sx = Math.round(w * 0.74), sy = Math.round(skyH * 0.34); c.disc(sx, sy, Math.round(h * 0.11), m.sun); }
+    if (m.moon) {
+      const sx = Math.round(w * 0.78), sy = Math.round(skyH * 0.28), r = Math.round(h * 0.07);
+      c.disc(sx, sy, r, m.moon); c.disc(sx + Math.round(r * 0.6), sy - Math.round(r * 0.35), r, m.sky[1]);
+    }
+    const R = o.region || 1;
+    const LAY = {
+      1: {
+        far: [[0.02, .30], [0.09, .42], [0.16, .24], [0.24, .48], [0.62, .26], [0.70, .40], [0.78, .20], [0.87, .35], [0.94, .28]],
+        mid: [[0.30, .52, .08], [0.39, .66, .07], [0.47, .44, .09], [0.56, .58, .06]],
+        near: [[-0.01, .36, .13], [0.11, .46, .10], [0.20, .30, .12], [0.63, .34, .14], [0.76, .42, .11], [0.88, .28, .14]]
+      },
+      2: {
+        far: [[0.04, .16], [0.14, .22], [0.26, .14], [0.66, .18], [0.78, .13], [0.90, .20]],
+        mid: [[0.30, .26, .13], [0.45, .20, .15], [0.60, .28, .12]],
+        near: [[0.00, .20, .18], [0.18, .26, .16], [0.66, .22, .17], [0.86, .18, .18]]
+      },
+      3: {
+        far: [[0.03, .34], [0.13, .26], [0.70, .30], [0.84, .24], [0.94, .34]],
+        mid: [[0.32, .30, .10], [0.46, .24, .12], [0.58, .34, .09]],
+        near: [[0.00, .24, .16], [0.16, .30, .14], [0.68, .26, .16], [0.88, .22, .16]]
+      }
+    }[R];
+    if (m.far) LAY.far.forEach(t => {
+      const x = Math.round(t[0] * w), bw = Math.round(w * (R === 2 ? 0.09 : 0.06)), bh = Math.round(h * t[1]);
+      c.rect(x, skyH - bh, bw, bh + 4, m.far);
+      for (let y = skyH - bh + 3; y < skyH; y += 3)
+        for (let px = x + 1; px < x + bw - 1; px += 2) if ((px * 5 + y * 3) % 7 < 3) c.px(px, y, m.win);
+    });
+    LAY.mid.forEach(t => {
+      const x = Math.round(t[0] * w), bw = Math.round(t[2] * w), bh = Math.round(h * t[1]);
+      c.rect(x, skyH - bh, bw, bh + 5, m.mid);
+      c.rect(x, skyH - bh, bw, 1, m.near);
+      if (m.snow) c.rect(x, skyH - bh - 1, bw, 1, m.snow);
+      for (let y = skyH - bh + 3; y < skyH + 3; y += 3)
+        for (let px = x + 1; px < x + bw - 1; px += 2) c.px(px, y, (px * 3 + y) % 5 < 2 ? m.win : m.winDim);
+    });
+    if (R === 1) [[0.34, 0.72], [0.52, 0.78]].forEach(t => {
+      const x = Math.round(t[0] * w); c.rect(x, Math.round(skyH * (1 - t[1])) - 6, 1, 8, m.near);
+    });
+    if (R === 2) for (let i = 0; i < 4; i++) {
+      const x = Math.round(w * (0.24 + i * 0.14)); c.rect(x, Math.round(skyH * 0.42), 1, Math.round(h * 0.10), m.mid); c.px(x, Math.round(skyH * 0.42) - 1, m.win);
+    }
+    if (R === 3) {
+      [[0.24, .40], [0.40, .46], [0.54, .38]].forEach(t => {
+        const x = Math.round(t[0] * w), ty = skyH - Math.round(h * t[1]);
+        c.rect(x, ty, 2, Math.round(h * t[1]) + 4, m.mid);
+        c.rect(x - Math.round(w * 0.05), ty, Math.round(w * 0.11), 2, m.mid);
+        c.rect(x + Math.round(w * 0.045), ty + 2, 1, Math.round(h * 0.10), m.mid);
+        c.rect(x + Math.round(w * 0.035), ty + 2 + Math.round(h * 0.10), 3, 3, m.near);
+      });
+      [[0.18, .30], [0.64, .34]].forEach(t => {
+        const x = Math.round(t[0] * w), ty = skyH - Math.round(h * t[1]);
+        c.rect(x, ty, 3, Math.round(h * t[1]) + 4, m.near);
+        c.rect(x - 1, ty, 5, 2, m.mid);
+        for (let k = 0; k < 5; k++) c.px(x + 1 + (k % 2), ty - 3 - k * 2, m.sky[Math.min(4, 3 + k % 2)]);
+      });
+    }
+    LAY.near.forEach(t => {
+      const x = Math.round(t[0] * w), bw = Math.round(t[2] * w), bh = Math.round(h * t[1]), ty = h - Math.round(h * 0.10) - bh;
+      c.rect(x, ty, bw, bh + Math.round(h * 0.10), m.near);
+      if (m.snow) c.rect(x, ty - 1, bw, 1, m.snow);
+      for (let y = ty + 3; y < h - Math.round(h * 0.10); y += 4)
+        for (let px = x + 2; px < x + bw - 2; px += 3) c.rect(px, y, 2, 2, (px * 7 + y * 5) % 6 < 3 ? m.win : m.winDim);
+    });
+    if (R === 1) { const by = h - Math.round(h * 0.10); c.rect(0, by - 3, w, 1, m.mid); for (let i = 4; i < w; i += 9) c.rect(i, by - 6, 1, 3, m.mid); }
+    c.rect(0, h - Math.round(h * 0.10), w, Math.round(h * 0.10) + 2, m.gnd);
+    if (m.snow) c.rect(0, h - Math.round(h * 0.10), w, 2, m.snow);
+    if (o.rain) for (let i = -12; i < w + 12; i += 4) c.line(i, 0, i - Math.round(h * 0.22), h, ((i / 4) | 0) % 3 ? '#3A6E9E' : '#8FC4E8');
+    if (o.snowFall) for (let i = 0; i < w; i += 5) for (let j = (i * 3) % 7; j < h - 3; j += 9) c.px(i + (j % 3), j, '#F2F6FA');
+    if (o.haze) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if ((x + y * 2) % 5 === 0) c.px(x, y, m.sky[Math.min(4, 2 + (y * 3 / h) | 0)]);
+    return c.g;
+  }
+
+  darken(grid, amt) {
+    const hx = v => parseInt(v, 16);
+    return grid.map(row => row.map(v => {
+      if (!v || v === '.' || v[0] !== '#') return v;
+      const r = Math.round(hx(v.slice(1, 3)) * (1 - amt) + 7 * amt);
+      const g = Math.round(hx(v.slice(3, 5)) * (1 - amt) + 10 * amt);
+      const b = Math.round(hx(v.slice(5, 7)) * (1 - amt) + 18 * amt);
+      return '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('');
+    }));
+  }
+
+  stamp(dst, src, ox, oy, flip, k) {
+    k = k || 1;
+    const h = src.length, w = src[0].length;
+    const oh = Math.round(h * k), ow = Math.round(w * k);
+    for (let y = 0; y < oh; y++) for (let x = 0; x < ow; x++) {
+      const sy = Math.min(h - 1, Math.floor(y / k)), sxi = Math.min(w - 1, Math.floor(x / k));
+      const v = src[sy][flip ? w - 1 - sxi : sxi];
+      if (!v || v === '.') continue;
+      const col = (v[0] === '#') ? v : this.PAL[v];
+      if (!col) continue;
+      const tx = ox + x, ty = oy + y;
+      if (ty >= 0 && ty < dst.length && tx >= 0 && tx < dst[0].length) dst[ty][tx] = col;
+    }
+  }
+
+  /* bottom-aligned stamp: y is the baseline (feet), height derives from scale */
+  stampOn(dst, src, cx, baseY, k, flip) {
+    const oh = Math.round(src.length * k), ow = Math.round(src[0].length * k);
+    this.stamp(dst, src, Math.round(cx - ow / 2), baseY - oh, flip, k);
+  }
+
+  /* 852x240 ≈ 3840x1080. 유닛 34px = 화면 높이의 14% — 실제 게임 비율 */
+  wideScene() {
+    const W = 852, H = 240;
+    const m = this.MOOD.dusk;
+    const c = this.mk(W, H);
+    const skyH = Math.round(H * 0.62), bands = m.sky.length;
+    for (let y = 0; y < skyH; y++) {
+      const f = Math.pow(y / skyH, 0.75) * (bands - 1), i = Math.min(bands - 2, Math.floor(f)), t = f - i;
+      for (let x = 0; x < W; x++) c.px(x, y, t > ((x + y) % 2 ? 0.65 : 0.35) ? m.sky[i + 1] : m.sky[i]);
+    }
+    c.disc(Math.round(W * 0.70), Math.round(skyH * 0.30), 22, m.sun);
+    for (let k = 0; k < 7; k++) { const yy = 22 + k * 11; c.rect(60 + k * 42, yy, 70 - k * 6, 3, m.sky[Math.min(4, 2 + (k % 2))]); }
+    const laneTop = H - 40;
+    const far = [];
+    for (let i = 0; i < 34; i++) far.push([i / 34 + 0.004, 0.16 + ((i * 37) % 11) / 55]);
+    far.forEach((t, i) => {
+      const x = Math.round(t[0] * W), bw = 16 + (i % 4) * 4, bh = Math.round(H * t[1]);
+      c.rect(x, skyH - bh, bw, bh + 8, m.far);
+      for (let y = skyH - bh + 5; y < skyH; y += 7) for (let px = x + 3; px < x + bw - 2; px += 5) if ((px * 5 + y * 3) % 7 < 4) c.rect(px, y, 2, 3, m.win);
+    });
+    [[0.05, .30, 30], [0.13, .40, 26], [0.22, .24, 34], [0.31, .34, 28], [0.42, .27, 36], [0.53, .38, 26], [0.62, .25, 32], [0.72, .33, 28], [0.83, .23, 34]].forEach(t => {
+      const x = Math.round(t[0] * W), bw = t[2], bh = Math.round(H * t[1]), ty = skyH - bh;
+      c.rect(x, ty, bw, bh + 14, m.mid);
+      c.rect(x, ty, bw, 2, m.near);
+      for (let y = ty + 7; y < skyH + 8; y += 8) for (let px = x + 4; px < x + bw - 3; px += 6) c.rect(px, y, 3, 4, (px * 3 + y) % 5 < 2 ? m.win : m.winDim);
+    });
+    [[0.00, .22, 46], [0.09, .27, 40], [0.19, .18, 44], [0.76, .20, 42], [0.86, .26, 40], [0.95, .17, 46]].forEach(t => {
+      const x = Math.round(t[0] * W), bw = t[2], bh = Math.round(H * t[1]), ty = laneTop - bh;
+      c.rect(x, ty, bw, bh + 10, m.near);
+      c.rect(x, ty, bw, 2, '#1F4A42');
+      for (let y = ty + 8; y < laneTop - 4; y += 10) for (let px = x + 6; px < x + bw - 5; px += 9) c.rect(px, y, 4, 6, (px * 7 + y * 5) % 6 < 3 ? m.win : m.winDim);
+    });
+    c.rect(0, laneTop, W, H - laneTop, m.gnd);
+    c.rect(0, laneTop, W, 2, '#2F5F55');
+    for (let x = 0; x < W; x += 14) c.rect(x, laneTop + 12, 6, 2, '#1B4A42');
+    const g = this.darken(c.g, 0.5);
+    const base = laneTop + 30;
+    this.stampOn(g, this.baseAlly(), 52, base, 2.4);
+    this.stampOn(g, this.baseEnemy(), W - 56, base, 2.4);
+    this.stampOn(g, this.towerBasic(), 170, base, 1.15);
+    this.stampOn(g, this.towerAA(), 232, base, 1.15);
+    this.stampOn(g, this.towerSplash(), 296, base, 1.15);
+    this.stampOn(g, this.allyScout(), 352, base, 1);
+    this.stampOn(g, this.allyRookie(), 386, base, 1);
+    this.stampOn(g, this.allyAnchor(), 418, base, 1);
+    this.stampOn(g, this.enemyRusher(), 480, base, 1, true);
+    this.stampOn(g, this.enemyBlocker(), 530, base, 1, true);
+    this.stampOn(g, this.enemyTank(), 588, base, 1, true);
+    this.stampOn(g, this.enemyKite(), 520, base - 96, 1, true);
+    this.stampOn(g, this.enemySiren(), 640, base - 108, 1, true);
+    this.stampOn(g, this.boss(), 706, base, 1.5, true);
+    return g;
+  }
+
+  scrimCompare() {
+    const src = this.scene('dusk', 60, 40);
+    const dark = this.darken(src, 0.5);
+    const out = this.mk(122, 40);
+    src.forEach((row, y) => row.forEach((v, x) => { if (v !== '.') out.px(x, y, v); }));
+    dark.forEach((row, y) => row.forEach((v, x) => { if (v !== '.') out.px(x + 62, y, v); }));
+    for (let y = 0; y < 40; y++) out.px(60, y, '#E8ECF4').px(61, y, '#070A12');
+    return out.g;
+  }
+
   sheets() {
     if (this._s) return this._s;
     this._s = {
@@ -520,7 +718,22 @@ class Component extends DCLogic {
       'tf-fx-01': this.fx(1), 'tf-fx-02': this.fx(2), 'tf-fx-03': this.fx(3),
       'tf-w-01': this.proj(1), 'tf-w-02': this.proj(2), 'tf-w-03': this.proj(3), 'tf-w-04': this.proj(4),
       'tf-ui-chart': this.uiChart(), 'tf-ui-btn': this.uiButtons(),
-      'tf-ui-icons': this.uiIcons(), 'tf-ui-reveal': this.uiReveal()
+      'tf-ui-icons': this.uiIcons(), 'tf-ui-reveal': this.uiReveal(),
+      'tf-sky-dawn': this.scene('dawn', 116, 62), 'tf-sky-noon': this.scene('noon', 116, 62),
+      'tf-sky-dusk': this.scene('dusk', 116, 62), 'tf-sky-night': this.scene('night', 116, 62),
+      'tf-sky-rain': this.scene('rain', 100, 56, { rain: true }),
+      'tf-sky-snow': this.scene('snow', 100, 56, { snowFall: true }),
+      'tf-sky-dust': this.scene('dust', 100, 56, { haze: true }),
+      'tf-sky-scrim': this.scrimCompare(), 'tf-sky-wide': this.wideScene(),
+      'tf-r1-noon': this.scene('noon', 108, 56, { region: 1 }),
+      'tf-r1-dusk': this.scene('dusk', 108, 56, { region: 1 }),
+      'tf-r1-night': this.scene('night', 108, 56, { region: 1 }),
+      'tf-r2-noon': this.scene('noon', 108, 56, { region: 2 }),
+      'tf-r2-dusk': this.scene('dusk', 108, 56, { region: 2 }),
+      'tf-r2-night': this.scene('night', 108, 56, { region: 2 }),
+      'tf-r3-noon': this.scene('noon', 108, 56, { region: 3 }),
+      'tf-r3-dusk': this.scene('dusk', 108, 56, { region: 3 }),
+      'tf-r3-dust': this.scene('dust', 108, 56, { region: 3, haze: true })
     };
     return this._s;
   }
@@ -531,14 +744,16 @@ class Component extends DCLogic {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, w, h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const col = this.PAL[grid[y][x]];
+      const v = grid[y][x];
+      const col = (v && v[0] === '#') ? v : this.PAL[v];
       if (!col) continue;
       ctx.fillStyle = col;
       ctx.fillRect(x, y, 1, 1);
     }
     const box = canvas.parentElement;
     const cw = box.clientWidth || w, ch = box.clientHeight || h;
-    const s = Math.max(1, Math.floor(Math.min(cw / w, ch / h)));
+    const fit = Math.min(cw / w, ch / h);
+    const s = fit >= 1 ? Math.floor(fit) : 1 / Math.ceil(1 / fit);
     canvas.style.position = 'absolute';
     canvas.style.left = '50%'; canvas.style.top = '50%';
     canvas.style.transform = 'translate(-50%,-50%)';

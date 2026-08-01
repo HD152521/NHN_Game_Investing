@@ -24,6 +24,11 @@
 
 import type { CombatState, Enemy, Unit, UnitKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
+import { impactKindForProjectile } from '../fx/index.js';
+import type { ProjectileKind } from '../fx/index.js';
+import { spriteRasters } from '../sprites/render/index.js';
+import type { SpriteRasterCache } from '../sprites/render/index.js';
+import { drawImpactSprite, drawProjectileSprite, projectileTravel } from './draw-tracers.js';
 import { allyUnitScreenY } from './draw-units.js';
 import type { BattleLayout } from './layout.js';
 import { laneY, progressToX } from './layout.js';
@@ -42,6 +47,16 @@ const RANGE_HINT_DASH: readonly number[] = [4, 3];
 
 /** 원거리 유닛 사거리 안내선을 보여줄 종류 — analyst만 대상으로 화면 혼잡을 절제한다. */
 const RANGED_UNIT_KIND: UnitKind = 'analyst';
+
+/**
+ * 진영 → 발사체 종류 (시트 §08). 아군은 신호탄(적색), 적은 하강 화살(청색)이다 —
+ * 앵커 탄(`anchor_bolt`)은 광역 **타워** 전용이라 여기 없다(`draw-tracers.ts`).
+ */
+const ALLY_PROJECTILE: ProjectileKind = 'ally_flare';
+const ENEMY_PROJECTILE: ProjectileKind = 'enemy_arrow';
+
+/** 타워 예광선과 같은 규칙 — 이만큼 날아간 뒤에야 피격이 뜬다. */
+const IMPACT_TRAVEL_AT = 0.5;
 
 interface Point {
   readonly x: number;
@@ -111,6 +126,28 @@ function drawTracerLine(ctx: BattleCtx, from: Point, to: Point, strokeStyle: str
   ctx.restore();
 }
 
+/**
+ * 시트 스프라이트로 유닛·적의 탄 한 발을 그린다. 그릴 수 없으면 `false` — 호출부가
+ * 벡터 공격선으로 넘어간다. 진행도는 타워와 같은 규칙(쿨다운 역산)이라 두 계층이
+ * 서로 다른 속도로 움직이지 않는다.
+ */
+function drawAttackSprites(
+  ctx: BattleCtx,
+  rasters: SpriteRasterCache,
+  kind: ProjectileKind,
+  attacker: Attacker,
+  from: Point,
+  to: Point,
+): boolean {
+  const travel = projectileTravel(attacker.cooldownMs, attacker.attackCooldownMs, JUST_ATTACKED_COOLDOWN_RATIO);
+  const x = from.x + (to.x - from.x) * travel;
+  const y = from.y + (to.y - from.y) * travel;
+
+  if (!drawProjectileSprite(ctx, rasters, kind, x, y, to.x < from.x)) return false;
+  if (travel >= IMPACT_TRAVEL_AT) drawImpactSprite(ctx, rasters, impactKindForProjectile(kind), to.x, to.y);
+  return true;
+}
+
 /** 방금 공격한 아군 유닛마다 사거리 내 가장 가까운 지상 적에게 공격선을 그린다. */
 function drawUnitAttackTracers(
   ctx: BattleCtx,
@@ -118,6 +155,7 @@ function drawUnitAttackTracers(
   layout: BattleLayout,
   units: readonly Unit[],
   enemies: readonly Enemy[],
+  rasters: SpriteRasterCache,
 ): void {
   const strokeStyle = rgba(palette.UP_DEEP, ATTACK_TRACER_ALPHA);
 
@@ -128,6 +166,7 @@ function drawUnitAttackTracers(
 
     const from: Point = { x: progressToX(unit.x, layout), y: allyUnitScreenY(unit, layout) };
     const to: Point = { x: progressToX(target.x, layout), y: laneY(target.lane, layout) };
+    if (drawAttackSprites(ctx, rasters, ALLY_PROJECTILE, unit, from, to)) continue;
     drawTracerLine(ctx, from, to, strokeStyle);
   }
 }
@@ -139,6 +178,7 @@ function drawEnemyAttackTracers(
   layout: BattleLayout,
   enemies: readonly Enemy[],
   units: readonly Unit[],
+  rasters: SpriteRasterCache,
 ): void {
   const strokeStyle = rgba(palette.ENEMY_DEEP, ATTACK_TRACER_ALPHA);
 
@@ -149,6 +189,7 @@ function drawEnemyAttackTracers(
 
     const from: Point = { x: progressToX(enemy.x, layout), y: laneY(enemy.lane, layout) };
     const to: Point = { x: progressToX(target.x, layout), y: allyUnitScreenY(target, layout) };
+    if (drawAttackSprites(ctx, rasters, ENEMY_PROJECTILE, enemy, from, to)) continue;
     drawTracerLine(ctx, from, to, strokeStyle);
   }
 }
@@ -183,8 +224,14 @@ function drawRangedUnitRangeHints(ctx: BattleCtx, palette: Palette, layout: Batt
  * 사거리 안내선을 그린다. 배틀 렌더 순서상 타워 예광선(`drawTracers`)과 함께, 실루엣을
  * 전부 그린 뒤 마지막에 호출한다.
  */
-export function drawUnitTracers(ctx: BattleCtx, palette: Palette, layout: BattleLayout, state: CombatState): void {
+export function drawUnitTracers(
+  ctx: BattleCtx,
+  palette: Palette,
+  layout: BattleLayout,
+  state: CombatState,
+  rasters: SpriteRasterCache = spriteRasters,
+): void {
   drawRangedUnitRangeHints(ctx, palette, layout, state.units);
-  drawUnitAttackTracers(ctx, palette, layout, state.units, state.enemies);
-  drawEnemyAttackTracers(ctx, palette, layout, state.enemies, state.units);
+  drawUnitAttackTracers(ctx, palette, layout, state.units, state.enemies, rasters);
+  drawEnemyAttackTracers(ctx, palette, layout, state.enemies, state.units, rasters);
 }

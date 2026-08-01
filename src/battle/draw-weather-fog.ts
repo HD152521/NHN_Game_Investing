@@ -7,11 +7,23 @@
  */
 
 import type { Palette } from '../design/index.js';
+import type { SpriteRasterCache } from '../sprites/render/index.js';
 import type { WeatherView, WeatherViewport } from '../weather/index.js';
 import { FOG_BAND_COUNT, centerClearBottom, fieldPhase } from '../weather/index.js';
-import { clamp01, motionTime } from './draw-weather-shared.js';
+import {
+  DEFAULT_WEATHER_RASTERS,
+  clamp01,
+  drawWeatherTiles,
+  motionTime,
+  tilePhase,
+} from './draw-weather-shared.js';
 import { rgba } from './style.js';
 import type { BattleCtx } from './surface.js';
+
+/** 시트 스프라이트 키 — WX-03 횡보 안개. */
+const SPRITE_KEY = 'tf-wx-03';
+/** 격자가 한 타일 폭만큼 옆으로 흐르는 주기(ms). 안개는 느려야 안개다. */
+const SPRITE_DRIFT_MS = 4200;
 
 /** 띠 하나의 높이 — 발판 아래 남은 높이 대비. */
 const BAND_HEIGHT_RATIO = 0.55;
@@ -36,12 +48,39 @@ function fogTop(viewport: WeatherViewport): number {
   return Math.max(viewport.groundY, centerClearBottom(viewport));
 }
 
+/**
+ * 시트 스프라이트 `tf-wx-03`을 **발판 아래에만** 깐다.
+ * 띠 상단이 `fogTop` 아래이므로 유닛 실루엣을 가리지 않는다는 규칙이 그대로 유지된다.
+ */
+function drawFogSprites(
+  ctx: BattleCtx,
+  rasters: SpriteRasterCache,
+  viewport: WeatherViewport,
+  view: WeatherView,
+): boolean {
+  const time = motionTime(view.timeMs, view.reducedMotion);
+  return drawWeatherTiles(
+    ctx,
+    rasters,
+    SPRITE_KEY,
+    viewport,
+    fogTop(viewport),
+    tilePhase(time, SPRITE_DRIFT_MS),
+    0,
+    view.intensity,
+    true,
+  );
+}
+
 export function drawRangeFog(
   ctx: BattleCtx,
   palette: Palette,
   viewport: WeatherViewport,
   view: WeatherView,
+  rasters: SpriteRasterCache = DEFAULT_WEATHER_RASTERS,
 ): void {
+  if (drawFogSprites(ctx, rasters, viewport, view)) return;
+
   const top = fogTop(viewport);
   const available = Math.max(0, viewport.height - top);
   const bandHeight = available * BAND_HEIGHT_RATIO;

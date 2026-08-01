@@ -35,6 +35,21 @@ export { drawSprite, drawSpriteBand, snapScale } from './draw';
 
 export { droppedChars, rasterizeGrid } from './rasterize';
 
+export {
+  DEFAULT_TIME_OF_DAY,
+  SKY_SCENE_HEIGHT,
+  SKY_SCENE_KEYS,
+  SKY_SCENE_WIDTH,
+  SKY_WEATHER_KEYS,
+  sceneGroundRow,
+  skyCoverScale,
+  skyOriginX,
+  skyOriginY,
+  skySceneKey,
+  skySource,
+} from './sky';
+export type { TimeOfDay } from './sky';
+
 export { createDomSurface } from './surface';
 export type {
   DrawableSurface,

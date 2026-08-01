@@ -5,8 +5,7 @@
  * ② 마크업은 게임 루프와 수명이 완전히 다르다(마운트 시 1회).
  */
 
-import { SKILL_COST } from '../combat';
-import { buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
+import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import { buildStartGateMarkup } from './start-gate';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
@@ -64,6 +63,8 @@ export interface StageRefs {
   readonly panelHost: HTMLElement;
   readonly speedButtons: readonly HTMLButtonElement[];
   readonly towerButtons: readonly HTMLButtonElement[];
+  /** 스킬 3종 버튼. 쿨다운·재화 부족 상태를 매 프레임 셸이 반영한다. */
+  readonly skillButtons: readonly HTMLButtonElement[];
 }
 
 export function formatSessionClock(barIndex: number): string {
@@ -93,6 +94,7 @@ export function buildStageMarkup(): string {
 
   const towers = buildTowerRosterMarkup();
   const units = buildUnitRosterMarkup();
+  const skills = buildSkillBarMarkup();
 
   return `
     <div class="stage stage--gated" data-ref="stage">
@@ -141,7 +143,7 @@ export function buildStageMarkup(): string {
         <span class="buildbar__sep"></span>
         <span class="buildbar__group">${units}</span>
         <span class="buildbar__sep"></span>
-        <button class="btn btn--skill" type="button" data-action="skill">공시 폭탄 <em>${SKILL_COST}</em></button>
+        <span class="buildbar__group">${skills}</span>
       </div>
 
       <div class="controls">
@@ -229,5 +231,6 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     panelHost,
     speedButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-speed]')),
     towerButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tower]')),
+    skillButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-skill]')),
   };
 }

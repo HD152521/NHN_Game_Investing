@@ -19,6 +19,35 @@ export type TowerKind = 'basic' | 'antiair' | 'splash';
 export type UnitKind = 'intern' | 'analyst' | 'trader';
 
 /**
+ * 스킬 3종 (FR-6.6, 아트 프로덕션 시트 §08).
+ *
+ * ★ 문자열이 시트의 이펙트 ID(`src/fx/types.ts` `SkillEffectId`)와 **의도적으로 같다** ★
+ * 로직과 이펙트가 1:1이라 매핑 테이블이 필요 없다. 두 모듈이 서로를 import하지 않으므로
+ * 계층(전투 ↔ 렌더)은 그대로 분리돼 있고, 두 유니온이 어긋나지 않는지는 테스트가 고정한다.
+ */
+export type SkillId = 'S-01' | 'S-02' | 'S-03';
+
+/**
+ * 스킬이 소모하는 재화.
+ *
+ * `aum`은 **매매 원금**이다(`src/position`). 전장에서 AUM을 태우는 경로는 `S-03` 하나뿐이며,
+ * 이것이 "자금을 태워 시간을 산다"는 설계 의도의 유일한 구현이다 — 실드를 쓰면 그만큼
+ * 투입 원금이 줄고, 줄어든 원금은 곧 벌 수 있는 골드가 준다는 뜻이다.
+ */
+export type SkillCurrency = 'gold' | 'aum';
+
+/** 스킬 1종의 비용·쿨다운 정의. 효과량은 종류마다 단위가 달라 별도 상수로 둔다. */
+export interface SkillSpec {
+  readonly id: SkillId;
+  readonly displayName: string;
+  /** 한 줄 설명 — 버튼 title·정체 노출에 그대로 쓴다. */
+  readonly flavor: string;
+  readonly currency: SkillCurrency;
+  readonly cost: number;
+  readonly cooldownMs: number;
+}
+
+/**
  * 전투에 참여하는 개체가 공통으로 갖는 스탯.
  *
  * ★ 스탯은 **개체에 실린다.** 종류(kind)로 전역 상수 테이블을 찾아 쓰지 마라.
@@ -104,8 +133,30 @@ export interface CombatState {
   readonly baseHp: number;
   readonly maxBaseHp: number;
   readonly towerSlots: number;
-  /** 공시 폭탄 남은 쿨다운(ms). */
+  /**
+   * `S-01`(공시 폭탄) 남은 쿨다운(ms) — **`skillCooldowns['S-01']`의 별칭**이다.
+   *
+   * 스킬이 3종으로 늘어난 뒤에도 이 필드를 남긴 이유는 하나뿐이다: 전장 HUD
+   * (`src/battle/draw-hud.ts`)가 이미 이 이름을 읽고 있고, `CombatState`는 시뮬레이션과
+   * 렌더러가 공유하는 계약이라 필드를 **지우면 렌더러가 깨진다**. 값의 단일 출처는
+   * 아래 `skillCooldowns`이며, 상태를 만드는 쪽(`createCombat`/`step`/`castSkill`)이
+   * 항상 둘을 같이 갱신한다.
+   */
   readonly skillCooldownMs: number;
+  /**
+   * 스킬별 남은 쿨다운(ms).
+   *
+   * **선택 필드인 이유**: `CombatState` 리터럴을 직접 만드는 곳이 시뮬레이션 밖에 있다
+   * (`src/battle/combat-fixtures.ts`). 필수 필드를 늘리면 그 파일이 타입 에러로 깨지는데,
+   * 렌더러 쪽 파일은 이 작업의 소유 범위가 아니다. `createCombat`/`step`/`castSkill`이
+   * 만든 상태에는 **항상 3종이 전부 들어 있다** — 읽는 쪽은 `skillCooldownOf()`를 써라.
+   */
+  readonly skillCooldowns?: Readonly<Record<SkillId, number>>;
+  /**
+   * 서킷브레이커 실드(`S-03`) 잔여 지속시간(ms). 0이거나 생략이면 비활성이다.
+   * 활성 동안 본진에 도달한 적은 **피해를 주지 못하고 소멸한다**(FR-6.6).
+   */
+  readonly shieldRemainingMs?: number;
 }
 
 /**

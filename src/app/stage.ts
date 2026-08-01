@@ -18,13 +18,21 @@ import '../ui/gold-flight.css';
 
 import { drawBattle, computeBattleLayout, slotAt } from '../battle';
 import { drawChart } from '../chart';
-import { TOWER_IDENTITY, TOWER_UPGRADE_COST } from '../combat';
-import type { TowerKind, UnitKind } from '../combat';
+import { SKILL_SPECS, TOWER_IDENTITY, TOWER_UPGRADE_COST } from '../combat';
+import type { SkillId, TowerKind, UnitKind } from '../combat';
+import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
+import type { SkillFxField } from '../fx';
 import { changePercent } from '../market';
 import { applyPalette, createTheme } from '../design';
 import type { ColorTheme } from '../design';
 import type { Direction } from '../position';
-import { createGoldMeter, createTradePanel, prefersReducedMotion } from '../ui';
+import {
+  createGoldMeter,
+  createTradePanel,
+  prefersReducedMotion,
+  resolveSkillButtonState,
+  skillIdFor,
+} from '../ui';
 import type { GoldMeter, StakeRatio, TradePanel, TradePanelViewModel } from '../ui';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { StageSession } from './session';
@@ -71,6 +79,16 @@ export function mountStage(root: HTMLElement): () => void {
   const battleLayout = computeBattleLayout(BATTLE_WIDTH, BATTLE_HEIGHT);
 
   /**
+   * 스킬 이펙트 재생 버퍼 — 앱 수명 동안 하나만 만든다(프레임당 할당 0, PRD §11).
+   *
+   * `castCounts`는 스킬별 시전 횟수다. 이 값이 이펙트 좌표를 밀어내는 데 쓰인다 —
+   * 가산 합성 소재를 같은 자리에 겹쳐 찍으면 255 포화로 형태가 뭉개지기 때문이다
+   * (`src/fx/anchor.ts` 참고).
+   */
+  const skillFx: SkillFxField = createSkillFxField();
+  const castCounts = new Map<SkillId, number>();
+
+  /**
    * 골드 HUD 숫자의 소유자. 청산 골드는 차트에서 출발해 이 숫자로 날아와 꽂히고,
    * 도착 시점에 카운트업된다 (즉시 치환 금지).
    */
@@ -106,6 +124,59 @@ export function mountStage(root: HTMLElement): () => void {
     }
     for (const button of refs!.towerButtons) {
       button.classList.toggle('btn--active', button.dataset['tower'] === selectedTower);
+    }
+  }
+
+  /**
+   * 스킬 시전 — **성공했을 때만** 이펙트를 재생한다.
+   *
+   * 재화 부족·쿨다운으로 거부된 시전에 이펙트가 뜨면 "돈이 나갔나?"를 화면이 거짓으로
+   * 답하게 된다. 판정은 전부 `session.useSkill`(→ `castSkill`) 한 곳에 있고, 여기서는
+   * 그 불리언만 믿는다.
+   */
+  function castSkill(id: SkillId, nowMs: number): void {
+    const current = session;
+    if (!current || !current.useSkill(id)) {
+      return;
+    }
+
+    const castIndex = castCounts.get(id) ?? 0;
+    castCounts.set(id, castIndex + 1);
+
+    const anchor = skillAnchor(id, BATTLE_WIDTH, BATTLE_HEIGHT, castIndex);
+    triggerSkillEffect(skillFx, id, anchor.x, anchor.y, nowMs);
+
+    const spec = SKILL_SPECS[id];
+    refs!.log.textContent = `${spec.displayName} 시전 — ${spec.cost} ${spec.currency === 'aum' ? 'AUM' : 'G'} 소모`;
+  }
+
+  /** 스킬 버튼의 쿨다운 숫자와 활성 상태를 현재 상태에 맞춘다(매 프레임). */
+  function syncSkillButtons(current: StageSession | null): void {
+    for (const button of refs!.skillButtons) {
+      const id = skillIdFor(button.dataset['skill']);
+      if (id === null) {
+        continue;
+      }
+
+      if (!current) {
+        button.disabled = true;
+        continue;
+      }
+
+      const wallet = current.walletSnapshot;
+      const state = resolveSkillButtonState({
+        spec: SKILL_SPECS[id],
+        remainingMs: current.skillCooldownMs(id),
+        gold: wallet.gold,
+        aum: wallet.aum,
+      });
+
+      button.disabled = state.disabled;
+      button.classList.toggle('btn--broke', state.unaffordable);
+      const readout = button.querySelector('small');
+      if (readout && readout.textContent !== state.cooldownLabel) {
+        readout.textContent = state.cooldownLabel;
+      }
     }
   }
 
@@ -209,6 +280,9 @@ export function mountStage(root: HTMLElement): () => void {
       reducedMotion: prefersReducedMotion(),
     });
 
+    // 스킬 이펙트는 전장 위에 얹는다 — 가산 합성이라 반드시 전장을 다 그린 뒤여야 한다.
+    drawSkillFx(refs!.battleCtx, theme.palette, skillFx, nowMs, prefersReducedMotion());
+
     const delta = changePercent(session.set.bars, state.barIndex);
     refs!.change.textContent = formatSignedPercent(delta);
     refs!.change.classList.toggle('hud__value--up', delta >= 0);
@@ -226,6 +300,7 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.prep.textContent = prepText;
 
     panel.update(toViewModel(session));
+    syncSkillButtons(session);
 
     if (combat.phase !== 'running') {
       refs!.banner.hidden = false;
@@ -276,9 +351,16 @@ export function mountStage(root: HTMLElement): () => void {
     });
   }
 
-  root.querySelector<HTMLButtonElement>('[data-action="skill"]')?.addEventListener('click', () => {
-    session?.useSkill();
-  });
+  for (const button of refs.skillButtons) {
+    button.addEventListener('click', () => {
+      const id = skillIdFor(button.dataset['skill']);
+      if (id !== null) {
+        // 이펙트 시계는 렌더 시계와 같아야 한다 — `drawSkillFx`가 rAF의 nowMs로 진행도를
+        // 계산하므로, 클릭 시각을 다른 시계(Date.now 등)로 찍으면 이펙트가 즉시 만료된다.
+        castSkill(id, lastFrameMs);
+      }
+    });
+  }
 
   refs.battleCanvas.addEventListener('mousemove', (event) => {
     const point = toCanvasPoint(event);

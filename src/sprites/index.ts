@@ -18,6 +18,8 @@ import { fx } from './fx';
 import type { SpriteGrid } from './grid';
 import { ground, groundSlot } from './ground';
 import { proj } from './proj';
+import { scene } from './scene';
+import { scrimCompare, wideScene } from './scene-wide';
 import { towerAA, towerBasic, towerSplash } from './tower';
 import { uiButtons, uiChart, uiIcons, uiReveal } from './ui';
 import { weather } from './weather';
@@ -33,6 +35,11 @@ export { bgFar, bgMid } from './bg';
 export { fx } from './fx';
 export { ground, groundSlot } from './ground';
 export { proj } from './proj';
+export { scene } from './scene';
+export type { SceneOptions } from './scene';
+export { darkenGrid, scrimCompare, stampGrid, stampOnGrid, wideScene } from './scene-wide';
+export { isSceneColor, MOOD, sceneColor } from './mood';
+export type { Mood, MoodKey } from './mood';
 export { weather } from './weather';
 
 // 고정 스프라이트
@@ -91,9 +98,28 @@ export const SPRITE_BUILDERS = {
   'tf-ui-btn': uiButtons,
   'tf-ui-icons': uiIcons,
   'tf-ui-reveal': uiReveal,
+  // ── 시간대·하늘 시스템 (원본 갱신분 18키). 전부 `scene()` 의 별칭이다.
+  'tf-sky-dawn': () => scene('dawn', 116, 62),
+  'tf-sky-noon': () => scene('noon', 116, 62),
+  'tf-sky-dusk': () => scene('dusk', 116, 62),
+  'tf-sky-night': () => scene('night', 116, 62),
+  'tf-sky-rain': () => scene('rain', 100, 56, { rain: true }),
+  'tf-sky-snow': () => scene('snow', 100, 56, { snowFall: true }),
+  'tf-sky-dust': () => scene('dust', 100, 56, { haze: true }),
+  'tf-sky-scrim': scrimCompare,
+  'tf-sky-wide': wideScene,
+  'tf-r1-noon': () => scene('noon', 108, 56, { region: 1 }),
+  'tf-r1-dusk': () => scene('dusk', 108, 56, { region: 1 }),
+  'tf-r1-night': () => scene('night', 108, 56, { region: 1 }),
+  'tf-r2-noon': () => scene('noon', 108, 56, { region: 2 }),
+  'tf-r2-dusk': () => scene('dusk', 108, 56, { region: 2 }),
+  'tf-r2-night': () => scene('night', 108, 56, { region: 2 }),
+  'tf-r3-noon': () => scene('noon', 108, 56, { region: 3 }),
+  'tf-r3-dusk': () => scene('dusk', 108, 56, { region: 3 }),
+  'tf-r3-dust': () => scene('dust', 108, 56, { region: 3, haze: true }),
 } as const satisfies Record<string, () => SpriteGrid>;
 
-/** 원본 `sheets()` 의 43개 키. */
+/** 원본 `sheets()` 의 61개 키(기존 43 + 시간대·하늘 18). */
 export type SpriteKey = keyof typeof SPRITE_BUILDERS;
 
 export const SPRITE_KEYS = Object.keys(SPRITE_BUILDERS) as readonly SpriteKey[];

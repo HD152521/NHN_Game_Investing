@@ -17,8 +17,23 @@
 
 import type { Palette } from '../design/index.js';
 import type { Region } from '../sprites/index.js';
-import { drawSpriteBand, snapScale, spriteRasters } from '../sprites/render/index.js';
-import type { RasterContext2D, RenderableSpriteKey, SpriteRasterCache } from '../sprites/render/index.js';
+import {
+  DEFAULT_TIME_OF_DAY,
+  drawSprite,
+  drawSpriteBand,
+  skyCoverScale,
+  skyOriginX,
+  skyOriginY,
+  skySource,
+  snapScale,
+  spriteRasters,
+} from '../sprites/render/index.js';
+import type {
+  RasterContext2D,
+  RenderableSpriteKey,
+  SpriteRasterCache,
+  TimeOfDay,
+} from '../sprites/render/index.js';
 import type { BattleLayout } from './layout.js';
 import type { BattleCtx } from './surface.js';
 
@@ -96,6 +111,13 @@ export function groundSurfaceY(layout: BattleLayout): number {
 export interface BackgroundOptions {
   /** 지역 1~3. 기본 R1. */
   readonly region?: Region;
+  /**
+   * 시간대. 기본 `dusk`.
+   *
+   * ★ 무엇이 시간대를 결정하는지는 아직 기획에 없다. 그래서 여기서는 **인자로만** 받는다 —
+   *   정해지면 호출부에서 넘기기만 하면 되고 이 파일은 안 바뀐다.
+   */
+  readonly timeOfDay?: TimeOfDay;
   /** 카메라 스크롤(px). 원경·중경이 서로 다른 비율로 흐른다. */
   readonly scrollX?: number;
   /** 래스터 캐시 주입구(테스트용). 기본은 게임이 공유하는 `spriteRasters`. */
@@ -123,7 +145,32 @@ export function skyFarY(layout: BattleLayout, spriteHeight: number): number {
   return skyMidY(layout, spriteHeight) - Math.round(height * FAR_RISE_RATIO);
 }
 
-/** 원경·중경을 스프라이트로 깐다. 그릴 수 없으면 `false` — 호출부가 폴백으로 넘어간다. */
+/**
+ * 시간대 하늘 — far/mid 밴드 **뒤에** 1회 배치한다(타일링 아님).
+ *
+ * 씬 스프라이트는 하늘·해/달·스카이라인·지면이 한 장에 다 들어 있고 폭이 104 가 아니라
+ * 이어붙일 수 없다. 그래서 씬의 지면선을 화면 지면선에 맞추고 화면을 덮는 **정수 배율**로
+ * 한 번만 그린다. 밴드가 불투명이라 실제로 보이는 것은 밴드 위쪽 — 하늘과 해/달이다.
+ *
+ * 굽지 못해도 배경 전체를 포기하지 않는다(하늘만 빠지고 밴드는 그대로 그린다).
+ */
+function drawSkyScene(
+  ctx: SpriteBattleCtx,
+  layout: BattleLayout,
+  rasters: SpriteRasterCache,
+  region: Region,
+  timeOfDay: TimeOfDay,
+): boolean {
+  const sky = rasters.raster(skySource(region, timeOfDay));
+  if (sky === null) return false;
+
+  const groundY = groundSurfaceY(layout);
+  const scale = skyCoverScale(layout.width, groundY, sky.width, sky.height);
+  drawSprite(ctx, sky, skyOriginX(layout.width, sky.width, scale), skyOriginY(groundY, sky.height, scale), scale);
+  return true;
+}
+
+/** 하늘·원경·중경을 스프라이트로 깐다. 그릴 수 없으면 `false` — 호출부가 폴백으로 넘어간다. */
 function drawSkySprites(ctx: BattleCtx, layout: BattleLayout, options: BackgroundOptions): boolean {
   const spriteCtx = spriteCtxOf(ctx);
   if (spriteCtx === null || layout.width <= 0) return false;
@@ -138,7 +185,8 @@ function drawSkySprites(ctx: BattleCtx, layout: BattleLayout, options: Backgroun
   const scale = tileBandScale(layout);
   const scroll = options.scrollX ?? 0;
 
-  // 원경 먼저 — 중경이 불투명이라 겹치는 아래쪽을 덮는다(그래서 깊이가 생긴다).
+  // 하늘이 가장 뒤. 그 다음 원경 — 중경이 불투명이라 겹치는 아래쪽을 덮는다(그래서 깊이가 생긴다).
+  drawSkyScene(spriteCtx, layout, rasters, region, options.timeOfDay ?? DEFAULT_TIME_OF_DAY);
   drawSpriteBand(spriteCtx, far, 0, skyFarY(layout, far.height), layout.width, scale, scroll * FAR_PARALLAX);
   drawSpriteBand(spriteCtx, mid, 0, skyMidY(layout, mid.height), layout.width, scale, scroll * MID_PARALLAX);
   return true;

@@ -11,6 +11,9 @@ export type {
   CombatState,
   Enemy,
   Lane,
+  SkillCurrency,
+  SkillId,
+  SkillSpec,
   StageWaveTable,
   Tower,
   TowerKind,
@@ -51,5 +54,7 @@ export { createCombat, step, waveClockParams } from './simulate';
 export type { WaveClock, WaveClockParams, WaveMode } from './wave-clock';
 export { advanceWaveClock, battleDurationMs, createWaveClock } from './wave-clock';
 
-export type { ActionResult } from './actions';
+export type { ActionResult, SkillCastResult } from './actions';
 export { buildTower, castSkill, skipPrep, summonUnit, upgradeTower } from './actions';
+
+export { createSkillCooldowns, isShieldActive, skillCooldownOf, tickSkillCooldowns } from './skills';

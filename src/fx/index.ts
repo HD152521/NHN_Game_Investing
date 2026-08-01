@@ -8,11 +8,16 @@
  * drawSkillFx(ctx, palette, fx, now, reduced);   // 매 프레임 (src/battle)
  * ```
  *
- * ⚠️ 실제 게임 로직이 있는 스킬은 `S-01` 하나뿐이다(PRD FR-6). `S-02`/`S-03`은
- *    이펙트와 트리거 인터페이스만 준비돼 있다.
+ * ⚠️ 스킬의 비용·쿨다운·효과는 `src/combat`이 소유한다. 이 모듈은 **재생만** 한다.
  */
 
 export { SKILL_EFFECT_DURATION_MS, SKILL_FX_SLOT_COUNT } from './constants.js';
+
+export { ANCHOR_JITTER_PX, skillAnchor } from './anchor.js';
+export type { SkillAnchor } from './anchor.js';
+
+export { drawSkillFx } from './draw-skill-fx.js';
+export type { FxCtx } from './draw-skill-fx.js';
 
 export {
   createSkillFxField,

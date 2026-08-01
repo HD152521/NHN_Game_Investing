@@ -49,8 +49,8 @@ function expectedChannels(cell: SpriteCell, mode: 'default' | 'colorblind' = 'de
 }
 
 describe('합성 분류표', () => {
-  test('43키에서 `tf-ally-parts` 만 빠진 42키를 전수 분류한다', () => {
-    expect(RENDERABLE_SPRITE_KEYS).toHaveLength(42);
+  test('61키에서 `tf-ally-parts` 만 빠진 60키를 전수 분류한다', () => {
+    expect(RENDERABLE_SPRITE_KEYS).toHaveLength(60);
     expect(RENDERABLE_SPRITE_KEYS).not.toContain('tf-ally-parts');
     expect(NON_RENDERABLE_SPRITE_KEYS).toEqual(['tf-ally-parts']);
   });
@@ -64,12 +64,52 @@ describe('합성 분류표', () => {
     }
   });
 
-  test('유닛·타워·기지는 alpha, 배경·발판·UI 는 opaque 다', () => {
+  test('유닛·타워·기지·하늘씬은 alpha, 배경밴드·발판·UI 는 opaque 다', () => {
     const alphaKeys = RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'alpha');
     const opaqueKeys = RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'opaque');
-    expect(alphaKeys).toHaveLength(14);
+    // 유닛·타워·기지 14 + 시간대·하늘 씬 18 = 32
+    expect(alphaKeys).toHaveLength(32);
     expect(opaqueKeys).toHaveLength(17);
     expect(RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'additive')).toHaveLength(11);
+  });
+
+  /**
+   * 하늘 씬을 `alpha` 로 분류한 근거를 **그리드로** 고정한다.
+   * 이름이 아니라 실제 셀을 세서 정했으므로, 나중에 원본이 바뀌면 여기서 먼저 깨져야 한다.
+   */
+  test('하늘 씬 18키는 전부 투명이 있고, 가산으로 그리면 밤이 지워진다', () => {
+    const skyKeys = RENDERABLE_SPRITE_KEYS.filter((key) => key.startsWith('tf-sky-') || /^tf-r[123]-/.test(key));
+    expect(skyKeys).toHaveLength(18);
+
+    const floor = COMPOSITE_SPECS.additive.inkFloor as number;
+    const brightest = (hex: string) => {
+      const { r, g, b } = parseHex(hex);
+      return Math.max(r, g, b);
+    };
+
+    for (const key of skyKeys) {
+      expect(SPRITE_COMPOSITE[key], key).toBe('alpha');
+      const grid = spriteGrid(key);
+      let transparent = 0;
+      let belowFloor = 0;
+      let ink = 0;
+      for (const row of grid) {
+        for (const cell of row) {
+          if (cell === TRANSPARENT) {
+            transparent += 1;
+            continue;
+          }
+          ink += 1;
+          // 씬 그리드는 팔레트 문자가 아니라 생 색이다.
+          if (brightest(cell) < floor) belowFloor += 1;
+        }
+      }
+      // 1. 투명이 실제로 있다 → `opaque`("사각형을 꽉 채운다") 가 아니다
+      expect(transparent, `${key} 투명`).toBeGreaterThan(0);
+      expect(ink, `${key} 잉크`).toBeGreaterThan(transparent);
+      // 2. 가산이면 잉크 임계 밑이 통째로 날아간다 → 밤하늘이 사라진다
+      if (key.endsWith('-night')) expect(belowFloor / ink, `${key} 임계 미만 비율`).toBeGreaterThan(0.3);
+    }
   });
 
   test('가산 분류만 굽는 단계에서 검정 계열을 뺀다 (`0` LINE · `1` BG_0)', () => {

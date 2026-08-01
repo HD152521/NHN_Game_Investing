@@ -9,7 +9,7 @@
  * 그 전까지 블라인드 규칙(FR-4)은 강제되지 않는다.
  */
 
-import type { CombatParams, CombatState, StageId, TowerKind, UnitKind } from '../combat';
+import type { CombatParams, CombatState, SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { STAGES } from '../combat';
 import {
   AUM_DROP_PER_WAVE,
@@ -22,6 +22,7 @@ import {
   buildTower,
   castSkill,
   createCombat,
+  skillCooldownOf,
   skipPrep,
   step as stepCombat,
   summonUnit,
@@ -173,13 +174,32 @@ export class StageSession {
     this.wallet = { ...this.wallet, gold: result.gold };
   }
 
-  useSkill(): void {
-    const result = castSkill(this.combat, this.wallet.gold);
+  /**
+   * 스킬을 시전한다 (FR-6.6). 성공 여부를 돌려준다 — 셸이 이펙트를 재생할지 판단해야 한다.
+   *
+   * ★ AUM이 지갑에서 빠지는 유일한 전투 경로가 여기다 ★
+   * `castSkill`은 순수 계산기라 "시전 후 잔액"만 돌려준다(전투는 지갑을 모른다).
+   * 골드든 AUM이든 **지갑에 반영하는 곳은 이 메서드 한 곳뿐**이며, 그래서 두 재화가
+   * 정확히 같은 경로를 탄다 — `S-03`만 특별 취급하는 분기가 어디에도 없다.
+   */
+  useSkill(id: SkillId): boolean {
+    const result = castSkill(this.combat, id, this.wallet.gold, this.wallet.aum);
     if (!result.ok) {
-      return;
+      return false;
     }
     this.combat = result.state;
-    this.wallet = { ...this.wallet, gold: result.gold };
+    this.wallet = { gold: result.gold, aum: result.aum };
+    return true;
+  }
+
+  /** 스킬 버튼의 남은 쿨다운(ms). 0이면 시전 가능 상태다. */
+  skillCooldownMs(id: SkillId): number {
+    return skillCooldownOf(this.combat, id);
+  }
+
+  /** 지갑 잔액 스냅샷 — 버튼 활성 판정용(포지션 평가 없이 읽고 싶을 때). */
+  get walletSnapshot(): Wallet {
+    return this.wallet;
   }
 
   /**

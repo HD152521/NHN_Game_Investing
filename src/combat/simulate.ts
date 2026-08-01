@@ -10,6 +10,7 @@
 
 import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS, WAVE_PREP_MS } from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks, moveEnemies, moveUnits } from './mechanics';
+import { createSkillCooldowns, tickSkillCooldowns } from './skills';
 import type { CombatStateInternal } from './state';
 import type { CombatEvents, CombatParams, CombatState, Enemy } from './types';
 import { advanceWaveClock, battleDurationMs, createWaveClock } from './wave-clock';
@@ -62,6 +63,8 @@ export function createCombat(params: CombatParams): CombatState {
     maxBaseHp: params.maxBaseHp,
     towerSlots: params.towerSlots,
     skillCooldownMs: 0,
+    skillCooldowns: createSkillCooldowns(),
+    shieldRemainingMs: 0,
     waveMode: clock.mode,
     spawnedInWave: 0,
     waveEnemyTotal: 0,
@@ -180,8 +183,24 @@ function substep(
   const deathResult = collectDeaths(leakResult.survivors, aumPerKill);
   const survivingUnits = movedUnits.filter((unit) => unit.hp > 0);
 
-  const skillCooldownMs = Math.max(0, state.skillCooldownMs - dtMs);
-  const baseHp = Math.max(0, state.baseHp - leakResult.baseDamage);
+  const skillCooldowns = tickSkillCooldowns(
+    state.skillCooldowns ?? createSkillCooldowns(),
+    dtMs,
+  );
+
+  /**
+   * 서킷브레이커 실드(S-03) — **이 서브스텝 시작 시점의 잔여시간**으로 판정한다.
+   *
+   * 먼저 깎고 판정하면 마지막 서브스텝에서 실드가 0이 되어, 플레이어가 산 8초의 끝자락이
+   * 조용히 사라진다. "남아 있었으면 막는다"가 지속시간의 정의다.
+   */
+  const shieldWasActive = (state.shieldRemainingMs ?? 0) > 0;
+  const shieldRemainingMs = Math.max(0, (state.shieldRemainingMs ?? 0) - dtMs);
+
+  // 실드가 서 있으면 본진에 닿은 적은 피해를 주지 못하고 소멸한다(누출 판정 자체는 그대로다 —
+  // 적은 사라지고, 사라진 자리에서 피해만 지워진다).
+  const baseDamage = shieldWasActive ? 0 : leakResult.baseDamage;
+  const baseHp = Math.max(0, state.baseHp - baseDamage);
 
   let phase = state.phase;
   if (baseHp <= 0) {
@@ -210,7 +229,9 @@ function substep(
     baseHp,
     maxBaseHp: state.maxBaseHp,
     towerSlots: state.towerSlots,
-    skillCooldownMs,
+    skillCooldownMs: skillCooldowns['S-01'],
+    skillCooldowns,
+    shieldRemainingMs,
     // spawnedInWave는 반드시 이번 틱에 실제로 스폰된 수(spawnResult)를 반영해야 한다 —
     // waveInfo.spawnedInWave는 "웨이브 전환 시 리셋된 값"일 뿐이라 그대로 쓰면 같은 웨이브
     // 안에서 스폰 진행도가 매 틱 0으로 되돌아가 적이 무한 중복 스폰되는 버그가 생긴다.
@@ -224,7 +245,7 @@ function substep(
     kills: deathResult.kills,
     aumDropped: deathResult.aumDropped,
     goldIncome: waveInfo.goldIncome,
-    baseDamage: leakResult.baseDamage,
+    baseDamage,
     waveStarted: waveInfo.waveStarted,
   };
 

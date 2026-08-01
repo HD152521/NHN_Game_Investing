@@ -6,11 +6,24 @@
  */
 
 import type { Palette } from '../design/index.js';
+import type { SpriteRasterCache } from '../sprites/render/index.js';
 import type { WeatherField, WeatherView, WeatherViewport } from '../weather/index.js';
 import { activeCount, fieldPhase, overlapsCenterClear, slotLength, slotSeed, slotSpeed } from '../weather/index.js';
-import { clamp01, decorrelate, motionTime } from './draw-weather-shared.js';
+import {
+  DEFAULT_WEATHER_RASTERS,
+  clamp01,
+  decorrelate,
+  drawWeatherTiles,
+  motionTime,
+  tilePhase,
+} from './draw-weather-shared.js';
 import { rgba } from './style.js';
 import type { BattleCtx } from './surface.js';
+
+/** 시트 스프라이트 키 — WX-02 FOMO 랠리. */
+const SPRITE_KEY = 'tf-wx-02';
+/** 격자가 한 타일 높이만큼 **올라가는** 주기(ms). 폭우와 정확히 반대 방향이어야 한다. */
+const SPRITE_RISE_MS = 760;
 
 /** 상승 광선 개수. */
 const RAY_MAX = 36;
@@ -128,17 +141,44 @@ function drawBottomGlow(ctx: BattleCtx, palette: Palette, viewport: WeatherViewp
   }
 }
 
+/**
+ * 시트 스프라이트 `tf-wx-02`를 격자로 깔아 상승기류를 만든다.
+ * 위상 부호가 폭우와 반대라 격자가 **아래→위**로 흐른다(WX-01과 방향으로 구분된다).
+ */
+function drawUpdraftSprites(
+  ctx: BattleCtx,
+  rasters: SpriteRasterCache,
+  viewport: WeatherViewport,
+  view: WeatherView,
+): boolean {
+  const time = motionTime(view.timeMs, view.reducedMotion);
+  return drawWeatherTiles(
+    ctx,
+    rasters,
+    SPRITE_KEY,
+    viewport,
+    viewport.top,
+    0,
+    -tilePhase(time, SPRITE_RISE_MS),
+    view.intensity,
+    true,
+  );
+}
+
 export function drawFomoUpdraft(
   ctx: BattleCtx,
   palette: Palette,
   viewport: WeatherViewport,
   view: WeatherView,
   field: WeatherField,
+  rasters: SpriteRasterCache = DEFAULT_WEATHER_RASTERS,
 ): void {
   ctx.save();
   ctx.setLineDash([]);
-  drawBottomGlow(ctx, palette, viewport, view.intensity);
-  drawRays(ctx, palette, viewport, view, field);
-  drawSparks(ctx, palette, viewport, view, field);
+  if (!drawUpdraftSprites(ctx, rasters, viewport, view)) {
+    drawBottomGlow(ctx, palette, viewport, view.intensity);
+    drawRays(ctx, palette, viewport, view, field);
+    drawSparks(ctx, palette, viewport, view, field);
+  }
   ctx.restore();
 }

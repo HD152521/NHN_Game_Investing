@@ -20,6 +20,20 @@ export {
 } from './roster';
 export type { RosterEntry, RosterFlavorTip, RosterFlavorTipOptions } from './roster';
 
+export {
+  SKILL_AUM_CLASS,
+  SKILL_BAR_ENTRIES,
+  SKILL_READY_LABEL,
+  buildSkillBarMarkup,
+  buildSkillButton,
+  formatSkillCooldown,
+  formatSkillCost,
+  resolveSkillButtonState,
+  skillButtonClass,
+  skillIdFor,
+} from './skill-bar-logic';
+export type { SkillButtonInput, SkillButtonState } from './skill-bar-logic';
+
 export { createGoldMeter, prefersReducedMotion } from './gold-flight';
 export type {
   FlightScheduler,

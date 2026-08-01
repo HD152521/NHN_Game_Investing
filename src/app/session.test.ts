@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { SKILL_SPECS } from '../combat';
 import { STARTING_AUM, STARTING_GOLD, StageSession } from './session';
 
 /**
@@ -372,5 +373,72 @@ describe('StageSession — 웨이브 준비 시간', () => {
 
     expect(session.combatState.towers).toHaveLength(1);
     expect(session.prepRemainingMs).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * ★ 전장이 매매 원금을 태우는 유일한 경로 (FR-6.6, Step 7 결정 A).
+ *
+ * `castSkill`은 순수 계산기라 지갑을 모른다 — "시전 후 잔액"만 돌려준다. 그 값을 실제
+ * 지갑에 반영하는 곳은 `StageSession.useSkill` 한 곳뿐이다. 이 배선이 끊기면 `S-03`이
+ * 공짜 실드가 되어 매매와 전투의 맞물림이 통째로 사라지므로, 여기서 수치로 못박는다.
+ */
+describe('StageSession — 스킬 재화 반영', () => {
+  test('S-03 실드는 AUM을 깎고 골드는 건드리지 않는다', () => {
+    const session = makeSession();
+
+    expect(session.useSkill('S-03')).toBe(true);
+
+    const snap = session.snapshot(0);
+    expect(snap.wallet.aum).toBe(STARTING_AUM - SKILL_SPECS['S-03'].cost);
+    expect(snap.wallet.gold).toBe(STARTING_GOLD);
+    expect(session.combatState.shieldRemainingMs).toBeGreaterThan(0);
+  });
+
+  test('시작 골드 120으로는 공시 폭탄(200 G)을 못 쓴다 — 거부되고 지갑이 그대로다', () => {
+    const session = makeSession();
+    expect(STARTING_GOLD).toBeLessThan(SKILL_SPECS['S-01'].cost);
+
+    expect(session.useSkill('S-01')).toBe(false);
+
+    const snap = session.snapshot(0);
+    expect(snap.wallet.gold).toBe(STARTING_GOLD);
+    expect(snap.wallet.aum).toBe(STARTING_AUM);
+  });
+
+  test('시작 골드는 배당 살포(120 G) 딱 한 번 분량이다 — 기본 포탑 1기와 같은 값', () => {
+    const session = makeSession();
+    expect(STARTING_GOLD).toBe(SKILL_SPECS['S-02'].cost);
+
+    expect(session.useSkill('S-02')).toBe(true);
+    expect(session.snapshot(0).wallet.gold).toBe(0);
+    // 두 번째는 골드가 0이라 거부된다.
+    expect(session.useSkill('S-02')).toBe(false);
+  });
+
+  test('실드를 두 번 쓰면 AUM이 두 번 빠진다 (소모가 누적된다)', () => {
+    const session = makeSession();
+    const cost = SKILL_SPECS['S-03'].cost;
+
+    expect(session.useSkill('S-03')).toBe(true);
+    // 쿨다운(60초)을 흘려보낸다. `stepCombatFrame` 한 번이 처리하는 dt에는 상한이 있어
+    // 여러 번 나눠 부른다. 타워·유닛이 없어 처치가 0이므로 AUM 수입은 발생하지 않는다.
+    for (let i = 0; i < 7; i += 1) {
+      session.stepCombatFrame(10_000);
+    }
+    expect(session.skillCooldownMs('S-03')).toBe(0);
+
+    expect(session.useSkill('S-03')).toBe(true);
+    expect(session.snapshot(0).wallet.aum).toBe(STARTING_AUM - cost * 2);
+  });
+
+  test('쿨다운이 남아 있으면 재시전이 거부되고 AUM이 두 번 빠지지 않는다', () => {
+    const session = makeSession();
+
+    expect(session.useSkill('S-03')).toBe(true);
+    expect(session.skillCooldownMs('S-03')).toBe(SKILL_SPECS['S-03'].cooldownMs);
+    expect(session.useSkill('S-03')).toBe(false);
+
+    expect(session.snapshot(0).wallet.aum).toBe(STARTING_AUM - SKILL_SPECS['S-03'].cost);
   });
 });

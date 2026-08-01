@@ -8,6 +8,7 @@
 import { parseHex } from '../../design/color';
 import type { Palette } from '../../design/theme';
 import type { SpriteGrid } from '../grid';
+import { isSceneColor } from '../mood';
 import { SPRITE_CHARS, SPRITE_PALETTE, TRANSPARENT, type SpriteChar } from '../palette';
 import type { CompositeSpec } from './composite';
 import type { RasterContext2D } from './surface';
@@ -28,10 +29,22 @@ export function droppedChars(palette: Palette, spec: CompositeSpec): readonly Sp
   return SPRITE_CHARS.filter((char) => brightestChannel(palette[SPRITE_PALETTE[char]]) < floor);
 }
 
-/** 굽는 시점에 살아남는 문자인지. `null` 이면 그리지 않는다. */
-function inkOf(cell: string | undefined, dropped: ReadonlySet<string>): SpriteChar | null {
+/**
+ * 굽는 시점에 살아남는 셀인지. `null` 이면 그리지 않는다.
+ *
+ * 씬 그리드(`tf-sky-*` · `tf-r{1,2,3}-*`)의 셀은 팔레트 문자가 아니라 생 색이다.
+ * 팔레트를 거치지 않으므로 `dropped` 집합으로는 거를 수 없어 밝기를 직접 잰다 —
+ * 규칙(“`inkFloor` 미만은 굽지 않는다”)은 문자든 생 색이든 같다.
+ */
+function inkOf(cell: string | undefined, dropped: ReadonlySet<string>, floor: number | null): string | null {
   if (cell === undefined || cell === TRANSPARENT || dropped.has(cell)) return null;
-  return cell as SpriteChar;
+  if (!isSceneColor(cell)) return cell;
+  return floor !== null && brightestChannel(cell) < floor ? null : cell;
+}
+
+/** 살아남은 셀 → 실제로 칠할 색. 생 색은 그대로, 팔레트 문자는 현재 모드로 해석한다. */
+function colorOf(cell: string, palette: Palette): string {
+  return isSceneColor(cell) ? cell : palette[SPRITE_PALETTE[cell as SpriteChar]];
 }
 
 /**
@@ -45,20 +58,21 @@ export function rasterizeGrid(
   spec: CompositeSpec,
 ): number {
   const dropped = new Set<string>(droppedChars(palette, spec));
+  const floor = spec.inkFloor;
   let calls = 0;
 
   for (let y = 0; y < grid.length; y += 1) {
     const row = grid[y];
     if (row === undefined) continue;
 
-    let runChar: SpriteChar | null = null;
+    let runChar: string | null = null;
     let runStart = 0;
 
     for (let x = 0; x <= row.length; x += 1) {
-      const char = x < row.length ? inkOf(row[x], dropped) : null;
+      const char = x < row.length ? inkOf(row[x], dropped, floor) : null;
       if (char === runChar) continue;
       if (runChar !== null) {
-        ctx.fillStyle = palette[SPRITE_PALETTE[runChar]];
+        ctx.fillStyle = colorOf(runChar, palette);
         ctx.fillRect(runStart, y, x - runStart, 1);
         calls += 1;
       }

@@ -9,11 +9,27 @@
  */
 
 import type { Palette } from '../design/index.js';
+import type { SpriteRasterCache } from '../sprites/render/index.js';
 import type { WeatherField, WeatherView, WeatherViewport } from '../weather/index.js';
 import { activeCount, fieldPhase, overlapsCenterClear, slotLength, slotSeed, slotSpeed } from '../weather/index.js';
-import { clamp01, decorrelate, lerp, motionTime } from './draw-weather-shared.js';
+import {
+  DEFAULT_WEATHER_RASTERS,
+  clamp01,
+  decorrelate,
+  drawWeatherTiles,
+  lerp,
+  motionTime,
+  tilePhase,
+} from './draw-weather-shared.js';
 import { rgba } from './style.js';
 import type { BattleCtx } from './surface.js';
+
+/** 시트 스프라이트 키 — WX-01 패닉 셀. */
+const SPRITE_KEY = 'tf-wx-01';
+/** 격자가 한 타일 높이만큼 내려가는 주기(ms). 빗발이 화면을 훑는 속도다. */
+const SPRITE_FALL_MS = 620;
+/** 옆으로 밀리는 주기(ms) — 수직 낙하만 있으면 벽지처럼 보인다. */
+const SPRITE_DRIFT_MS = 7400;
 
 /** 광선 최대/최소 개수. 최소치가 있어야 임계를 갓 넘긴 순간에도 '비'로 읽힌다. */
 const RAY_MAX = 48;
@@ -187,18 +203,45 @@ function drawGhostChartLine(
   }
 }
 
+/**
+ * 시트 스프라이트 `tf-wx-01`을 격자로 깔아 폭우를 만든다.
+ * 강도는 **켜지는 칸의 밀도**로만 표현한다 — 같은 자리에 두 번 얹지 않으므로 가산 포화가 없다.
+ */
+function drawRainSprites(
+  ctx: BattleCtx,
+  rasters: SpriteRasterCache,
+  viewport: WeatherViewport,
+  view: WeatherView,
+): boolean {
+  const time = motionTime(view.timeMs, view.reducedMotion);
+  return drawWeatherTiles(
+    ctx,
+    rasters,
+    SPRITE_KEY,
+    viewport,
+    viewport.top,
+    tilePhase(time, SPRITE_DRIFT_MS),
+    tilePhase(time, SPRITE_FALL_MS),
+    view.intensity,
+    true,
+  );
+}
+
 export function drawPanicRain(
   ctx: BattleCtx,
   palette: Palette,
   viewport: WeatherViewport,
   view: WeatherView,
   field: WeatherField,
+  rasters: SpriteRasterCache = DEFAULT_WEATHER_RASTERS,
 ): void {
   ctx.save();
   ctx.setLineDash([]);
-  drawVignette(ctx, palette, viewport, view.intensity);
-  drawGhostChartLine(ctx, palette, viewport, view);
-  drawShards(ctx, palette, viewport, view, field);
-  drawRays(ctx, palette, viewport, view, field);
+  if (!drawRainSprites(ctx, rasters, viewport, view)) {
+    drawVignette(ctx, palette, viewport, view.intensity);
+    drawGhostChartLine(ctx, palette, viewport, view);
+    drawShards(ctx, palette, viewport, view, field);
+    drawRays(ctx, palette, viewport, view, field);
+  }
   ctx.restore();
 }

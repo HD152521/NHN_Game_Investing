@@ -5,6 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { BASE_PALETTE } from '../design/palette';
 import type { SpriteGrid } from './grid';
 import { ground } from './ground';
+import { scene } from './scene';
 import { isSpriteCell, SPRITE_CHARS, SPRITE_PALETTE, TRANSPARENT } from './palette';
 import { SPRITE_BUILDERS, SPRITE_KEYS, spriteGrid, type SpriteKey } from './index';
 import type { GroundState, Region } from './types';
@@ -24,6 +25,33 @@ const REFERENCE_PATH = fileURLToPath(new URL('../../docs/design-reference/grids.
 
 const reference = JSON.parse(readFileSync(REFERENCE_PATH, 'utf8')) as Record<string, string[][]>;
 
+/** 원본 갱신으로 순수 추가된 시간대·하늘 18키. 기존 43키는 한 픽셀도 바뀌지 않았다. */
+const SKY_KEYS_ADDED: readonly SpriteKey[] = [
+  'tf-sky-dawn',
+  'tf-sky-noon',
+  'tf-sky-dusk',
+  'tf-sky-night',
+  'tf-sky-rain',
+  'tf-sky-snow',
+  'tf-sky-dust',
+  'tf-sky-scrim',
+  'tf-sky-wide',
+  'tf-r1-noon',
+  'tf-r1-dusk',
+  'tf-r1-night',
+  'tf-r2-noon',
+  'tf-r2-dusk',
+  'tf-r2-night',
+  'tf-r3-noon',
+  'tf-r3-dusk',
+  'tf-r3-dust',
+];
+
+/** 셀이 팔레트 문자이거나 씬 전용 생 색(`#RRGGBB`)인지. */
+function isKnownCell(cell: string): boolean {
+  return isSpriteCell(cell) || /^#[0-9a-f]{6}$/i.test(cell);
+}
+
 /** 사람이 읽을 수 있는 한 장의 문자열. 실패 시 diff 가 그림처럼 보인다. */
 function render(grid: readonly (readonly string[])[]): string {
   return grid.map((row) => row.join('')).join('\n');
@@ -36,9 +64,14 @@ function charSet(grid: readonly (readonly string[])[]): readonly string[] {
 }
 
 describe('스프라이트 이식 — 원본 대조', () => {
-  test('키 43개가 원본 `sheets()` 와 이름·순서까지 같다', () => {
+  test('키 61개가 원본 `sheets()` 와 이름·순서까지 같다', () => {
     expect(SPRITE_KEYS).toEqual(Object.keys(reference));
-    expect(SPRITE_KEYS).toHaveLength(43);
+    expect(SPRITE_KEYS).toHaveLength(61);
+  });
+
+  test('시간대·하늘 18키가 전부 들어와 있다 (원본 갱신분)', () => {
+    expect(SKY_KEYS_ADDED).toHaveLength(18);
+    for (const key of SKY_KEYS_ADDED) expect(SPRITE_KEYS).toContain(key);
   });
 
   test.each(SPRITE_KEYS)('%s 그리드가 원본과 문자 단위로 일치한다', (key) => {
@@ -71,9 +104,17 @@ describe('스프라이트 그리드 불변식', () => {
     for (const row of grid) expect(row).toHaveLength(width);
   });
 
-  test.each(built)('%s 의 모든 문자가 PAL 에 존재한다', (_key, grid) => {
-    const unknown = charSet(grid).filter((char) => !isSpriteCell(char));
+  test.each(built)('%s 의 모든 셀이 PAL 문자이거나 씬 생 색이다', (_key, grid) => {
+    const unknown = charSet(grid).filter((char) => !isKnownCell(char));
     expect(unknown).toEqual([]);
+  });
+
+  test('기존 43키는 PAL 문자만 쓴다 (생 색은 신규 18키에만 등장한다)', () => {
+    const legacy = SPRITE_KEYS.filter((key) => !SKY_KEYS_ADDED.includes(key));
+    expect(legacy).toHaveLength(43);
+    for (const key of legacy) {
+      expect(charSet(spriteGrid(key)).filter((char) => !isSpriteCell(char)), key).toEqual([]);
+    }
   });
 
   test('생성기는 호출할 때마다 새 그리드를 돌려준다 (공유 상태 없음)', () => {
@@ -95,7 +136,7 @@ describe('파라메트릭 생성기', () => {
         const grid = ground(region, state);
         expect(grid).toHaveLength(16);
         for (const row of grid) expect(row).toHaveLength(104);
-        expect(charSet(grid).filter((char) => !isSpriteCell(char))).toEqual([]);
+        expect(charSet(grid).filter((char) => !isKnownCell(char))).toEqual([]);
         rendered.add(render(grid));
       }
     }
@@ -110,11 +151,21 @@ describe('파라메트릭 생성기', () => {
     expect(render(ground(3, 3))).not.toBe(render(ground(3, 1)));
   });
 
-  test('43키는 파라메트릭 함수 위의 별칭이다', () => {
+  test('키는 파라메트릭 함수 위의 별칭이다', () => {
     expect(render(spriteGrid('tf-gnd-s2'))).toBe(render(ground(1, 2)));
     expect(render(spriteGrid('tf-gnd-s3'))).toBe(render(ground(1, 3)));
     expect(render(spriteGrid('tf-gnd-r2'))).toBe(render(ground(2, 1)));
     expect(render(spriteGrid('tf-gnd-r3'))).toBe(render(ground(3, 1)));
+    expect(render(spriteGrid('tf-r2-dusk'))).toBe(render(scene('dusk', 108, 56, { region: 2 })));
+    expect(render(spriteGrid('tf-sky-noon'))).toBe(render(scene('noon', 116, 62)));
+  });
+
+  test('원본 키에 없는 시간대×지역 조합도 만들 수 있다 (하늘 배선 전제)', () => {
+    // 원본 61키에 `tf-r2-dawn`(R2 새벽) 은 없지만 `scene()` 으로는 만들 수 있다
+    expect(Object.keys(reference)).not.toContain('tf-r2-dawn');
+    const dawnR2 = scene('dawn', 108, 56, { region: 2 });
+    expect(dawnR2).toHaveLength(56);
+    expect(render(dawnR2)).not.toBe(render(scene('dawn', 108, 56, { region: 1 })));
   });
 });
 

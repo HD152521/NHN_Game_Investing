@@ -7,7 +7,9 @@
  */
 
 import type { Palette } from '../design/index.js';
+import type { SpriteRasterCache } from '../sprites/render/index.js';
 import type { WeatherField, WeatherView, WeatherViewport } from '../weather/index.js';
+import { DEFAULT_WEATHER_RASTERS } from './draw-weather-shared.js';
 import { drawBlackout } from './draw-weather-blackout.js';
 import { drawRangeFog } from './draw-weather-fog.js';
 import { drawPanicRain } from './draw-weather-rain.js';
@@ -35,6 +37,9 @@ export function weatherViewport(layout: BattleLayout): WeatherViewport {
  *
  * 아무것도 그리지 않는 경우: 맑음 / 강도 0 / 캔버스 크기 0.
  * 유닛·타워를 그린 뒤, HUD를 그리기 전에 호출한다 (전장 위에 얹고 HUD는 가리지 않는다).
+ *
+ * `rasters`는 테스트 주입구다(기본은 게임이 공유하는 캐시). 선택 인자이므로 `battle.ts`
+ * 호출부는 그대로다 — `draw-background.ts`의 `options.rasters`와 같은 패턴이다.
  */
 export function drawWeather(
   ctx: BattleCtx,
@@ -42,22 +47,23 @@ export function drawWeather(
   viewport: WeatherViewport,
   view: WeatherView,
   field: WeatherField,
+  rasters: SpriteRasterCache = DEFAULT_WEATHER_RASTERS,
 ): void {
   if (viewport.width <= 0 || viewport.height <= 0) return;
   if (view.kind === 'clear' || view.intensity <= 0) return;
 
   switch (view.kind) {
     case 'panic_rain':
-      drawPanicRain(ctx, palette, viewport, view, field);
+      drawPanicRain(ctx, palette, viewport, view, field, rasters);
       return;
     case 'fomo_updraft':
-      drawFomoUpdraft(ctx, palette, viewport, view, field);
+      drawFomoUpdraft(ctx, palette, viewport, view, field, rasters);
       return;
     case 'range_fog':
-      drawRangeFog(ctx, palette, viewport, view);
+      drawRangeFog(ctx, palette, viewport, view, rasters);
       return;
     case 'blackout':
-      drawBlackout(ctx, palette, viewport, view);
+      drawBlackout(ctx, palette, viewport, view, rasters);
       return;
   }
 }

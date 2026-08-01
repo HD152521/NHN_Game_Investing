@@ -109,6 +109,45 @@ export const SPRITE_COMPOSITE = {
   'tf-ui-btn': 'opaque',
   'tf-ui-icons': 'opaque',
   'tf-ui-reveal': 'opaque',
+
+  /**
+   * ── 시간대·하늘 18키 — 전부 `alpha` 다. 이름이 아니라 **그리드를 세어서** 정했다:
+   *
+   *  1. 18키 모두 `.` 투명이 실제로 있다(3.9%~9.9%). 위치도 전부 같다 — 하늘 아래끝과
+   *     지면 밴드 사이, 즉 **실루엣 건물 사이의 틈**이다. `opaque`("사각형을 꽉 채우는
+   *     패널") 로 표시하면 거짓말이 된다. 뒤가 비쳐야 하는 구멍이 진짜로 있다.
+   *  2. `additive` 는 배제된다. 이 분류는 `inkFloor`(24) 밑을 굽는 시점에 지우는데,
+   *     `tf-sky-night`·`tf-r{1,2,3}-night` 는 잉크의 33~38% 가 그 밑이다(최대 채널 16).
+   *     가산으로 그리면 밤하늘이 통째로 사라진다. 게다가 시트가 가산을 지정한 것은
+   *     날씨/FX/발사체뿐이고, 이 18키는 발광체가 아니라 배경이다.
+   *  3. `alpha` 와 `opaque` 는 스펙이 같으므로(`source-over` + `inkFloor: null`) 픽셀은
+   *     어느 쪽이든 동일하다. 그래서 **의도를 정확히 적는 쪽**을 골랐다.
+   *
+   * ★ `tf-sky-scrim` 은 이름과 달리 반투명 덮개가 **아니다.** 원본 `scrimCompare()` 는
+   *   왼쪽 60×40 에 원본 씬, 오른쪽 60×40 에 `darken(…, 0.5)` 결과를 나란히 놓고 가운데
+   *   2열(밝은 선 + 어두운 선)로 가른 **before/after 비교 시트**다. 알파 채널이 있는
+   *   오버레이가 아니라 이미 어둡게 구워진 불투명 픽셀이므로 덮어 그리는 용도로 쓰면 안 된다.
+   *   실제 스크림이 필요하면 `darkenGrid(grid, 0.5)` 로 그리드를 변환해라.
+   * ★ `tf-sky-wide` 는 유닛·보스까지 박힌 1장짜리 구도 시트다. 배경으로 타일링하지 마라.
+   */
+  'tf-sky-dawn': 'alpha',
+  'tf-sky-noon': 'alpha',
+  'tf-sky-dusk': 'alpha',
+  'tf-sky-night': 'alpha',
+  'tf-sky-rain': 'alpha',
+  'tf-sky-snow': 'alpha',
+  'tf-sky-dust': 'alpha',
+  'tf-sky-scrim': 'alpha',
+  'tf-sky-wide': 'alpha',
+  'tf-r1-noon': 'alpha',
+  'tf-r1-dusk': 'alpha',
+  'tf-r1-night': 'alpha',
+  'tf-r2-noon': 'alpha',
+  'tf-r2-dusk': 'alpha',
+  'tf-r2-night': 'alpha',
+  'tf-r3-noon': 'alpha',
+  'tf-r3-dusk': 'alpha',
+  'tf-r3-dust': 'alpha',
 } as const satisfies Record<RenderableSpriteKey, CompositeClass>;
 
 export const RENDERABLE_SPRITE_KEYS = Object.keys(SPRITE_COMPOSITE) as readonly RenderableSpriteKey[];

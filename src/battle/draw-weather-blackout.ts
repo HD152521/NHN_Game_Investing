@@ -10,10 +10,17 @@
  */
 
 import type { Palette } from '../design/index.js';
+import type { SpriteRasterCache } from '../sprites/render/index.js';
 import type { WeatherView, WeatherViewport } from '../weather/index.js';
 import { BLACKOUT_SCANLINE_COUNT, fieldPhase } from '../weather/index.js';
+import { DEFAULT_WEATHER_RASTERS, drawWeatherTiles, motionTime, tilePhase } from './draw-weather-shared.js';
 import { rgba } from './style.js';
 import type { BattleCtx } from './surface.js';
+
+/** 시트 스프라이트 키 — WX-04 정전 스캔라인. */
+const SPRITE_KEY = 'tf-wx-04';
+/** 격자가 한 타일 높이만큼 훑는 주기(ms). 3프레임(≈50ms) 안에 눈에 띄어야 하므로 짧다. */
+const SPRITE_SWEEP_MS = 180;
 
 /** 스캔라인 1회 훑기 주기(ms). 3프레임(≈50ms) 안에 눈에 띄게 움직여야 하므로 짧다. */
 const SWEEP_MS = 220;
@@ -35,6 +42,7 @@ export function drawBlackout(
   palette: Palette,
   viewport: WeatherViewport,
   view: WeatherView,
+  rasters: SpriteRasterCache = DEFAULT_WEATHER_RASTERS,
 ): void {
   const span = Math.max(0, viewport.height - viewport.top);
   const thickness = Math.max(1, viewport.height * SCANLINE_THICKNESS_RATIO);
@@ -42,19 +50,38 @@ export function drawBlackout(
   ctx.save();
   ctx.setLineDash([]);
 
-  // 화면 전체 암전.
+  // 화면 전체 암전. ★ 가산 스프라이트는 화면을 **어둡게 할 수 없으므로** 이 한 겹만은
+  //   벡터로 남는다 — 스캔라인만 스프라이트로 얹는다.
   ctx.fillStyle = view.reducedMotion
     ? rgba(palette.LINE, REDUCED_BLACKOUT_ALPHA)
     : palette.LINE;
   ctx.fillRect(0, 0, viewport.width, viewport.height);
 
-  // 굵은 스캔라인 두 줄 — 하나는 위에서, 하나는 아래에서.
-  ctx.fillStyle = rgba(palette.TEXT, SCANLINE_ALPHA);
-  for (let line = 0; line < BLACKOUT_SCANLINE_COUNT; line += 1) {
-    ctx.fillRect(0, scanlineY(line, viewport, view, span, thickness), viewport.width, thickness);
+  if (!drawBlackoutSprites(ctx, rasters, viewport, view)) {
+    // 굵은 스캔라인 두 줄 — 하나는 위에서, 하나는 아래에서.
+    ctx.fillStyle = rgba(palette.TEXT, SCANLINE_ALPHA);
+    for (let line = 0; line < BLACKOUT_SCANLINE_COUNT; line += 1) {
+      ctx.fillRect(0, scanlineY(line, viewport, view, span, thickness), viewport.width, thickness);
+    }
   }
 
   ctx.restore();
+}
+
+/**
+ * 시트 스프라이트 `tf-wx-04`를 격자로 훑는다.
+ *
+ * ★ 여기만 `respectCenterClear`가 `false`다 — 시트가 "화면 전체가 검게 죽는다"고 명시한
+ *   유일한 예외이고, 그 대가는 `resolve.ts`의 3프레임 상한이 치른다.
+ */
+function drawBlackoutSprites(
+  ctx: BattleCtx,
+  rasters: SpriteRasterCache,
+  viewport: WeatherViewport,
+  view: WeatherView,
+): boolean {
+  const time = motionTime(view.timeMs, view.reducedMotion);
+  return drawWeatherTiles(ctx, rasters, SPRITE_KEY, viewport, 0, 0, tilePhase(time, SPRITE_SWEEP_MS), view.intensity, false);
 }
 
 /** 스캔라인 `line`의 y. reduced-motion에서는 훑지 않고 고정 위치에 선다. */
