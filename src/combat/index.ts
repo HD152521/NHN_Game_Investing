@@ -46,7 +46,10 @@ export { STAGES, WAVE_BASE_HP_R1, scaleWaveHp, totalBaseIncome, totalGoldFor } f
 export type { EnemySpec } from './waves';
 export { aumDropPerKill, spawnPlanFor, waveIncomeFor } from './waves';
 
-export { createCombat, step } from './simulate';
+export { createCombat, step, waveClockParams } from './simulate';
+
+export type { WaveClock, WaveClockParams, WaveMode } from './wave-clock';
+export { advanceWaveClock, battleDurationMs, createWaveClock } from './wave-clock';
 
 export type { ActionResult } from './actions';
-export { buildTower, castSkill, summonUnit, upgradeTower } from './actions';
+export { buildTower, castSkill, skipPrep, summonUnit, upgradeTower } from './actions';

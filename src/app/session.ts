@@ -22,6 +22,7 @@ import {
   buildTower,
   castSkill,
   createCombat,
+  skipPrep,
   step as stepCombat,
   summonUnit,
   upgradeTower,
@@ -133,6 +134,16 @@ export class StageSession {
         aum: this.wallet.aum + aumDropped,
       };
     }
+  }
+
+  /** 다음 웨이브까지 남은 준비 시간(ms). 0이면 교전 중이다 (HUD 카운트다운용). */
+  get prepRemainingMs(): number {
+    return this.combat.prepRemainingMs;
+  }
+
+  /** 준비 시간을 즉시 끝낸다 (Space). 준비 구간이 아니면 아무 일도 일어나지 않는다. */
+  skipPrep(): void {
+    this.combat = skipPrep(this.combat);
   }
 
   build(slot: number, kind: TowerKind): void {

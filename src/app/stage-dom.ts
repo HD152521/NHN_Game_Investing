@@ -56,6 +56,8 @@ export interface StageRefs {
   readonly wave: HTMLElement;
   readonly baseHp: HTMLElement;
   readonly log: HTMLElement;
+  /** 웨이브 준비 시간 카운트다운 오버레이. */
+  readonly prep: HTMLElement;
   readonly banner: HTMLElement;
   readonly gate: HTMLElement;
   readonly startButton: HTMLButtonElement;
@@ -67,6 +69,17 @@ export interface StageRefs {
 export function formatSessionClock(barIndex: number): string {
   const totalMinutes = 9 * 60 + barIndex;
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
+}
+
+/**
+ * 준비 시간 카운트다운 문구. 0 이하면 빈 문자열(= 표시하지 않음)이다.
+ *
+ * 0.1초 단위로 보여준다 — 5초는 초 단위로만 끊으면 숫자가 거의 안 움직여 "멈춘 화면"으로
+ * 읽힌다. Space 안내를 같은 줄에 붙여, 기다릴지 건너뛸지를 한 번에 알게 한다.
+ */
+export function formatPrepCountdown(prepRemainingMs: number): string {
+  if (prepRemainingMs <= 0) return '';
+  return `준비 ${(prepRemainingMs / 1000).toFixed(1)}초 · Space로 바로 시작`;
 }
 
 export function formatSignedPercent(value: number): string {
@@ -118,6 +131,8 @@ export function buildStageMarkup(): string {
       <div class="stage__battle">
         <canvas data-ref="battle" width="${BATTLE_WIDTH}" height="${BATTLE_HEIGHT}"
                 aria-label="전장"></canvas>
+        <!-- 준비 시간 카운트다운. pointer-events:none 이라 준비 중에도 슬롯 클릭이 막히지 않는다. -->
+        <div class="stage__prep" data-ref="prep" role="status" aria-live="polite" hidden></div>
         <div class="stage__banner" data-ref="banner" hidden></div>
       </div>
 
@@ -157,6 +172,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const wave = pick('wave');
   const baseHp = pick('basehp');
   const log = pick('log');
+  const prep = pick('prep');
   const banner = pick('banner');
   const gate = pick('gate');
   const panelHost = pick('panel-host');
@@ -176,6 +192,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !wave ||
     !baseHp ||
     !log ||
+    !prep ||
     !banner ||
     !gate ||
     !panelHost ||
@@ -205,6 +222,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     wave,
     baseHp,
     log,
+    prep,
     banner,
     gate,
     startButton,

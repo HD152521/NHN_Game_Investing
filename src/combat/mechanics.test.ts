@@ -221,9 +221,28 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
     }
   });
 
+  test('슬롯 6개의 커버 상한이 전부 다르다 (배치 결정이 실제로 존재한다)', () => {
+    const boundaries = [0, 1, 2, 3, 4, 5].map((slot) => TOWER_RANGE.basic + towerX(slot));
+    expect(new Set(boundaries).size).toBe(6);
+
+    // 각 상한 바로 안쪽/바깥쪽 적을 실제로 사격 판정해 본다 — 상수 계산만이 아니라
+    // `applyTowerFire`가 정말 슬롯마다 다르게 동작하는지 확인한다.
+    for (let slot = 0; slot < 6; slot += 1) {
+      const boundary = boundaries[slot]!;
+      const towers: Tower[] = [makeTower({ slot, kind: 'basic' })];
+      const justInside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary - 0.001 })], 1000);
+      const justOutside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary + 0.001 })], 1000);
+
+      expect(justInside.enemies[0]?.hp).toBe(80);
+      expect(justOutside.enemies[0]?.hp).toBe(100);
+    }
+  });
+
   test('같은 적에 대해 앞 슬롯은 사격하고 뒤 슬롯은 아직 못 한다', () => {
-    // x = 0.43 은 슬롯 0(경계 0.42) 밖이지만 슬롯 1(경계 0.44) 안이다.
-    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: 0.43 })];
+    // 슬롯 0의 경계(=TOWER_RANGE.basic) 바깥이지만 슬롯 1의 경계 안쪽인 지점.
+    // 상수를 그대로 쓴다 — 리터럴로 박으면 사거리·간격 조정 때마다 테스트가 거짓으로 깨진다.
+    const between = TOWER_RANGE.basic + towerX(1) / 2;
+    const enemies: Enemy[] = [makeEnemy({ id: 1, lane: 'ground', x: between })];
 
     const backSlot = applyTowerFire([makeTower({ slot: 0, kind: 'basic' })], enemies, 1000);
     const frontSlot = applyTowerFire([makeTower({ slot: 1, kind: 'basic' })], enemies, 1000);
@@ -233,7 +252,7 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
   });
 
   test('타워를 지나쳐 본진 쪽으로 간 적도 계속 표적이 된다 (음수 거리)', () => {
-    // 슬롯 5(x=0.10)보다 본진 쪽에 있는 적. enemy.x - towerX = -0.09 ≤ range.
+    // 슬롯 5보다 본진 쪽(x=0.01)에 있는 적. enemy.x - towerX(5) 는 음수라 항상 ≤ range.
     const towers: Tower[] = [makeTower({ slot: 5, kind: 'basic' })];
     const result = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: 0.01 })], 1000);
 
@@ -241,11 +260,13 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
   });
 
   test('splash의 범위 피해도 자기 위치 기준으로 판정한다', () => {
-    // splash 사거리 0.3. 슬롯 5(x=0.10) 기준 경계는 0.40.
+    // 슬롯 5 기준 경계 = TOWER_RANGE.splash + towerX(5).
+    const boundary = TOWER_RANGE.splash + towerX(5);
     const towers: Tower[] = [makeTower({ slot: 5, kind: 'splash' })];
     const enemies: Enemy[] = [
-      makeEnemy({ id: 1, lane: 'ground', x: 0.35 }), // 슬롯 0이었다면 사거리 밖(0.30 초과)
-      makeEnemy({ id: 2, lane: 'ground', x: 0.45 }), // 슬롯 5에서도 밖
+      // 슬롯 0이었다면 사거리 밖이지만 슬롯 5에서는 안쪽인 지점.
+      makeEnemy({ id: 1, lane: 'ground', x: TOWER_RANGE.splash + towerX(5) / 2 }),
+      makeEnemy({ id: 2, lane: 'ground', x: boundary + 0.01 }), // 슬롯 5에서도 밖
     ];
 
     const result = applyTowerFire(towers, enemies, 1400);

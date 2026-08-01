@@ -159,6 +159,32 @@ body {
   height: auto;
 }
 
+/*
+ * 웨이브 준비 시간 카운트다운.
+ *
+ * 배너와 달리 전장을 덮지 않는다 — 준비 시간의 목적이 "지금 타워를 세우는 것"이라
+ * 슬롯이 보이고 눌려야 한다. 그래서 위쪽에만 얹고 `pointer-events: none`으로 클릭을 통과시킨다.
+ */
+.stage__prep {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 14px;
+  border: 1px solid var(--tf-gold);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tf-bg-0) 82%, transparent);
+  color: var(--tf-gold);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* 클리어·패배 배너. 전투가 끝나면 화면 위에 얹힌다. */
 .stage__banner {
   position: absolute;

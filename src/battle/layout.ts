@@ -10,6 +10,7 @@
  * 항상 작은 y(위쪽)를 가진다.
  */
 
+import { TOWER_SLOT_SPACING, towerX } from '../combat/index.js';
 import type { Lane } from '../combat/types.js';
 
 /** 픽셀 사각형. */
@@ -34,18 +35,28 @@ const GROUND_Y_RATIO = 0.8;
 const TOWER_ROW_Y_RATIO = 0.56;
 
 /**
- * 슬롯 하나의 최대 폭/높이(px) — 슬롯이 아무리 넓어도 이 이상 커지지 않는다.
+ * 타워 슬롯 줄 수 — **기지 옆에 2줄로 쌓는다** (전쟁시대 참고).
  *
- * ★ 가시성 수정(플레이테스트: "포탑 슬롯도 안 보임"): 기존 56×44는 1024px 폭에 6칸이
- *   배치될 때 칸(cell)당 약 130px 중 겨우 43%만 차지해 슬롯이 배경에 파묻혔다.
- *   96×68로 키워 칸 대비 점유율을 크게 높인다(아래 SLOT_WIDTH_CELL_RATIO 참고).
+ * ★ 왜 2줄인가 ★ 슬롯 픽셀 x는 `progressToX(towerX(slot))`으로 전투 좌표를 그대로 따르므로
+ *   같은 줄 이웃 사이 픽셀 간격은 `줄수 × TOWER_SLOT_SPACING × 레인폭`이다. 1줄이면 6칸을
+ *   44 px 터치 타겟으로 늘어놓기 위해 간격이 0.07까지 벌어져 슬롯이 전장 절반을 차지한다
+ *   (= 옮기기 전과 똑같이 산만해진다). 2줄로 쌓으면 같은 터치 타겟을 절반 폭에 담을 수 있어
+ *   슬롯 뭉치가 사옥 근처(캔버스 좌측 약 1/4)에 머문다.
  */
-const SLOT_WIDTH_MAX = 96;
-const SLOT_HEIGHT_MAX = 68;
-/** 슬롯 칸(cell) 폭 대비 실제 그려질 슬롯 폭 비율 — 나머지는 슬롯 사이 여백이 된다. */
-const SLOT_WIDTH_CELL_RATIO = 0.82;
-/** 슬롯 높이 — 전장 영역 높이 대비 비율. */
-const SLOT_HEIGHT_RATIO = 0.3;
+const SLOT_ROWS = 2;
+/**
+ * 슬롯 최소 변(px) — **PRD §11 모바일 터치 타겟 44 px 하한**. 슬롯을 "작게" 만들라는
+ * 요구가 있어도 이 아래로는 절대 내려가지 않는다.
+ * (캔버스는 논리 1024 px 고정 후 CSS로 축소되므로, 물리 CSS 픽셀은 축소 비율만큼 더 작아진다 —
+ *  이건 캔버스 폭 자체의 문제라 레이아웃에서 해결할 수 없다.)
+ */
+const SLOT_SIZE_MIN = 44;
+/** 슬롯 최대 변(px). "기지에 작게 얹는다"는 요구상 예전 96×68보다 훨씬 작게 상한을 둔다. */
+const SLOT_SIZE_MAX = 52;
+/** 같은 줄 이웃 간 픽셀 간격 대비 슬롯 변 길이 비율 — 나머지가 슬롯 사이 여백이 된다. */
+const SLOT_SIZE_PITCH_RATIO = 0.85;
+/** 위/아래 줄 사이 세로 여백(px). 줄 간 클릭 판정이 겹치지 않게 하는 최소 간격이다. */
+const SLOT_ROW_GAP = 8;
 
 export interface BattleLayout {
   readonly width: number;
@@ -146,29 +157,51 @@ export function progressToX(x: number, layout: BattleLayout): number {
   return layout.laneLeft + clamped * span;
 }
 
+/** 슬롯 한 변의 길이(px). 줄 간격·터치 타겟 하한·전장 높이를 동시에 만족시킨다. */
+function slotSize(layout: BattleLayout, rows: number): number {
+  const span = nonNegative(layout.laneRight - layout.laneLeft);
+  const battlefieldHeight = nonNegative(layout.battlefieldBottom - layout.battlefieldTop);
+
+  // 같은 줄 이웃 사이 픽셀 간격 = 줄 수 × 슬롯 간격(진행도) × 레인 폭.
+  const pitch = rows * TOWER_SLOT_SPACING * span;
+  const byPitch = Math.min(SLOT_SIZE_MAX, Math.max(SLOT_SIZE_MIN, pitch * SLOT_SIZE_PITCH_RATIO));
+  // 줄을 전부 쌓아도 전장 높이를 넘지 않아야 한다(극소 캔버스 방어).
+  const byHeight = battlefieldHeight / rows - SLOT_ROW_GAP;
+
+  return nonNegative(Math.min(byPitch, byHeight));
+}
+
 /**
  * 타워 슬롯 인덱스 → 클릭 판정 및 그리기에 쓰는 사각형.
  *
- * `towerSlots`(전체 슬롯 수)를 함께 받아야 한다 — 레이아웃 자체는 슬롯 개수를 모르므로
- * (전투 상태에 따라 달라질 수 있음), 호출부가 `CombatState.towerSlots`를 넘겨준다.
- * `hit-test.ts`의 `slotAt`도 동일한 함수를 사용해 판정 사각형이 항상 그리기와 일치하게 한다.
+ * ★ 슬롯은 **아군 사옥 쪽에 모여 있다** ★ (플레이테스트: "포탑을 전장 중간에 설치하면
+ * 보기 힘드니까 내 기지에 작게 설치하는 형태가 좋겠다 — 전쟁시대 참고")
+ *
+ * x는 전투 좌표를 그대로 따른다: `progressToX(towerX(slot))`. 예전에는 화면이 슬롯을 레인
+ * 전체에 균등 분배해 놓고 전투 판정은 `towerX(slot) = slot × 0.02`(전부 사옥 앞 10% 안)를
+ * 썼다 — **보이는 위치와 실제 사거리 원점이 서로 다른 좌표계**였다. 이제 둘이 한 식을 쓰므로
+ * 사거리 미리보기(`draw-tower-range.ts`)가 화면에서 곧이곧대로 읽힌다.
+ *
+ * y는 짝수 인덱스가 윗줄, 홀수 인덱스가 아랫줄이다(벽돌쌓기). 이웃한 두 슬롯은 x가
+ * `TOWER_SLOT_SPACING`만큼만 떨어져 가로로 겹칠 수 있지만 줄이 달라 세로로 분리되므로
+ * 클릭 판정은 모호해지지 않는다.
+ *
+ * `towerSlots`는 줄 수를 정하는 데 쓴다 — 슬롯이 1개뿐이면 2줄로 나눌 이유가 없다.
  */
 export function slotRect(slot: number, layout: BattleLayout, towerSlots: number): Rect {
-  const count = Math.max(1, towerSlots);
-  const span = nonNegative(layout.laneRight - layout.laneLeft);
-  const cellWidth = span / count;
-  const battlefieldHeight = nonNegative(layout.battlefieldBottom - layout.battlefieldTop);
+  const rows = towerSlots >= SLOT_ROWS ? SLOT_ROWS : 1;
+  const size = slotSize(layout, rows);
 
-  const width = Math.min(SLOT_WIDTH_MAX, nonNegative(cellWidth * SLOT_WIDTH_CELL_RATIO));
-  const height = Math.min(SLOT_HEIGHT_MAX, nonNegative(battlefieldHeight * SLOT_HEIGHT_RATIO));
-
-  const centerX = layout.laneLeft + cellWidth * (slot + 0.5);
-  const centerY = layout.towerRowY;
+  const centerX = progressToX(towerX(slot), layout);
+  // 줄들을 towerRowY 기준으로 위아래 대칭 배치한다.
+  const rowPitch = size + SLOT_ROW_GAP;
+  const rowIndex = ((slot % rows) + rows) % rows;
+  const centerY = layout.towerRowY + (rowIndex - (rows - 1) / 2) * rowPitch;
 
   return {
-    x: centerX - width / 2,
-    y: centerY - height / 2,
-    w: width,
-    h: height,
+    x: centerX - size / 2,
+    y: centerY - size / 2,
+    w: size,
+    h: size,
   };
 }

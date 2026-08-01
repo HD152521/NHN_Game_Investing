@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'vitest';
 
-import { AUM_DROP_PER_WAVE, BASE_HP, BASE_INCOME_PER_WAVE, TOWER_SLOTS, WAVE_COUNT, WAVE_DURATION_MS } from './constants';
+import {
+  AUM_DROP_PER_WAVE,
+  BASE_HP,
+  BASE_INCOME_PER_WAVE,
+  TOWER_SLOTS,
+  WAVE_COUNT,
+  WAVE_DURATION_MS,
+  WAVE_PREP_MS,
+} from './constants';
 import { createCombat, step } from './simulate';
 import type { CombatParams } from './types';
 
@@ -29,20 +37,66 @@ describe('createCombat', () => {
     expect(state.units).toEqual([]);
     expect(state.towers).toEqual([]);
   });
+
+  test('스테이지는 준비 구간부터 시작한다 (첫 타워를 세울 시간)', () => {
+    const state = createCombat(fixtureParams());
+    expect(state.prepRemainingMs).toBe(WAVE_PREP_MS);
+  });
 });
 
-describe('step — 웨이브 진행', () => {
-  test('첫 step 호출에서 웨이브 1이 시작되고 웨이브 1의 기본 수입이 지급된다', () => {
+describe('step — 준비 구간 (FR-6 플레이테스트 피드백)', () => {
+  /**
+   * 예전에는 `createCombat` 직후 첫 `step()`이 곧바로 웨이브 1을 시작했다. 시작 골드가
+   * 기본 포탑 정확히 1기라, 고르고 클릭할 틈 없이 적이 이미 행군 중이었다.
+   */
+  test('준비 구간에는 적이 한 마리도 스폰되지 않는다', () => {
     const params = fixtureParams();
-    const state = createCombat(params);
+    const { state } = step(createCombat(params), WAVE_PREP_MS - 100, params);
 
-    const { state: next, events } = step(state, 10, params);
+    expect(state.enemies).toHaveLength(0);
+    expect(state.wave).toBe(0);
+    expect(state.prepRemainingMs).toBeGreaterThan(0);
+  });
 
-    expect(next.wave).toBe(1);
+  test('준비 구간에는 웨이브 기본 수입도 아직 지급되지 않는다', () => {
+    const params = fixtureParams();
+    const { events } = step(createCombat(params), 1_000, params);
+
+    expect(events.waveStarted).toBeNull();
+    expect(events.goldIncome).toBe(0);
+  });
+
+  test('준비 시간 5초가 지나면 웨이브 1이 자동으로 시작되고 기본 수입이 지급된다', () => {
+    const params = fixtureParams();
+    const { state, events } = step(createCombat(params), WAVE_PREP_MS + 250, params);
+
+    expect(state.wave).toBe(1);
+    expect(state.prepRemainingMs).toBe(0);
     expect(events.waveStarted).toBe(1);
     expect(events.goldIncome).toBe(Math.floor(params.totalBaseIncome / params.waveCount));
   });
 
+  test('웨이브 1 교전이 끝나면 웨이브 2 전에 다시 준비 구간이 들어온다', () => {
+    const params = fixtureParams();
+    let state = createCombat(params);
+    // 주기(30초)의 끝 = 웨이브 2의 준비 구간 초입.
+    for (let i = 0; i < 121; i += 1) {
+      state = step(state, 250, params).state;
+    }
+
+    expect(state.wave).toBe(1);
+    expect(state.prepRemainingMs).toBeGreaterThan(0);
+  });
+
+  test('적이 스폰되기 시작하는 것은 준비가 끝난 뒤다', () => {
+    const params = fixtureParams();
+    const { state } = step(createCombat(params), WAVE_PREP_MS + 1_000, params);
+
+    expect(state.enemies.length).toBeGreaterThan(0);
+  });
+});
+
+describe('step — 웨이브 진행', () => {
   test('적을 하나도 못 잡으면 이번 스텝의 kills·aumDropped는 0이다', () => {
     const params = fixtureParams();
     const state = createCombat(params);
@@ -52,6 +106,22 @@ describe('step — 웨이브 진행', () => {
 
     expect(events.kills).toBe(0);
     expect(events.aumDropped).toBe(0);
+  });
+
+  test('준비 시간이 붙어도 스테이지 총 길이(13웨이브 × 30초)는 그대로다', () => {
+    // 방어 없이 패배해 시계가 멈추지 않도록 본진 HP만 크게 잡는다(웨이브 진행만 본다).
+    const params = fixtureParams({ maxBaseHp: 1_000_000 });
+    let state = createCombat(params);
+    let lastWaveStarted = 0;
+
+    // 정확히 13 × 30초 = 390초 = 리플레이(STAGE_DURATION_MS) 길이.
+    for (let i = 0; i < params.waveCount * (params.waveDurationMs / 1000); i += 1) {
+      const result = step(state, 1000, params);
+      state = result.state;
+      if (result.events.waveStarted !== null) lastWaveStarted = result.events.waveStarted;
+    }
+
+    expect(lastWaveStarted).toBe(params.waveCount);
   });
 });
 

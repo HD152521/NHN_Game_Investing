@@ -25,11 +25,37 @@ import {
 } from './constants';
 import type { CombatStateInternal } from './state';
 import type { CombatParams, CombatState, Tower, TowerKind, Unit, UnitKind } from './types';
+import { skipPrep as skipWaveClockPrep } from './wave-clock';
 
 export interface ActionResult {
   readonly state: CombatState;
   readonly gold: number;
   readonly ok: boolean;
+}
+
+/**
+ * 준비 시간을 즉시 끝낸다 (Space 키, FR-6 플레이테스트 피드백).
+ *
+ * 아는 사람은 5초를 기다릴 이유가 없다. 준비 구간이 아니면 상태를 그대로 돌려준다 —
+ * 골드를 쓰지 않는 행동이라 `ActionResult` 대신 상태만 반환한다.
+ */
+export function skipPrep(state: CombatState): CombatState {
+  const internal = state as CombatStateInternal;
+  if (internal.phase !== 'running') {
+    return internal;
+  }
+
+  const clock = skipWaveClockPrep({
+    mode: internal.waveMode,
+    wave: internal.wave,
+    waveElapsedMs: internal.waveElapsedMs,
+    prepRemainingMs: internal.prepRemainingMs,
+  });
+
+  if (clock.prepRemainingMs === internal.prepRemainingMs) {
+    return internal;
+  }
+  return { ...internal, prepRemainingMs: clock.prepRemainingMs };
 }
 
 /** 슬롯 범위를 벗어나거나 이미 찼거나 골드가 부족하면 실패("ok: false", 상태·골드 불변). */

@@ -17,7 +17,7 @@
  * 전투 판정과 어긋나지 않게 한다.
  */
 
-import { TOWER_COOLDOWN_MS, TOWER_RANGE } from '../combat/index.js';
+import { TOWER_COOLDOWN_MS, TOWER_RANGE, towerX } from '../combat/index.js';
 import type { CombatState, Enemy, Lane, Tower, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import type { BattleLayout } from './layout.js';
@@ -61,11 +61,16 @@ function pickPriorityTarget(candidates: readonly Enemy[]): Enemy | null {
   return best;
 }
 
-/** mechanics.ts `applyTowerFire`와 동일한 사거리 판정(담당 레인 + x <= 사거리). */
+/**
+ * mechanics.ts `applyTowerFire`와 동일한 사거리 판정 — 담당 레인 + **타워 자기 위치 기준**
+ * 상대 거리(`enemy.x - towerX(slot) <= range`). 절대좌표(`enemy.x <= range`)로 재면 앞 슬롯
+ * 타워가 실제로는 맞히는 적에게 예광선을 안 그려, 화면과 판정이 어긋난다.
+ */
 function candidatesFor(tower: Tower, enemies: readonly Enemy[]): readonly Enemy[] {
   const lane = laneForKind(tower.kind);
   const range = TOWER_RANGE[tower.kind];
-  return enemies.filter((enemy) => enemy.lane === lane && enemy.x <= range);
+  const originX = towerX(tower.slot);
+  return enemies.filter((enemy) => enemy.lane === lane && enemy.x - originX <= range);
 }
 
 interface Point {

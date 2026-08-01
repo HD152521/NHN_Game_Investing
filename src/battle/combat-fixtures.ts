@@ -63,6 +63,8 @@ export function makeCombatState(overrides: Partial<CombatState> = {}): CombatSta
     wave: 1,
     waveCount: 5,
     waveElapsedMs: 0,
+    // 렌더링 테스트 기본값은 "교전 중" — 준비 구간 표시를 검증하는 테스트만 덮어쓴다.
+    prepRemainingMs: 0,
     enemies: [],
     units: [],
     towers: [],

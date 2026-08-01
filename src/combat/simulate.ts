@@ -8,10 +8,12 @@
  * `createCombat`/`step`이 만든 상태만 서로 주고받는다는 전제 하에 안전한 캐스팅이다.
  */
 
-import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS } from './constants';
+import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS, WAVE_PREP_MS } from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks, moveEnemies, moveUnits } from './mechanics';
 import type { CombatStateInternal } from './state';
 import type { CombatEvents, CombatParams, CombatState, Enemy } from './types';
+import { advanceWaveClock, battleDurationMs, createWaveClock } from './wave-clock';
+import type { WaveClock, WaveClockParams } from './wave-clock';
 import { aumDropPerKill, spawnPlanFor, waveIncomeFor } from './waves';
 
 const EMPTY_EVENTS: CombatEvents = {
@@ -22,13 +24,37 @@ const EMPTY_EVENTS: CombatEvents = {
   waveStarted: null,
 };
 
-/** 전투 시작 전 초기 상태. `wave`는 아직 0 — 첫 `step()` 호출에서 웨이브 1이 시작된다. */
+/** `CombatParams` → 웨이브 시계 파라미터. 준비 시간이 생략되면 `WAVE_PREP_MS`를 쓴다. */
+export function waveClockParams(params: CombatParams): WaveClockParams {
+  return {
+    waveCount: params.waveCount,
+    waveDurationMs: params.waveDurationMs,
+    prepMs: params.wavePrepMs ?? WAVE_PREP_MS,
+  };
+}
+
+/** 내부 상태에서 시계 부분만 뽑는다 (시계 모듈은 전투 상태를 몰라도 되게 유지). */
+function clockOf(state: CombatStateInternal): WaveClock {
+  return {
+    mode: state.waveMode,
+    wave: state.wave,
+    waveElapsedMs: state.waveElapsedMs,
+    prepRemainingMs: state.prepRemainingMs,
+  };
+}
+
+/**
+ * 전투 시작 전 초기 상태. `wave`는 아직 0이고 **준비 구간부터 시작한다** — 첫 `step()`은
+ * 웨이브를 시작하지 않고 준비 시간을 깎으며, 준비가 끝나야 웨이브 1이 시작된다.
+ */
 export function createCombat(params: CombatParams): CombatState {
+  const clock = createWaveClock(waveClockParams(params));
   const initial: CombatStateInternal = {
     phase: 'running',
-    wave: 0,
+    wave: clock.wave,
     waveCount: params.waveCount,
-    waveElapsedMs: 0,
+    waveElapsedMs: clock.waveElapsedMs,
+    prepRemainingMs: clock.prepRemainingMs,
     enemies: [],
     units: [],
     towers: [],
@@ -36,6 +62,7 @@ export function createCombat(params: CombatParams): CombatState {
     maxBaseHp: params.maxBaseHp,
     towerSlots: params.towerSlots,
     skillCooldownMs: 0,
+    waveMode: clock.mode,
     spawnedInWave: 0,
     waveEnemyTotal: 0,
     nextEnemyId: 1,
@@ -44,13 +71,21 @@ export function createCombat(params: CombatParams): CombatState {
   return initial;
 }
 
-/** 현재 웨이브의 스폰 스케줄에 따라 이번 서브스텝에 새로 등장해야 할 적을 만든다. */
+/**
+ * 현재 웨이브의 스폰 스케줄에 따라 이번 서브스텝에 새로 등장해야 할 적을 만든다.
+ * **준비 구간에는 한 마리도 만들지 않는다** — 그게 준비 시간의 정의다.
+ */
 function spawnDue(
   state: CombatStateInternal,
   params: CombatParams,
 ): { enemies: Enemy[]; nextEnemyId: number; spawnedInWave: number } {
+  if (state.waveMode === 'prep') {
+    return { enemies: [], nextEnemyId: state.nextEnemyId, spawnedInWave: state.spawnedInWave };
+  }
+
   const plan = spawnPlanFor(state.wave, params);
-  const elapsedFraction = Math.min(1, state.waveElapsedMs / params.waveDurationMs);
+  const battleMs = battleDurationMs(waveClockParams(params));
+  const elapsedFraction = battleMs <= 0 ? 1 : Math.min(1, state.waveElapsedMs / battleMs);
   const targetSpawned = Math.min(plan.length, Math.ceil(plan.length * elapsedFraction));
   const toSpawn = Math.max(0, targetSpawned - state.spawnedInWave);
 
@@ -82,44 +117,34 @@ function spawnDue(
 }
 
 interface WaveAdvance {
-  readonly wave: number;
-  readonly waveElapsedMs: number;
+  readonly clock: WaveClock;
   readonly spawnedInWave: number;
   readonly waveEnemyTotal: number;
   readonly waveStarted: number | null;
   readonly goldIncome: number;
 }
 
-/** 웨이브 시작(0→1 포함)·전환을 처리한다. 지속시간을 넘겼고 다음 웨이브가 남아 있으면 진행한다. */
+/**
+ * 웨이브 시계를 진행시키고, 이번에 시작된 웨이브의 부기(스폰 계획·기본 수입)를 확정한다.
+ * 시간 전이 규칙 자체는 `wave-clock.ts`가 소유한다 — 여기서는 "웨이브가 시작되면 무엇을
+ * 하는가"만 다룬다.
+ */
 function advanceWave(state: CombatStateInternal, dtMs: number, params: CombatParams): WaveAdvance {
-  let wave = state.wave;
+  const advance = advanceWaveClock(clockOf(state), dtMs, waveClockParams(params));
+
   let spawnedInWave = state.spawnedInWave;
   let waveEnemyTotal = state.waveEnemyTotal;
-  let waveElapsedMs = state.waveElapsedMs;
   let waveStarted: number | null = null;
   let goldIncome = 0;
 
-  if (wave === 0) {
-    wave = 1;
-    waveElapsedMs = 0;
+  for (const wave of advance.wavesStarted) {
     spawnedInWave = 0;
     waveEnemyTotal = spawnPlanFor(wave, params).length;
     waveStarted = wave;
     goldIncome += waveIncomeFor(wave, params);
   }
 
-  waveElapsedMs += dtMs;
-
-  while (waveElapsedMs >= params.waveDurationMs && wave < params.waveCount) {
-    waveElapsedMs -= params.waveDurationMs;
-    wave += 1;
-    spawnedInWave = 0;
-    waveEnemyTotal = spawnPlanFor(wave, params).length;
-    waveStarted = wave;
-    goldIncome += waveIncomeFor(wave, params);
-  }
-
-  return { wave, waveElapsedMs, spawnedInWave, waveEnemyTotal, waveStarted, goldIncome };
+  return { clock: advance.clock, spawnedInWave, waveEnemyTotal, waveStarted, goldIncome };
 }
 
 /** 하나의 고정 서브스텝(≤ `MAX_SUBSTEP_MS`)만큼 물리를 진행시킨다. */
@@ -129,10 +154,13 @@ function substep(
   params: CombatParams,
 ): { state: CombatStateInternal; events: CombatEvents } {
   const waveInfo = advanceWave(state, dtMs, params);
+  const clock = waveInfo.clock;
   const stateAfterWave: CombatStateInternal = {
     ...state,
-    wave: waveInfo.wave,
-    waveElapsedMs: waveInfo.waveElapsedMs,
+    waveMode: clock.mode,
+    wave: clock.wave,
+    waveElapsedMs: clock.waveElapsedMs,
+    prepRemainingMs: clock.prepRemainingMs,
     spawnedInWave: waveInfo.spawnedInWave,
     waveEnemyTotal: waveInfo.waveEnemyTotal,
   };
@@ -148,7 +176,7 @@ function substep(
   const movedUnits = moveUnits(engagement.units, engagement.blockedUnitIds, dtSec);
 
   const leakResult = collectLeaks(movedEnemies);
-  const aumPerKill = aumDropPerKill(waveInfo.wave, params);
+  const aumPerKill = aumDropPerKill(clock.wave, params);
   const deathResult = collectDeaths(leakResult.survivors, aumPerKill);
   const survivingUnits = movedUnits.filter((unit) => unit.hp > 0);
 
@@ -159,8 +187,10 @@ function substep(
   if (baseHp <= 0) {
     phase = 'defeated';
   } else if (
-    waveInfo.wave >= params.waveCount &&
-    waveInfo.waveElapsedMs >= params.waveDurationMs &&
+    clock.wave >= params.waveCount &&
+    // 마지막 웨이브는 더 이상 전이하지 않고 waveElapsedMs만 쌓이므로, 교전 구간
+    // (주기 − 준비)을 넘겼는지로 소진 여부를 본다.
+    clock.waveElapsedMs >= battleDurationMs(waveClockParams(params)) &&
     spawnResult.spawnedInWave >= waveInfo.waveEnemyTotal &&
     deathResult.survivors.length === 0
   ) {
@@ -169,9 +199,11 @@ function substep(
 
   const nextState: CombatStateInternal = {
     phase,
-    wave: waveInfo.wave,
+    waveMode: clock.mode,
+    wave: clock.wave,
     waveCount: state.waveCount,
-    waveElapsedMs: waveInfo.waveElapsedMs,
+    waveElapsedMs: clock.waveElapsedMs,
+    prepRemainingMs: clock.prepRemainingMs,
     enemies: deathResult.survivors,
     units: survivingUnits,
     towers: fireResult.towers,

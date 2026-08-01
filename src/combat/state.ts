@@ -10,8 +10,15 @@
  */
 
 import type { CombatState } from './types';
+import type { WaveMode } from './wave-clock';
 
 export interface CombatStateInternal extends CombatState {
+  /**
+   * 웨이브 시계의 모드(준비/교전). `prepRemainingMs > 0`으로는 대체할 수 없다 —
+   * Space로 준비를 건너뛰면 남은 시간은 0이지만 아직 웨이브는 시작되지 않은 상태이며,
+   * 그 한 프레임을 구분하지 못하면 웨이브 시작(기본 수입·스폰 계획)이 통째로 누락된다.
+   */
+  readonly waveMode: WaveMode;
   /** 현재 웨이브에서 이미 스폰된 적 수(웨이브 전환 시 0으로 리셋). */
   readonly spawnedInWave: number;
   /** 현재 웨이브에 예정된 총 적 수. 스폰 스케줄과 AUM 개체당 드롭 계산에 쓴다. */

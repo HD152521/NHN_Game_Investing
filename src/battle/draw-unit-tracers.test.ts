@@ -17,6 +17,7 @@ function combatState(overrides: Partial<CombatState> = {}): CombatState {
     wave: 1,
     waveCount: 5,
     waveElapsedMs: 0,
+    prepRemainingMs: 0,
     enemies: [],
     units: [],
     towers: [],

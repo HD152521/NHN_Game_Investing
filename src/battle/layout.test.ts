@@ -71,28 +71,81 @@ describe('progressToX — 방향 규약(0=아군 좌측, 1=적군 우측)', () =
   });
 });
 
-describe('slotRect', () => {
-  test('슬롯 인덱스가 커질수록 x 중심이 우측으로 이동한다', () => {
-    const layout = computeBattleLayout(800, 300);
-    const towerSlots = 6;
-    const rects = Array.from({ length: towerSlots }, (_, i) => slotRect(i, layout, towerSlots));
+describe('slotRect — 기지 옆 2줄 배치 (전쟁시대 참고)', () => {
+  const TOWER_SLOTS = 6;
+  /** 실제 전장 캔버스와 같은 크기 — 배치 판단은 이 해상도 기준으로 내렸다. */
+  const layout = computeBattleLayout(1024, 360);
+  const rects = Array.from({ length: TOWER_SLOTS }, (_, i) => slotRect(i, layout, TOWER_SLOTS));
+  const centerX = (i: number): number => rects[i]!.x + rects[i]!.w / 2;
 
-    for (let i = 1; i < rects.length; i += 1) {
-      const prevCenter = rects[i - 1]!.x + rects[i - 1]!.w / 2;
-      const curCenter = rects[i]!.x + rects[i]!.w / 2;
+  test('슬롯 인덱스가 커질수록 x 중심이 우측으로 이동한다', () => {
+    const small = computeBattleLayout(800, 300);
+    const smallRects = Array.from({ length: TOWER_SLOTS }, (_, i) => slotRect(i, small, TOWER_SLOTS));
+
+    for (let i = 1; i < smallRects.length; i += 1) {
+      const prevCenter = smallRects[i - 1]!.x + smallRects[i - 1]!.w / 2;
+      const curCenter = smallRects[i]!.x + smallRects[i]!.w / 2;
       expect(curCenter).toBeGreaterThan(prevCenter);
     }
   });
 
-  test('모든 슬롯이 레인 폭 안에 대략 들어온다', () => {
-    const layout = computeBattleLayout(800, 300);
-    const towerSlots = 6;
-    for (let i = 0; i < towerSlots; i += 1) {
-      const rect = slotRect(i, layout, towerSlots);
-      expect(rect.x).toBeGreaterThanOrEqual(layout.laneLeft - 1);
-      expect(rect.x + rect.w).toBeLessThanOrEqual(layout.laneRight + 1);
-      expect(rect.w).toBeGreaterThan(0);
-      expect(rect.h).toBeGreaterThan(0);
+  /**
+   * ★ 회귀 방지 ★ 슬롯 6개가 같은 x를 가지면 `enemy.x - towerX(slot) <= range` 판정이
+   * 전부 동일해져 "어디에 짓는가"라는 결정이 사라진다. 화면 배치가 바뀌어도 이건 유지된다.
+   */
+  test('슬롯 6개가 서로 다른 x 중심을 갖는다', () => {
+    const centers = rects.map((_, i) => centerX(i));
+    expect(new Set(centers).size).toBe(TOWER_SLOTS);
+  });
+
+  test('슬롯 뭉치가 아군 사옥 쪽(캔버스 좌측 1/3 이내)에 모여 있다', () => {
+    const left = Math.min(...rects.map((r) => r.x));
+    const right = Math.max(...rects.map((r) => r.x + r.w));
+
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(right).toBeLessThan(layout.width / 3);
+  });
+
+  test('전장 중앙(유닛 교전 공간)에는 슬롯이 하나도 없다', () => {
+    const midX = layout.width / 2;
+    for (const rect of rects) {
+      expect(rect.x + rect.w).toBeLessThan(midX);
+    }
+  });
+
+  test('짝수 인덱스는 윗줄, 홀수 인덱스는 아랫줄이다 (2줄 벽돌쌓기)', () => {
+    const topRow = [0, 2, 4].map((i) => rects[i]!.y);
+    const bottomRow = [1, 3, 5].map((i) => rects[i]!.y);
+
+    expect(new Set(topRow).size).toBe(1);
+    expect(new Set(bottomRow).size).toBe(1);
+    expect(topRow[0]!).toBeLessThan(bottomRow[0]!);
+  });
+
+  test('위/아래 줄은 세로로 겹치지 않는다 (클릭 판정이 모호해지지 않는다)', () => {
+    const top = rects[0]!;
+    const bottom = rects[1]!;
+    expect(top.y + top.h).toBeLessThanOrEqual(bottom.y);
+  });
+
+  test('슬롯이 작아져도 터치 타겟 44px 이상을 유지한다 (PRD §11)', () => {
+    for (const rect of rects) {
+      expect(rect.w).toBeGreaterThanOrEqual(44);
+      expect(rect.h).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('슬롯은 예전(96×68)보다 작다 — "기지에 작게 얹는다"', () => {
+    for (const rect of rects) {
+      expect(rect.w).toBeLessThan(96);
+      expect(rect.h).toBeLessThan(68);
+    }
+  });
+
+  test('슬롯이 공중·지상 레인을 침범하지 않는다', () => {
+    for (const rect of rects) {
+      expect(rect.y).toBeGreaterThan(layout.airY);
+      expect(rect.y + rect.h).toBeLessThan(layout.groundY);
     }
   });
 

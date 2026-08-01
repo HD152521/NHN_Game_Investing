@@ -304,3 +304,73 @@ describe('StageSession — 배선', () => {
     expect(typeof liquidated).toBe('boolean');
   });
 });
+
+/**
+ * 웨이브 준비 시간 (플레이테스트: "라운드를 바로 시작하는 게 아니라 5초 정도 준비 시간").
+ *
+ * ★ 핵심 보증 ★ 전투만 멈추고 **시장은 멈추지 않는다**. 준비 구간은 "예고를 보고 미리
+ * 산다"는 코어 루프의 자리이므로, 차트 재생과 매매가 계속 가능해야 한다.
+ */
+describe('StageSession — 웨이브 준비 시간', () => {
+  test('세션은 준비 구간에서 시작한다', () => {
+    const session = makeSession();
+    expect(session.prepRemainingMs).toBeGreaterThan(0);
+    expect(session.combatState.wave).toBe(0);
+  });
+
+  test('준비 구간에는 적이 스폰되지 않는다', () => {
+    const session = makeSession();
+    session.stepCombatFrame(2_000);
+
+    expect(session.combatState.enemies).toHaveLength(0);
+    expect(session.prepRemainingMs).toBeGreaterThan(0);
+  });
+
+  test('5초가 지나면 웨이브 1이 자동으로 시작된다', () => {
+    const session = makeSession();
+    session.stepCombatFrame(5_500);
+
+    expect(session.prepRemainingMs).toBe(0);
+    expect(session.combatState.wave).toBe(1);
+  });
+
+  test('Space(skipPrep)를 누르면 5초를 기다리지 않고 바로 시작한다', () => {
+    const session = makeSession();
+    session.skipPrep();
+    session.stepCombatFrame(16);
+
+    expect(session.combatState.wave).toBe(1);
+  });
+
+  test('준비 구간에도 차트는 계속 흐른다', () => {
+    const session = makeSession();
+    session.stepCombatFrame(2_000);
+
+    expect(session.prepRemainingMs).toBeGreaterThan(0);
+    // 리플레이는 전투 시계와 독립이다 — 준비 중에도 가격이 갱신된다.
+    expect(session.priceAt(2_000)).not.toBe(session.priceAt(0));
+  });
+
+  test('준비 구간에도 매매(진입·청산)가 가능하다', () => {
+    const session = makeSession();
+    session.stepCombatFrame(1_000);
+    expect(session.prepRemainingMs).toBeGreaterThan(0);
+
+    session.openTrade('long', 0.25, 1_000);
+    expect(session.snapshot(1_000).position).not.toBeNull();
+
+    const closeAt = 1_000 + session.params.minHoldMs;
+    session.closeTrade(closeAt);
+    expect(session.snapshot(closeAt).position).toBeNull();
+  });
+
+  test('준비 구간에도 골드가 있으면 타워를 세울 수 있다 (준비 시간의 목적)', () => {
+    const session = makeSession();
+    session.stepCombatFrame(1_000);
+
+    session.build(0, 'basic');
+
+    expect(session.combatState.towers).toHaveLength(1);
+    expect(session.prepRemainingMs).toBeGreaterThan(0);
+  });
+});

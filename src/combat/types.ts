@@ -89,8 +89,15 @@ export interface CombatState {
   /** 1-based. 아직 시작 전이면 0. */
   readonly wave: number;
   readonly waveCount: number;
-  /** 현재 웨이브 경과(ms). */
+  /** 현재 웨이브의 **교전 구간** 경과(ms). 준비 구간은 여기 포함되지 않는다. */
   readonly waveElapsedMs: number;
+  /**
+   * 다음 웨이브 시작까지 남은 준비 시간(ms). `0`이면 교전 중이다.
+   *
+   * 준비 구간에는 적이 스폰되지 않는다 — 플레이어가 타워를 세울 시간이다. 차트 재생과
+   * 매매는 전투와 다른 시계를 쓰므로(셸이 `Replay`를 따로 굴린다) 준비 중에도 계속 흐른다.
+   */
+  readonly prepRemainingMs: number;
   readonly enemies: readonly Enemy[];
   readonly units: readonly Unit[];
   readonly towers: readonly Tower[];
@@ -127,7 +134,13 @@ export interface CombatParams {
    */
   readonly waveTable?: StageWaveTable;
   readonly waveCount: number;
+  /** 웨이브 1주기(준비 + 교전) 길이. */
   readonly waveDurationMs: number;
+  /**
+   * 웨이브 1주기 중 준비 구간이 차지하는 길이. 생략하면 `WAVE_PREP_MS`(5초)를 쓴다.
+   * 교전 구간 = `waveDurationMs - wavePrepMs` — 주기에 더해지는 값이 아니다.
+   */
+  readonly wavePrepMs?: number;
   readonly towerSlots: number;
   readonly maxBaseHp: number;
   /** 경계도 계수 `1 + 점령수 × 0.02` (FR-6.7). */

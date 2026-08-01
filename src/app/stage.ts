@@ -36,6 +36,7 @@ import {
   SPEEDS,
   buildStageMarkup,
   collectStageRefs,
+  formatPrepCountdown,
   formatSessionClock,
   formatSignedPercent,
 } from './stage-dom';
@@ -219,6 +220,11 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.wave.textContent = `${combat.wave}/${combat.waveCount}`;
     refs!.baseHp.textContent = String(combat.baseHp);
 
+    // 준비 구간 카운트다운. 전투가 끝난 뒤에는 배너가 화면을 가지므로 항상 숨긴다.
+    const prepText = combat.phase === 'running' ? formatPrepCountdown(combat.prepRemainingMs) : '';
+    refs!.prep.hidden = prepText === '';
+    refs!.prep.textContent = prepText;
+
     panel.update(toViewModel(session));
 
     if (combat.phase !== 'running') {
@@ -311,10 +317,34 @@ export function mountStage(root: HTMLElement): () => void {
     session = null;
   });
 
+  /**
+   * Space — 준비 시간 즉시 종료. "아는 사람은 기다리지 않는다."
+   *
+   * 폼 컨트롤에 포커스가 있으면 가로채지 않는다 — Space는 버튼의 기본 활성화 키라,
+   * 여기서 먹어버리면 빌드바 버튼이 키보드로 눌리지 않게 된다(접근성 회귀).
+   */
+  function onKeyDown(event: KeyboardEvent): void {
+    if (event.code !== 'Space') return;
+    const target = event.target;
+    if (
+      target instanceof HTMLButtonElement ||
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      return;
+    }
+    if (!session || session.prepRemainingMs <= 0) return;
+    event.preventDefault(); // 스페이스바 스크롤 방지
+    session.skipPrep();
+  }
+  window.addEventListener('keydown', onKeyDown);
+
   syncButtons();
 
   return () => {
     loop.stop();
+    window.removeEventListener('keydown', onKeyDown);
     goldMeter.destroy();
     panel.destroy();
   };
