@@ -34,6 +34,56 @@ export {
 } from './skill-bar-logic';
 export type { SkillButtonInput, SkillButtonState } from './skill-bar-logic';
 
+export {
+  HUD_ICON_ATTR,
+  UI_ICON_COLUMNS,
+  UI_ICON_HEIGHT,
+  UI_ICON_NAMES,
+  UI_ICON_ROWS,
+  UI_ICON_SCALE,
+  UI_ICON_SHEET_HEIGHT,
+  UI_ICON_SHEET_WIDTH,
+  UI_ICON_WIDTH,
+  mountHudIcons,
+  renderUiIcon,
+  uiIconGrid,
+  uiIconRaster,
+  uiIconRect,
+} from './sprite-icons';
+export type { UiIconMountOptions, UiIconName } from './sprite-icons';
+
+export {
+  PREDICTION_ART_ATTR,
+  PREDICTION_BUTTON_HEIGHT,
+  PREDICTION_BUTTON_SCALE,
+  PREDICTION_BUTTON_WIDTH,
+  PREDICTION_SHEET_HEIGHT,
+  PREDICTION_SHEET_WIDTH,
+  mountPredictionButtonArt,
+  predictionButtonGrid,
+  predictionButtonRaster,
+  predictionButtonRect,
+  renderPredictionButton,
+} from './sprite-buttons';
+export type { PredictionArtOptions } from './sprite-buttons';
+
+export {
+  REVEAL_CONTENT_HEIGHT,
+  REVEAL_CONTENT_WIDTH,
+  REVEAL_CONTENT_X,
+  REVEAL_CONTENT_Y,
+  REVEAL_HEIGHT,
+  REVEAL_WIDTH,
+  drawRevealBackdrop,
+  revealContentRect,
+  revealCoverScale,
+  revealRaster,
+} from './reveal-backdrop';
+export type { RevealBackdropOptions } from './reveal-backdrop';
+
+export { paintRasterToCanvas, rasterCtxOf, sliceGrid, sliceRaster, sliceSource } from './sprite-slice';
+export type { GridRect } from './sprite-slice';
+
 export { createGoldMeter, prefersReducedMotion } from './gold-flight';
 export type {
   FlightScheduler,

@@ -29,6 +29,7 @@ import type { Direction } from '../position';
 import {
   createGoldMeter,
   createTradePanel,
+  mountHudIcons,
   prefersReducedMotion,
   resolveSkillButtonState,
   skillIdFor,
@@ -101,14 +102,21 @@ export function mountStage(root: HTMLElement): () => void {
     prefersReducedMotion,
   });
 
-  const panel: TradePanel = createTradePanel({
-    onOpen: (direction: Direction) => session?.openTrade(direction, stakeRatio, elapsedMs),
-    onClose: () => session?.closeTrade(elapsedMs),
-    onAdd: (ratio) => session?.addTrade(ratio, elapsedMs),
-    onStakeRatioChange: (ratio) => {
-      stakeRatio = ratio;
+  // HUD 아이콘(`tf-ui-icons`)은 마운트 시 1회만 굽는다 — 숫자는 매 프레임 바뀌어도
+  // 아이콘은 바뀌지 않는다. 색약 모드는 테마가 결정한다.
+  mountHudIcons(root, { mode: theme.mode });
+
+  const panel: TradePanel = createTradePanel(
+    {
+      onOpen: (direction: Direction) => session?.openTrade(direction, stakeRatio, elapsedMs),
+      onClose: () => session?.closeTrade(elapsedMs),
+      onAdd: (ratio) => session?.addTrade(ratio, elapsedMs),
+      onStakeRatioChange: (ratio) => {
+        stakeRatio = ratio;
+      },
     },
-  });
+    { mode: theme.mode },
+  );
   refs.panelHost.appendChild(panel.element);
 
   function startSession(nowMs: number): void {

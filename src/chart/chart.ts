@@ -10,6 +10,7 @@ import type { Palette } from '../design/index.js';
 import type { Bar, ReplayState } from '../market/types.js';
 import { drawCandles, drawVolumeBars } from './draw-candles.js';
 import type { CandleDrawOptions } from './draw-candles.js';
+import { drawChartFrame } from './draw-frame.js';
 import { drawBaseline, drawEntryMarker, drawPriceLine, drawProgressBar } from './draw-overlays.js';
 import { computeLayout } from './layout.js';
 import { computePriceRange } from './scale.js';
@@ -53,6 +54,12 @@ function drawBackground(ctx: ChartCtx, palette: Palette, width: number, height: 
 export function drawChart(ctx: ChartCtx, opts: DrawChartOptions): void {
   const { bars, state, palette, width, height } = opts;
   drawBackground(ctx, palette, width, height);
+  /*
+   * 패널 프레임은 **내용보다 먼저** 깐다. 하단 진행 바가 프레임 아래띠와 같은 자리를 쓰기
+   * 때문이다 (근거는 `draw-frame.ts` 머리주석). 9슬라이스라 가운데는 건드리지 않으므로
+   * 캔들 영역의 배경색은 여기서 칠한 BG_0 그대로다.
+   */
+  drawChartFrame(ctx, { palette, width, height });
 
   if (bars.length === 0) return;
 

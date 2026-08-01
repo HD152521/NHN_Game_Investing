@@ -56,6 +56,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  /*
+   * ★ 톤 연결 (아트 시트 10 게이트 5 — "차트 패널과 톤이 이어지는지")
+   *
+   * 차트 캔버스 안에는 이제 `tf-ui-chart` 프레임이 그려진다. 그 프레임의 테두리 선은
+   * MUTED 토큰이고 머리띠는 BG_2 다. 그런데 패널 컨테이너의 CSS 테두리는 BG_2 뿐이라
+   * **차트만 밝은 테두리를 두 겹 두르고 전장은 안 두른 것처럼** 보였다 — 위아래가 다른
+   * 화면으로 갈라지는 원인이 이것이다.
+   *
+   * 그래서 패널 4종(차트·HUD·전장·빌드바)이 **같은 모서리 색 하나**를 공유하게 못박고,
+   * 그 색을 스프라이트 테두리(MUTED)와 패널 바닥(BG_2) 사이에 둔다. 생짜 HEX 금지라
+   * 토큰 두 개를 섞어 파생한다.
+   */
+  --tf-panel-edge: color-mix(in srgb, var(--tf-muted) 26%, var(--tf-bg-2));
 }
 
 /* ── 블라인드 태그 줄 ─────────────────────────────────────── */
@@ -88,7 +102,7 @@ body {
 /* ── 차트 ────────────────────────────────────────────────── */
 .stage__chart {
   position: relative;
-  border: 1px solid var(--tf-bg-2);
+  border: 1px solid var(--tf-panel-edge);
   border-radius: 3px;
   background: var(--tf-bg-0);
   overflow: hidden;
@@ -105,7 +119,7 @@ body {
   display: flex;
   gap: 20px;
   padding: 9px 12px;
-  border: 1px solid var(--tf-bg-2);
+  border: 1px solid var(--tf-panel-edge);
   border-radius: 3px;
   background: var(--tf-bg-1);
   font-size: 12px;
@@ -115,6 +129,26 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
+}
+
+/*
+ * `tf-ui-icons` 에서 잘라 온 아이콘 자리. 캔버스는 18×17(1× 배율)로 구워지므로
+ * CSS 크기를 그대로 맞춰야 픽셀이 흐려지지 않는다.
+ * 아이콘 바탕은 스프라이트의 `1`(BG_0) 이라 HUD 바닥(BG_1)보다 한 단계 어둡다 —
+ * 숫자 옆에 눌러 박힌 칩처럼 읽히라고 그대로 둔다.
+ */
+.hud__icon {
+  display: inline-flex;
+  align-self: center;
+  line-height: 0;
+}
+
+.hud__icon-art {
+  display: block;
+  width: 18px;
+  height: 17px;
+  border-radius: 2px;
+  image-rendering: pixelated;
 }
 
 .hud__label {
@@ -148,7 +182,7 @@ body {
 /* ── 전장 ────────────────────────────────────────────────── */
 .stage__battle {
   position: relative;
-  border: 1px solid var(--tf-bg-2);
+  border: 1px solid var(--tf-panel-edge);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -210,7 +244,7 @@ body {
   align-items: center;
   gap: 6px;
   padding: 8px;
-  border: 1px solid var(--tf-bg-2);
+  border: 1px solid var(--tf-panel-edge);
   border-radius: 3px;
   background: var(--tf-bg-1);
 }

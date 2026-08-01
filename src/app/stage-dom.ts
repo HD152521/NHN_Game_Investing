@@ -112,18 +112,32 @@ export function buildStageMarkup(): string {
                 role="img" aria-label="블라인드 차트 리플레이"></canvas>
       </div>
 
+      <!--
+        data-hud-icon 은 tf-ui-icons 3×2 시트에서 잘라 온 아이콘이 마운트 시 1회 꽂히는
+        자리다(mountHudIcons). 아이콘은 장식이 아니라 라벨과 같은 정보를 그림으로 한 번 더
+        말하는 것이므로 aria-hidden 으로 스크린리더에 중복해 읽히지 않게 한다.
+        시트의 6종 중 accuracy·upkeep 은 대응하는 HUD 수치가 아직 없어 붙이지 않았다.
+      -->
       <div class="hud">
         <span class="hud__item"><span class="hud__label">시각</span>
           <span class="hud__value" data-ref="clock">09:00</span></span>
         <span class="hud__item"><span class="hud__label">등락</span>
           <span class="hud__value" data-ref="change">+0.00%</span></span>
-        <span class="hud__item"><span class="hud__label">골드</span>
+        <span class="hud__item">
+          <span class="hud__icon" data-hud-icon="gold" aria-hidden="true"></span>
+          <span class="hud__label">골드</span>
           <span class="hud__value hud__value--gold" data-ref="gold">${STARTING_GOLD}</span></span>
-        <span class="hud__item"><span class="hud__label">AUM</span>
+        <span class="hud__item">
+          <span class="hud__icon" data-hud-icon="aum" aria-hidden="true"></span>
+          <span class="hud__label">AUM</span>
           <span class="hud__value hud__value--aum" data-ref="aum">${STARTING_AUM}</span></span>
-        <span class="hud__item"><span class="hud__label">웨이브</span>
+        <span class="hud__item">
+          <span class="hud__icon" data-hud-icon="wave" aria-hidden="true"></span>
+          <span class="hud__label">웨이브</span>
           <span class="hud__value" data-ref="wave">0/13</span></span>
-        <span class="hud__item"><span class="hud__label">본진</span>
+        <span class="hud__item">
+          <span class="hud__icon" data-hud-icon="hp" aria-hidden="true"></span>
+          <span class="hud__label">본진</span>
           <span class="hud__value" data-ref="basehp">100</span></span>
         <span class="sr-only" role="status" aria-live="polite" data-ref="gold-announce"></span>
       </div>

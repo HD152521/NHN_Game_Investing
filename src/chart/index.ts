@@ -24,6 +24,18 @@ export {
 } from './scale.js';
 export type { HorizontalBand, PriceRange, VerticalBand } from './scale.js';
 
+export {
+  CHART_FRAME_HEIGHT,
+  CHART_FRAME_SCALE,
+  CHART_FRAME_WIDTH,
+  FRAME_BOTTOM,
+  FRAME_LEFT,
+  FRAME_RIGHT,
+  FRAME_TOP,
+  drawChartFrame,
+} from './draw-frame.js';
+export type { ChartFrameOptions } from './draw-frame.js';
+
 export { computeLayout } from './layout.js';
 export type { ChartLayout } from './layout.js';
 

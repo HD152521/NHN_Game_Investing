@@ -28,6 +28,8 @@ import type {
   TradePanelHandlers,
   TradePanelViewModel,
 } from './trade-panel-logic';
+import { mountPredictionButtonArt } from './sprite-buttons';
+import type { PredictionArtOptions } from './sprite-buttons';
 
 export type {
   Direction,
@@ -88,9 +90,14 @@ function buildMarkup(): string {
 
   return `
     <div class="trade-panel__idle" data-ref="idle">
+      <!--
+        예측 버튼 배경(tf-ui-btn)은 data-btn-art 자리에 마운트 시 1회 꽂힌다.
+        라벨은 별도 레이어(__btn-label)로 배경 위에 남는다 — ▲/▼ 이중 인코딩
+        (design/encoding.ts)이 스프라이트에 가려지면 색약 모드에서 방향을 잃기 때문이다.
+      -->
       <div class="trade-panel__actions">
-        <button class="trade-panel__btn trade-panel__btn--long" type="button" data-action="open-long">LONG ▲</button>
-        <button class="trade-panel__btn trade-panel__btn--short" type="button" data-action="open-short">SHORT ▼</button>
+        <button class="trade-panel__btn trade-panel__btn--long trade-panel__btn--predict" type="button" data-action="open-long"><span class="trade-panel__btn-art" data-btn-art="long" aria-hidden="true"></span><span class="trade-panel__btn-label">LONG ▲</span></button>
+        <button class="trade-panel__btn trade-panel__btn--short trade-panel__btn--predict" type="button" data-action="open-short"><span class="trade-panel__btn-art" data-btn-art="short" aria-hidden="true"></span><span class="trade-panel__btn-label">SHORT ▼</span></button>
       </div>
       <div class="trade-panel__stakes">
         <span class="trade-panel__stakes-label">투입</span>
@@ -180,10 +187,16 @@ function parseStakeRatio(raw: string | undefined): StakeRatio | null {
  * 매매 패널을 만든다. 마크업은 이 호출 시 1회만 구축되고,
  * 이후 `update()`는 텍스트·클래스만 갱신한다.
  */
-export function createTradePanel(handlers: TradePanelHandlers): TradePanel {
+export function createTradePanel(
+  handlers: TradePanelHandlers,
+  artOptions: PredictionArtOptions = {},
+): TradePanel {
   const element = document.createElement('section');
   element.className = 'trade-panel trade-panel--idle';
   element.innerHTML = buildMarkup();
+
+  // 예측 버튼 배경은 여기서 1회만 굽는다. 실패해도(캔버스 없는 환경) CSS 배경으로 남는다.
+  mountPredictionButtonArt(element, artOptions);
 
   const refs = collectRefs(element);
 
