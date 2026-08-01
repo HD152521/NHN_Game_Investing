@@ -113,6 +113,8 @@ export type {
 } from './gold-flight-logic';
 
 export {
+  canAffordStakeRatio,
+  formatAddStakePreview,
   formatAmount,
   formatDistance,
   formatPnl,
@@ -122,8 +124,10 @@ export {
   resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
+  resolveEntriesLeftLabel,
   resolvePnlTone,
   resolvePriceTone,
+  resolveStakeAmount,
   resolveStateClasses,
   STAKE_RATIOS,
 } from './trade-panel-logic';

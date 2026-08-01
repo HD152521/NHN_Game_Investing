@@ -10,6 +10,8 @@
  */
 
 import {
+  canAffordStakeRatio,
+  formatAddStakePreview,
   formatAmount,
   formatDistance,
   formatPnl,
@@ -19,6 +21,7 @@ import {
   resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
+  resolveEntriesLeftLabel,
   resolvePriceTone,
   resolveStateClasses,
   STAKE_RATIOS,
@@ -38,6 +41,8 @@ export type {
   TradePanelViewModel,
 } from './trade-panel-logic';
 export {
+  canAffordStakeRatio,
+  formatAddStakePreview,
   formatAmount,
   formatDistance,
   formatPnl,
@@ -47,8 +52,10 @@ export {
   resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
+  resolveEntriesLeftLabel,
   resolvePnlTone,
   resolvePriceTone,
+  resolveStakeAmount,
   resolveStateClasses,
   STAKE_RATIOS,
 } from './trade-panel-logic';
@@ -74,6 +81,8 @@ interface PanelRefs {
   readonly currentPrice: HTMLElement;
   readonly addCountField: HTMLElement;
   readonly addCount: HTMLElement;
+  readonly addPreview: HTMLElement;
+  readonly entriesLeft: HTMLElement;
   readonly pnl: HTMLElement;
   readonly distance: HTMLElement;
   readonly positions: HTMLElement;
@@ -82,12 +91,22 @@ interface PanelRefs {
   readonly announce: HTMLElement;
 }
 
-function buildMarkup(): string {
-  const stakeButtons = STAKE_RATIOS.map(
-    (ratio) =>
-      `<button class="trade-panel__stake" type="button" data-ratio="${ratio}">${formatStakeRatioLabel(ratio)}</button>`,
-  ).join('');
+/**
+ * 투입 비율 선택기는 **두 벌** 존재한다 — 신규 진입용(`open`)과 추가 매수용(`add`).
+ * 같은 `stakeRatio` 상태를 공유하지만(어느 쪽을 눌러도 `onStakeRatioChange` 하나로
+ * 모인다) 붙는 자리가 달라서, 보유 중에도 비율을 그 자리에서 고를 수 있다.
+ * 라벨을 "투입"/"추가 투입"으로 나눠 두 선택기가 서로 다른 행동을 준비한다는 걸 알린다.
+ */
+type StakeVariant = 'open' | 'add';
 
+function buildStakeButtons(variant: StakeVariant): string {
+  return STAKE_RATIOS.map(
+    (ratio) =>
+      `<button class="trade-panel__stake" type="button" data-ratio="${ratio}" data-stake-variant="${variant}">${formatStakeRatioLabel(ratio)}</button>`,
+  ).join('');
+}
+
+function buildMarkup(): string {
   return `
     <div class="trade-panel__idle" data-ref="idle">
       <!--
@@ -99,9 +118,9 @@ function buildMarkup(): string {
         <button class="trade-panel__btn trade-panel__btn--long trade-panel__btn--predict" type="button" data-action="open-long"><span class="trade-panel__btn-art" data-btn-art="long" aria-hidden="true"></span><span class="trade-panel__btn-label">LONG ▲</span></button>
         <button class="trade-panel__btn trade-panel__btn--short trade-panel__btn--predict" type="button" data-action="open-short"><span class="trade-panel__btn-art" data-btn-art="short" aria-hidden="true"></span><span class="trade-panel__btn-label">SHORT ▼</span></button>
       </div>
-      <div class="trade-panel__stakes">
+      <div class="trade-panel__stakes" role="group" aria-label="신규 진입 투입 비율">
         <span class="trade-panel__stakes-label">투입</span>
-        ${stakeButtons}
+        ${buildStakeButtons('open')}
       </div>
     </div>
     <div class="trade-panel__holding" data-ref="holding" hidden>
@@ -129,8 +148,22 @@ function buildMarkup(): string {
         <span class="trade-panel__label">청산선까지</span>
         <span class="trade-panel__distance" data-ref="distance">0.00σ</span>
       </span>
-      <button class="trade-panel__btn trade-panel__btn--add" type="button" data-action="add">추가</button>
       <button class="trade-panel__btn trade-panel__btn--close" type="button" data-action="close">청산</button>
+      <!--
+        추가 매수 행 — 비율 선택기를 보유 중에도 노출한다(플레이 피드백 ②).
+        분모가 **현재 AUM**이라 신규 진입 때와 금액이 달라지므로, 비율 옆에
+        "AUM 2,000 × 25% = 500" 미리보기를 붙여 계산 결과를 숫자로 못 박는다.
+        추가 버튼을 같은 행에 둬서 "고른 비율 → 이 버튼" 연결이 눈으로 이어지게 한다.
+      -->
+      <div class="trade-panel__add-row">
+        <div class="trade-panel__stakes trade-panel__stakes--add" role="group" aria-label="추가 매수 투입 비율">
+          <span class="trade-panel__stakes-label">추가 투입</span>
+          ${buildStakeButtons('add')}
+        </div>
+        <span class="trade-panel__stake-preview" data-ref="add-preview">-</span>
+        <span class="trade-panel__entries-left" data-ref="entries-left">-</span>
+        <button class="trade-panel__btn trade-panel__btn--add" type="button" data-action="add">추가</button>
+      </div>
     </div>
     <div class="trade-panel__meta">
       <span data-ref="positions">0/0</span>
@@ -164,6 +197,8 @@ function collectRefs(root: HTMLElement): PanelRefs {
     currentPrice: requireElement<HTMLElement>(root, '[data-ref="current-price"]'),
     addCountField: requireElement<HTMLElement>(root, '[data-ref="add-count-field"]'),
     addCount: requireElement<HTMLElement>(root, '[data-ref="add-count"]'),
+    addPreview: requireElement<HTMLElement>(root, '[data-ref="add-preview"]'),
+    entriesLeft: requireElement<HTMLElement>(root, '[data-ref="entries-left"]'),
     pnl: requireElement<HTMLElement>(root, '[data-ref="pnl"]'),
     distance: requireElement<HTMLElement>(root, '[data-ref="distance"]'),
     positions: requireElement<HTMLElement>(root, '[data-ref="positions"]'),
@@ -204,13 +239,18 @@ export function createTradePanel(
   refs.shortButton.addEventListener('click', () => handlers.onOpen('short'));
   refs.closeButton.addEventListener('click', () => handlers.onClose());
 
-  const stakeButtonRatios = new Map<HTMLButtonElement, StakeRatio>();
+  // 두 선택기(신규 진입 / 추가 매수)의 버튼이 한 맵에 모인다 — 어느 쪽을 눌러도
+  // 같은 `stakeRatio` 하나를 갱신하므로 두 벌의 활성 표시가 항상 일치한다.
+  const stakeButtonEntries = new Map<HTMLButtonElement, { ratio: StakeRatio; variant: string }>();
   for (const button of refs.stakeButtons) {
     const ratio = parseStakeRatio(button.dataset['ratio']);
     if (ratio === null) {
       continue;
     }
-    stakeButtonRatios.set(button, ratio);
+    stakeButtonEntries.set(button, {
+      ratio,
+      variant: button.dataset['stakeVariant'] ?? 'open',
+    });
     button.addEventListener('click', () => handlers.onStakeRatioChange(ratio));
   }
 
@@ -233,11 +273,18 @@ export function createTradePanel(
 
     refs.longButton.disabled = vm.holding || !vm.canOpen;
     refs.shortButton.disabled = vm.holding || !vm.canOpen;
-    refs.addButton.disabled = !vm.holding || !vm.canAdd;
+    // 고른 비율의 실제 금액이 0이면(AUM 부족) 눌러도 아무것도 사지 못한다 — 막는다.
+    const affordable = canAffordStakeRatio(vm.aum, vm.stakeRatio);
+    refs.addButton.disabled = !vm.holding || !vm.canAdd || !affordable;
     refs.closeButton.disabled = !vm.holding || !vm.canClose;
 
-    for (const [button, ratio] of stakeButtonRatios) {
-      button.classList.toggle('trade-panel__stake--active', ratio === vm.stakeRatio);
+    for (const [button, entry] of stakeButtonEntries) {
+      button.classList.toggle('trade-panel__stake--active', entry.ratio === vm.stakeRatio);
+      // 신규 진입 선택기는 기존 동작 그대로 둔다(항상 선택 가능).
+      // 추가 매수 선택기만 현재 AUM 기준으로 감당 못 하는 비율을 비활성화한다.
+      if (entry.variant === 'add') {
+        button.disabled = !vm.holding || !canAffordStakeRatio(vm.aum, entry.ratio);
+      }
     }
 
     refs.direction.textContent = resolveDirectionLabel(vm.direction);
@@ -255,6 +302,9 @@ export function createTradePanel(
     refs.addCount.textContent = addCountLabel;
 
     refs.addButton.textContent = resolveAddButtonLabel(vm.direction);
+    refs.addPreview.textContent = formatAddStakePreview(vm.aum, vm.stakeRatio);
+    refs.addPreview.classList.toggle('trade-panel__stake-preview--blocked', !affordable);
+    refs.entriesLeft.textContent = resolveEntriesLeftLabel(vm.positionsUsed, vm.positionsMax);
 
     refs.pnl.textContent = formatPnl(vm.pnl);
     refs.distance.textContent = formatDistance(vm.distanceToLiquidation);

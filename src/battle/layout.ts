@@ -23,8 +23,25 @@ export interface Rect {
 
 /** 상단 HUD(웨이브 표시·스킬 게이지) 높이(px). 캔버스가 작으면 그만큼 줄어든다. */
 const HUD_HEIGHT_MAX = 28;
-/** 아군 사옥 영역이 전체 폭에서 차지하는 비율(좌측). */
-const HQ_ZONE_RATIO = 0.12;
+/**
+ * 아군 사옥 영역이 전체 폭에서 차지하는 비율(좌측).
+ *
+ * ★ 2026-08-01: 0.12 → 0.18 (플레이 피드백 "우리 기지 크기가 너무 작아") ★
+ * 사옥 스프라이트(`tf-base-ally`)는 원본 76×40으로 **가로가 긴** 그림이라, 배율을 결정하는
+ * 것은 높이가 아니라 **사옥 영역의 폭**이다(`drawSpriteStanding`의 정수 배율 =
+ * `min(⌊w/76⌋, ⌊h/40⌋)`). 0.12일 때 폭이 122.9 px라 `⌊122.9/76⌋ = 1×`, 즉 사옥이 76×40 —
+ * 유닛(26×34)보다 겨우 6 px 큰 "본진 같지 않은" 크기로 나왔다.
+ *
+ * 2×(152×80)를 담으려면 사옥 그림이 **첫 타워 슬롯 앞에서 멈춰야** 하므로
+ * (`hqSpriteRect` 참조) `laneLeft ≥ 152 + 슬롯폭/2 + 여백 = 152 + 22 + 6 = 180 px`가 필요하다.
+ * 1024 px 캔버스에서 0.18 → 184.3 px 로 이 하한을 넘는다.
+ *
+ * 더 키우지 않는 이유: 슬롯 x는 `progressToX(towerX(slot))`이라 이 비율만큼 같이 오른쪽으로
+ * 밀린다. 0.18에서 슬롯 뭉치 우측 끝이 331.8 px(캔버스의 32.4 %)로 "좌측 1/3 이내"라는
+ * 배치 규약(`layout.test.ts`) 안에 겨우 남는다 — 3×(228 px)를 노려 0.25까지 올리면 슬롯이
+ * 391 px(38 %)까지 밀려 전장 중앙을 침범한다.
+ */
+const HQ_ZONE_RATIO = 0.18;
 /** 적 본진 영역이 전체 폭에서 차지하는 비율(우측). */
 const BASE_ZONE_RATIO = 0.12;
 /** 공중 레인 중심 y — 전장 영역(HUD 제외) 높이 대비 비율. */
@@ -57,6 +74,13 @@ const SLOT_SIZE_MAX = 52;
 const SLOT_SIZE_PITCH_RATIO = 0.85;
 /** 위/아래 줄 사이 세로 여백(px). 줄 간 클릭 판정이 겹치지 않게 하는 최소 간격이다. */
 const SLOT_ROW_GAP = 8;
+/**
+ * 사옥 그림과 **첫 타워 슬롯** 사이에 반드시 남기는 가로 여백(px).
+ *
+ * 기지가 슬롯을 덮으면 그림이 클릭 타겟을 가려 "여기를 누르면 지어진다"가 안 읽힌다
+ * (판정 자체는 `slotRect`가 하므로 클릭은 되지만, 보이지 않는 버튼은 없는 버튼이다).
+ */
+const HQ_SLOT_CLEARANCE = 6;
 
 export interface BattleLayout {
   readonly width: number;
@@ -204,4 +228,52 @@ export function slotRect(slot: number, layout: BattleLayout, towerSlots: number)
     w: size,
     h: size,
   };
+}
+
+/**
+ * 기지 스프라이트가 **실제로 서는** 사각형 — 배치용 `hqRect`/`baseRect`와 구분한다.
+ *
+ * ★ 왜 영역 사각형을 그대로 쓰지 않는가 ★
+ * `drawSpriteStanding`은 받은 사각형 안에 들어가는 **최대 정수 배율**로 그린다. 즉 이 사각형이
+ * 곧 배율이다. 영역 사각형(`hqRect`·`baseRect`)은 HUD 아래 전장 전체 높이를 담고 있어
+ * (1024×360에서 332 px) 세로가 사실상 무제한이라, 기지가 공중 레인 위까지 자라도 막을 수단이
+ * 없었다 — 실제로 베어 요새가 4×(30×44 → 120×176)로 커져 천장이 공중 레인(y 134.2)보다
+ * 16.6 px 위인 117.6 px까지 올라가 있었다.
+ *
+ * 그래서 그리기용 사각형은 두 방향을 모두 잘라 준다:
+ * - **천장 = 공중 레인 y**: 기지가 유닛이 날아다니는 높이를 넘지 않는다.
+ * - **바닥 = 지면선**: `drawSpriteStanding(…, layout.groundY)`와 같은 선이라 발밑이 정확히 얹힌다.
+ *
+ * 가로 상한(`maxWidth`)은 호출부가 정한다(사옥은 첫 슬롯 앞에서 멈춘다).
+ */
+function structureStandRect(zone: Rect, layout: BattleLayout, maxWidth: number): Rect {
+  // 극소 캔버스에서 airY > groundY 가 되는 일은 없지만(비율 0.32 < 0.8), 0 크기 캔버스에서는
+  // 둘이 같아진다 — 그때 h는 0이 되고 `drawSpriteStanding`이 최소 배율 1×로 떨어진다.
+  const ceiling = Math.max(layout.battlefieldTop, Math.min(layout.airY, layout.groundY));
+
+  return {
+    x: zone.x,
+    y: ceiling,
+    w: nonNegative(Math.min(zone.w, maxWidth)),
+    h: nonNegative(layout.groundY - ceiling),
+  };
+}
+
+/**
+ * 아군 사옥 그림이 서는 사각형. 폭은 **첫 타워 슬롯 왼쪽 끝 - `HQ_SLOT_CLEARANCE`** 에서
+ * 멈춘다 — 사옥을 키우면서 슬롯 6개를 덮지 않게 하는 유일한 장치다.
+ */
+export function hqSpriteRect(layout: BattleLayout, towerSlots: number): Rect {
+  const firstSlot = slotRect(0, layout, towerSlots);
+  const limit = firstSlot.x - HQ_SLOT_CLEARANCE - layout.hqRect.x;
+
+  return structureStandRect(layout.hqRect, layout, limit);
+}
+
+/**
+ * 베어 요새·보스가 서는 사각형. 오른쪽에는 슬롯이 없으므로 가로는 영역 폭 그대로고,
+ * 세로만 공중 레인에서 잘린다(그 결과 요새가 4× → 3×로 내려온다 — `structureStandRect` 참조).
+ */
+export function enemyBaseSpriteRect(layout: BattleLayout): Rect {
+  return structureStandRect(layout.baseRect, layout, layout.baseRect.w);
 }

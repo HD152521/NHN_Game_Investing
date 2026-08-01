@@ -92,6 +92,55 @@ export function formatStakeRatioLabel(ratio: StakeRatio): string {
 }
 
 /**
+ * 실제로 투입될 최소 금액. `floor(AUM × ratio)`가 0이면 버튼을 눌러도 아무것도
+ * 사지 못하므로 "고를 수 없는 비율"로 취급한다.
+ */
+const MIN_STAKE_AMOUNT = 1;
+
+/**
+ * 비율 → 실제 투입 금액. 분모는 **항상 현재 AUM**이다 (FR-5.2-a:
+ * `addStake = floor(현재 AUM × stakeRatio)`). 신규 진입과 추가 매수가 같은 식을
+ * 쓰지만 호출 시점의 AUM이 다르므로, 화면에는 이 함수가 낸 금액을 그대로 보여준다.
+ */
+export function resolveStakeAmount(aum: number, ratio: StakeRatio): number {
+  if (!Number.isFinite(aum) || aum <= 0) {
+    return 0;
+  }
+  return Math.floor(aum * ratio);
+}
+
+/** 현재 AUM으로 이 비율을 감당할 수 있는가 (버튼 비활성 판정용). */
+export function canAffordStakeRatio(aum: number, ratio: StakeRatio): boolean {
+  return resolveStakeAmount(aum, ratio) >= MIN_STAKE_AMOUNT;
+}
+
+/**
+ * 추가 매수 금액 미리보기 문구.
+ *
+ * ★ 분모 혼동 방지가 목적이다. 추가 매수의 분모는 진입 당시 AUM이 아니라 **지금의**
+ *   AUM이라, 비율만 보여주면 "25%면 처음이랑 같은 500이겠지"로 읽힌다.
+ *   그래서 분모(AUM)·비율·결과 금액을 한 줄에 전부 적는다.
+ * 예: (2000, 0.25) → "AUM 2,000 × 25% = 500".
+ */
+export function formatAddStakePreview(aum: number, ratio: StakeRatio): string {
+  const amount = resolveStakeAmount(aum, ratio);
+  if (amount < MIN_STAKE_AMOUNT) {
+    return `AUM ${formatAmount(Math.max(0, aum))} — 투입 불가`;
+  }
+  return `AUM ${formatAmount(aum)} × ${formatStakeRatioLabel(ratio)} = ${formatAmount(amount)}`;
+}
+
+/**
+ * 남은 진입 횟수 문구. 추가 매수도 `MAX_POSITIONS`를 소모하므로(FR-5.2-a) 비율을
+ * 고르는 자리에서 잔여 횟수가 보여야 한다. 음수는 0으로 막는다.
+ * 예: (2, 24) → "남은 진입 22회".
+ */
+export function resolveEntriesLeftLabel(used: number, max: number): string {
+  const left = Math.max(0, Math.floor(max) - Math.floor(used));
+  return `남은 진입 ${left}회`;
+}
+
+/**
  * 가격 포맷 — 평균 단가·현재가 표시에 쓴다. 미보유 상태(0 이하)는 값이 없다는
  * 뜻이므로 "0"이 아니라 대시로 표기해 "가격이 0원"과 구분한다.
  * 예: 128300.6 → "128,301", 0 → "-", -5 → "-"(방어적).

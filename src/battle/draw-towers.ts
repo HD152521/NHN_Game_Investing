@@ -6,10 +6,13 @@
  * ★ 가시성 수정(플레이테스트: "포탑 슬롯도 안 보임"): 기존에는 1px 얇은 점선(MUTED, 배경과
  *   대비 5:1 남짓)만으로 슬롯을 표시해, 하늘/스카이라인 배경 위에서 쉽게 묻혔고 "여기를
  *   클릭하면 짓는다"는 정보(슬롯 번호)가 아예 없었다. 이제:
- *   1) 슬롯마다 어두운 받침(플랫폼)을 먼저 깔아 배경이 무엇이든(하늘/스카이라인) 항상
- *      일정하게 어두운 바탕을 만들고,
- *   2) 그 위에 굵고 밝은(TEXT, LINE 대비 17:1) 점선 윤곽 + 슬롯 번호를 그려 "빈 슬롯 =
- *      클릭 가능한 건설 자리"라는 정보를 명확히 전달한다.
+ *   굵고 밝은(TEXT) 점선 윤곽 + 슬롯 번호를 그려 "빈 슬롯 = 클릭 가능한 건설 자리"라는
+ *   정보를 명확히 전달한다.
+ *
+ * ★ 받침(불투명 LINE 판) 제거: 배경이 무엇이든 일정한 바탕을 만들려고 슬롯마다 어두운
+ *   판을 깔았었는데, 타워 스프라이트가 37~47% 투명이라 배경이 비쳐야 할 자리를 그 판이
+ *   전부 덮었다("포탑 뒤가 너무 검어서 안 보인다"). 슬롯 위치 표시는 `drawSlotDecals`
+ *   (디자인 원본 `tf-gnd-slot` 3상태)가 맡는다.
  *
  * 종류별 그림은 디자인 원본의 `towerBasic` / `towerAA` / `towerSplash` 스프라이트를
  * 그대로 쓴다(`src/sprites/tower.ts`, 매핑은 `entity-sprites.ts`). 예전에는 시트의 *글로 된
@@ -60,27 +63,6 @@ const PLATFORM_PADDING = 6;
 const SLOT_NUMBER_FONT = 'bold 12px monospace';
 /** 슬롯 번호 텍스트를 슬롯 하단에서 얼마나 띄우는지(px). */
 const SLOT_NUMBER_BOTTOM_PADDING = 4;
-
-/**
- * 슬롯 자리마다 깔리는 어두운 받침(불투명 LINE 토큰) — 배경이 하늘이든 스카이라인이든
- * 슬롯 영역을 항상 동일하게 가장 어두운 색으로 깔아, 그 위의 밝은 윤곽선·타워 실루엣이
- * 배경 변화(스카이라인 유무)와 무관하게 확실히 떠 보이게 한다.
- *
- * ★ 반투명(rgba)이 아니라 불투명 LINE을 그대로 쓴다 — `drawEmptySlotPreview`(빈 슬롯
- *   미리보기)가 `rgba(...)` 접두사로 렌더링 여부를 테스트하므로, 항상 그려지는 받침까지
- *   `rgba(...)`를 쓰면 "미리보기가 없어야 할 때 없다"는 테스트와 충돌한다.
- */
-function drawSlotPlatform(ctx: BattleCtx, palette: Palette, rect: Rect): void {
-  ctx.save();
-  ctx.fillStyle = palette.LINE;
-  ctx.fillRect(
-    rect.x - PLATFORM_PADDING,
-    rect.y - PLATFORM_PADDING,
-    rect.w + PLATFORM_PADDING * 2,
-    rect.h + PLATFORM_PADDING * 2,
-  );
-  ctx.restore();
-}
 
 /** 빈 슬롯 굵은 점선 윤곽 — 기본은 TEXT(밝은 중립색), 선택 시 GOLD로 확실히 구분한다. */
 function drawEmptySlotOutline(ctx: BattleCtx, palette: Palette, rect: Rect, isSelected: boolean): void {
@@ -197,8 +179,6 @@ export function drawTowers(
     const rect = slotRect(slot, layout, towerSlots);
     const tower = state.towers.find((t) => t.slot === slot);
     const isSelected = selectedSlot === slot;
-
-    drawSlotPlatform(ctx, palette, rect);
 
     if (!tower) {
       // 미리보기는 윤곽선·슬롯 번호보다 **먼저** — 어둡게 덮는 판이 그 둘을 흐리지 않게 한다.

@@ -12,7 +12,13 @@
  * 데이터가 없다.
  *
  * ★ 바닥선 ★ 두 건물 모두 **지면선(`layout.groundY`)** 위에 세운다. 유닛이 걷는 선과 같은
- *   선에 서야 건물이 전장 바닥에 붙어 보인다. 좌우 위치와 폭은 레이아웃 사각형 그대로다.
+ *   선에 서야 건물이 전장 바닥에 붙어 보인다.
+ *
+ * ★ 크기 ★ 배율은 여기서 정하지 않는다 — `drawSpriteStanding`이 받은 사각형에 들어가는
+ *   최대 **정수** 배율을 쓰므로, 사각형을 고르는 것이 곧 배율을 고르는 것이다. 그 사각형은
+ *   `layout.ts`의 `hqSpriteRect` / `enemyBaseSpriteRect`가 만든다(지면선·공중 레인·타워 슬롯
+ *   제약이 전부 그 안에 들어 있다). 배치 사각형(`hqRect`·`baseRect`)을 그대로 넘기던 예전
+ *   코드는 사옥이 1×(76×40)로 쪼그라들고 요새만 4×(120×176)로 커지는 좌우 불균형을 낳았다.
  */
 
 import type { CombatState } from '../combat/types.js';
@@ -22,6 +28,7 @@ import { drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
 import { BOSS_SPRITE, ENEMY_BASE_SPRITE, HQ_SPRITE } from './entity-sprites.js';
 import { drawHpBar } from './draw-hp-bar.js';
 import type { BattleLayout } from './layout.js';
+import { enemyBaseSpriteRect, hqSpriteRect } from './layout.js';
 import type { BattleCtx } from './surface.js';
 
 /** HP 바 높이(px) — 가시성 수정으로 5→6. */
@@ -31,7 +38,13 @@ const HP_BAR_GAP = 4;
 /** HP 바를 사옥 영역보다 좌우로 얼마나 들여 그리는지(px). */
 const HP_BAR_SIDE_PADDING = 6;
 
-/** 아군 사옥 — 원본 `baseAlly` 스프라이트 + 상단 HP 바. */
+/**
+ * 아군 사옥 — 원본 `baseAlly` 스프라이트 + 상단 HP 바.
+ *
+ * ★ 그림은 `hqSpriteRect`, HP 바는 `hqRect` ★ 배율을 정하는 것은 그리기용 사각형이다
+ * (`layout.ts` 참조 — 첫 타워 슬롯 앞에서 멈추고 천장이 공중 레인에서 잘린다). HP 바는
+ * 예전처럼 사옥 영역 상단에 걸쳐 두어, 기지가 커져도 읽는 위치가 바뀌지 않게 한다.
+ */
 export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, state: CombatState): void {
   const rect = layout.hqRect;
   const x = rect.x + HP_BAR_SIDE_PADDING;
@@ -39,7 +52,7 @@ export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, s
   if (w <= 0 || rect.h <= 0) return;
 
   syncSpriteColorMode(palette);
-  drawSpriteStanding(ctx, HQ_SPRITE.key, rect, layout.groundY);
+  drawSpriteStanding(ctx, HQ_SPRITE.key, hqSpriteRect(layout, state.towerSlots), layout.groundY);
 
   drawHpBar(ctx, {
     x,
@@ -70,9 +83,10 @@ export function drawEnemyBase(
   state?: CombatState | null,
 ): void {
   syncSpriteColorMode(palette);
-  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, layout.baseRect, layout.groundY);
+  const rect = enemyBaseSpriteRect(layout);
+  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, rect, layout.groundY);
 
   if (state && state.wave >= BOSS_IDENTITY.appearWave) {
-    drawSpriteStanding(ctx, BOSS_SPRITE.key, layout.baseRect, layout.groundY);
+    drawSpriteStanding(ctx, BOSS_SPRITE.key, rect, layout.groundY);
   }
 }

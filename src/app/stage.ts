@@ -7,19 +7,21 @@
  * 설계 메모: 리플레이·판정·전투는 전부 시계를 주입받는 순수 계산기다.
  * `performance.now()`를 읽는 곳은 이 파일의 프레임 루프 하나뿐이다.
  *
- * ★ 스테이지는 **정지 상태로 마운트된다**. 시작 게이트의 [스테이지 시작]을 누르기
- *   전까지 프레임 루프가 한 번도 돌지 않는다 (`frame-loop.ts`).
+ * ★ 스테이지는 **정지 상태로 마운트된다**. 화면 흐름은
+ *   `[시작 게이트] → [지역 선택] → [스테이지 플레이]` 이며, 지역을 고르기 전까지
+ *   프레임 루프가 한 번도 돌지 않는다 (`frame-loop.ts`).
  */
 
 import './shell.css';
 import './start-gate.css';
+import './region-select.css';
 import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
 
 import { drawBattle, computeBattleLayout, slotAt } from '../battle';
 import { drawChart } from '../chart';
 import { SKILL_SPECS, TOWER_IDENTITY, TOWER_UPGRADE_COST } from '../combat';
-import type { SkillId, TowerKind, UnitKind } from '../combat';
+import type { SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
 import type { SkillFxField } from '../fx';
 import { changePercent } from '../market';
@@ -36,7 +38,8 @@ import {
 } from '../ui';
 import type { GoldMeter, StakeRatio, TradePanel, TradePanelViewModel } from '../ui';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
-import { StageSession } from './session';
+import { mountRegionArt, stageIdFor } from './region-select';
+import { DEFAULT_STAGE_ID, StageSession } from './session';
 import {
   BATTLE_HEIGHT,
   BATTLE_WIDTH,
@@ -68,6 +71,11 @@ export function mountStage(root: HTMLElement): () => void {
   }
 
   let seed = 1;
+  /**
+   * 지역 선택 화면에서 고른 지역. 세션을 만들 때마다 이 값이 `StageSession`으로 넘어가
+   * 시작 AUM·골드·웨이브 테이블을 결정한다 — 여기서만 바뀐다.
+   */
+  let stageId: StageId = DEFAULT_STAGE_ID;
   let speed: number = SPEEDS[0];
   let stakeRatio: StakeRatio = DEFAULT_STAKE_RATIO;
   let selectedTower: TowerKind = 'basic';
@@ -106,6 +114,10 @@ export function mountStage(root: HTMLElement): () => void {
   // 아이콘은 바뀌지 않는다. 색약 모드는 테마가 결정한다.
   mountHudIcons(root, { mode: theme.mode });
 
+  // 지역 카드 배경(`tf-r1-dusk` 등)도 같은 이유로 마운트 시 1회만 굽는다.
+  // 굽지 못하는 환경에서는 조용히 넘어가고 CSS 그라디언트가 그대로 남는다.
+  mountRegionArt(root, { mode: theme.mode });
+
   const panel: TradePanel = createTradePanel(
     {
       onOpen: (direction: Direction) => session?.openTrade(direction, stakeRatio, elapsedMs),
@@ -120,7 +132,7 @@ export function mountStage(root: HTMLElement): () => void {
   refs.panelHost.appendChild(panel.element);
 
   function startSession(nowMs: number): void {
-    session = new StageSession(seed, speed, nowMs);
+    session = new StageSession(seed, speed, nowMs, stageId);
     lastFrameMs = nowMs;
     refs!.volume.textContent = `거래량 ${session.set.volumeMultiple.toFixed(1)}×`;
     refs!.banner.hidden = true;
@@ -327,12 +339,50 @@ export function mountStage(root: HTMLElement): () => void {
 
   const loop = createFrameLoop(scheduler, render);
 
+  // ── 화면 전이: [시작 게이트] → [지역 선택] → [스테이지 플레이] ──
+  /**
+   * 오버레이는 **지우지 않고 `hidden`으로 여닫는다.**
+   *
+   * 예전에는 시작 버튼이 게이트를 `remove()` 했다. 지역 선택에서 뒤로 갈 곳이 없어지므로
+   * 더 이상 쓸 수 없는 방식이다 — 게이트는 살려 두고 표시 여부만 바꾼다
+   * (`.gate[hidden]` 규칙은 `region-select.css`에 있다).
+   */
+  function showGate(): void {
+    refs!.regionSelect.hidden = true;
+    refs!.gate.hidden = false;
+    refs!.startButton.focus();
+  }
+
+  function showRegionSelect(): void {
+    refs!.gate.hidden = true;
+    refs!.regionSelect.hidden = false;
+    // 키보드·스크린리더 사용자가 오버레이 안에서 바로 이어갈 수 있게 첫 카드로 포커스를 옮긴다.
+    refs!.regionButtons[0]?.focus();
+  }
+
+  /** 지역을 확정하고 스테이지를 시작한다. **여기서 처음으로 프레임 루프가 돈다.** */
+  function beginStage(id: StageId): void {
+    stageId = id;
+    session = null; // 다음 프레임이 고른 지역 설정으로 세션을 새로 만든다.
+    refs!.regionSelect.hidden = true;
+    refs!.gate.hidden = true;
+    refs!.stage.classList.remove('stage--gated');
+    loop.start();
+  }
+
+  refs.startButton.addEventListener('click', showRegionSelect);
+  refs.regionBackButton.addEventListener('click', showGate);
+
+  for (const button of refs.regionButtons) {
+    button.addEventListener('click', () => {
+      const id = stageIdFor(button.dataset['region']);
+      if (id !== null) {
+        beginStage(id);
+      }
+    });
+  }
+
   // ── 이벤트 배선 ───────────────────────────────────────────
-  refs.startButton.addEventListener('click', () => {
-    refs.gate.remove();
-    refs.stage.classList.remove('stage--gated');
-    loop.start(); // 여기서 처음으로 차트가 흐르기 시작한다.
-  });
 
   for (const button of refs.speedButtons) {
     button.addEventListener('click', () => {
@@ -414,6 +464,12 @@ export function mountStage(root: HTMLElement): () => void {
    * 여기서 먹어버리면 빌드바 버튼이 키보드로 눌리지 않게 된다(접근성 회귀).
    */
   function onKeyDown(event: KeyboardEvent): void {
+    // Esc — 지역 선택에서 타이틀로. 다이얼로그의 관습적인 탈출 키다.
+    if (event.code === 'Escape' && !refs!.regionSelect.hidden) {
+      event.preventDefault();
+      showGate();
+      return;
+    }
     if (event.code !== 'Space') return;
     const target = event.target;
     if (

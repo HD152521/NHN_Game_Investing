@@ -6,6 +6,8 @@ import { describe, expect, test } from 'vitest';
  * (trade-panel-logic.ts)을 분리했고, 여기서는 순수 로직만 테스트한다.
  */
 import {
+  canAffordStakeRatio,
+  formatAddStakePreview,
   formatAmount,
   formatDistance,
   formatPnl,
@@ -15,8 +17,10 @@ import {
   resolveAddCountLabel,
   resolveAnnouncement,
   resolveDirectionLabel,
+  resolveEntriesLeftLabel,
   resolvePnlTone,
   resolvePriceTone,
+  resolveStakeAmount,
   resolveStateClasses,
   STAKE_RATIOS,
 } from './trade-panel-logic';
@@ -128,6 +132,100 @@ describe('formatStakeRatioLabel', () => {
     for (const ratio of STAKE_RATIOS) {
       expect(formatStakeRatioLabel(ratio)).not.toBe('');
     }
+  });
+});
+
+describe('resolveStakeAmount', () => {
+  test('FR-5.2-a 식대로 현재 AUM에 비율을 곱하고 내림한다', () => {
+    // Arrange & Act
+    const amount = resolveStakeAmount(2000, 0.25);
+    // Assert
+    expect(amount).toBe(500);
+  });
+
+  test('나누어떨어지지 않으면 내림한다 (올림이면 AUM을 초과할 수 있다)', () => {
+    expect(resolveStakeAmount(999, 0.1)).toBe(99);
+  });
+
+  test('ALL은 AUM 전액이다', () => {
+    expect(resolveStakeAmount(1234, 1)).toBe(1234);
+  });
+
+  test('AUM이 0이면 어떤 비율도 0이다', () => {
+    expect(resolveStakeAmount(0, 0.5)).toBe(0);
+  });
+
+  test('AUM이 음수여도(비정상 입력) 0으로 방어한다', () => {
+    expect(resolveStakeAmount(-100, 0.5)).toBe(0);
+  });
+
+  test('AUM이 NaN이어도 0으로 방어한다', () => {
+    expect(resolveStakeAmount(Number.NaN, 0.5)).toBe(0);
+  });
+
+  test('추가 매수의 분모는 진입 당시가 아니라 현재 AUM이다 — 같은 25%라도 금액이 다르다', () => {
+    const atEntry = resolveStakeAmount(2000, 0.25);
+    const afterEntry = resolveStakeAmount(1500, 0.25);
+    expect(atEntry).toBe(500);
+    expect(afterEntry).toBe(375);
+  });
+});
+
+describe('canAffordStakeRatio', () => {
+  test('실제 투입 금액이 1 이상이면 선택 가능하다', () => {
+    expect(canAffordStakeRatio(2000, 0.1)).toBe(true);
+  });
+
+  test('AUM이 부족해 내림 결과가 0이면 선택 불가다', () => {
+    // AUM 5 × 10% = 0.5 → floor 0
+    expect(canAffordStakeRatio(5, 0.1)).toBe(false);
+  });
+
+  test('경계 — 정확히 1이 나오면 선택 가능하다', () => {
+    expect(canAffordStakeRatio(10, 0.1)).toBe(true);
+  });
+
+  test('AUM이 0이면 모든 비율이 선택 불가다', () => {
+    for (const ratio of STAKE_RATIOS) {
+      expect(canAffordStakeRatio(0, ratio)).toBe(false);
+    }
+  });
+
+  test('AUM이 적어도 큰 비율은 여전히 선택 가능할 수 있다 (비율별 독립 판정)', () => {
+    expect(canAffordStakeRatio(5, 0.1)).toBe(false);
+    expect(canAffordStakeRatio(5, 1)).toBe(true);
+  });
+});
+
+describe('formatAddStakePreview', () => {
+  test('분모(AUM)·비율·결과 금액을 한 줄에 전부 드러낸다', () => {
+    expect(formatAddStakePreview(2000, 0.25)).toBe('AUM 2,000 × 25% = 500');
+  });
+
+  test('ALL도 라벨과 금액이 함께 나온다', () => {
+    expect(formatAddStakePreview(1500, 1)).toBe('AUM 1,500 × ALL = 1,500');
+  });
+
+  test('AUM이 부족하면 금액 대신 불가 문구를 낸다', () => {
+    expect(formatAddStakePreview(5, 0.1)).toBe('AUM 5 — 투입 불가');
+  });
+
+  test('AUM이 음수여도(비정상 입력) 0으로 표기한다', () => {
+    expect(formatAddStakePreview(-10, 0.5)).toBe('AUM 0 — 투입 불가');
+  });
+});
+
+describe('resolveEntriesLeftLabel', () => {
+  test('남은 진입 횟수를 계산한다 (추가 매수도 횟수를 소모한다)', () => {
+    expect(resolveEntriesLeftLabel(2, 24)).toBe('남은 진입 22회');
+  });
+
+  test('전부 소진하면 0회로 표기한다', () => {
+    expect(resolveEntriesLeftLabel(24, 24)).toBe('남은 진입 0회');
+  });
+
+  test('사용 횟수가 최대치를 넘어도(비정상 입력) 음수를 내지 않는다', () => {
+    expect(resolveEntriesLeftLabel(30, 24)).toBe('남은 진입 0회');
   });
 });
 

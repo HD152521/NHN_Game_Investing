@@ -9,12 +9,19 @@
  * 그 전까지 블라인드 규칙(FR-4)은 강제되지 않는다.
  */
 
-import type { CombatParams, CombatState, SkillId, StageId, TowerKind, UnitKind } from '../combat';
-import { STAGES } from '../combat';
+import type {
+  CombatParams,
+  CombatState,
+  SkillId,
+  StageConfig,
+  StageId,
+  TowerKind,
+  UnitKind,
+} from '../combat';
+import { STAGES, totalBaseIncome } from '../combat';
 import {
   AUM_DROP_PER_WAVE,
   BASE_HP,
-  BASE_INCOME_PER_WAVE,
   HEAT_PER_TERRITORY,
   TOWER_SLOTS,
   WAVE_COUNT,
@@ -52,6 +59,10 @@ import {
  * 값을 여기 직접 쓰지 마라. `src/combat/stages.ts`의 `STAGES`가 단일 출처다 —
  * 예전에는 이 파일이 자체 상수(200/2000)를 들고 있어서, 밸런스 상수를 고쳐도
  * 런타임은 계속 옛 값을 읽는 이중 출처 상태였다.
+ *
+ * ⚠️ 아래 두 상수는 **R1 값의 별칭**이다. 지역 선택(`region-select.ts`)이 붙은 뒤로
+ * 세션의 실제 시작 재화는 고른 지역의 `StageConfig`에서 온다 — 마크업의 HUD 초기값처럼
+ * "세션이 아직 없을 때 보여줄 자리값"으로만 써라.
  */
 export const DEFAULT_STAGE_ID: StageId = 'R1';
 export const STARTING_GOLD = STAGES[DEFAULT_STAGE_ID].startingGold;
@@ -76,7 +87,13 @@ export interface CloseNotice {
   readonly aumReturned: number;
 }
 
-/** 점령 지역 수. MVP 1지역만 있으므로 0 고정 (FR-6.7 heat / FR-6.8 운영비). */
+/**
+ * 점령 지역 수. 0 고정 (FR-6.7 heat / FR-6.8 운영비).
+ *
+ * 지역 선택이 생겨 R1~R3를 자유롭게 고를 수 있게 됐지만, **점령(진행도) 저장은 아직 없다** —
+ * 어느 지역을 이미 클리어했는지 알 수 없으므로 heat는 항상 1이다.
+ * TODO: 진행도 저장이 붙으면 클리어한 지역 수를 여기 주입한다.
+ */
 const TERRITORIES = 0;
 
 export class StageSession {
@@ -84,20 +101,32 @@ export class StageSession {
   readonly replay: Replay;
   readonly params: PositionParams;
   readonly combatParams: CombatParams;
+  /** 이 세션이 굴리는 지역의 밸런스 설정. 시작 재화·웨이브 테이블의 단일 출처다. */
+  readonly stage: StageConfig;
 
-  private wallet: Wallet = { gold: STARTING_GOLD, aum: STARTING_AUM };
+  private wallet: Wallet;
   private position: OpenPosition | null = null;
   private openCount = 0;
   private seq = 0;
   private pendingNotice: CloseNotice | null = null;
   private combat: CombatState;
 
-  constructor(seed: number, speed: number, startAtMs: number) {
+  /**
+   * @param stageId 플레이할 지역. 생략하면 R1 — 지역 선택 화면이 붙기 전 호출부와
+   *   테스트가 그대로 동작하도록 남긴 기본값이다.
+   */
+  constructor(seed: number, speed: number, startAtMs: number, stageId: StageId = DEFAULT_STAGE_ID) {
+    const stage = STAGES[stageId];
+    this.stage = stage;
     this.set = generateChartSet(seed);
     this.replay = createReplay(this.set, { speed, startAtMs });
     this.params = { ...DEFAULT_POSITION_PARAMS, sigma: this.set.sigma30 };
+    this.wallet = { gold: stage.startingGold, aum: stage.startingAum };
 
     this.combatParams = {
+      // ★ 지역 난이도가 실제로 반영되는 지점 ★ 생략하면 `DEFAULT_WAVE_TABLE`(=R1)이라
+      // R2·R3를 골라도 조용히 R1 난이도가 걸린다.
+      waveTable: stage.waveTable,
       waveCount: WAVE_COUNT,
       // 배속을 올리면 차트와 전투가 같은 시계를 써야 한다 — 웨이브도 같이 짧아진다.
       waveDurationMs: WAVE_DURATION_MS / speed,
@@ -105,7 +134,7 @@ export class StageSession {
       maxBaseHp: BASE_HP,
       heat: 1 + TERRITORIES * HEAT_PER_TERRITORY,
       aumDropPerWave: AUM_DROP_PER_WAVE,
-      totalBaseIncome: BASE_INCOME_PER_WAVE * WAVE_COUNT - TERRITORIES * BASE_INCOME_PER_WAVE,
+      totalBaseIncome: totalBaseIncome(stage),
     };
     this.combat = createCombat(this.combatParams);
   }

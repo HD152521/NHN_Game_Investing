@@ -1,0 +1,303 @@
+/**
+ * 지역 선택 화면 스타일 — 시작 게이트(`start-gate.css`)와 같은 파이낸셜 느와르 계열.
+ *
+ * 게이트가 "한 덩어리 패널"이라면 여기는 **작전 브리핑 보드**다: 카드 3장을 나란히 놓고
+ * 위쪽에 지역 씬, 아래쪽에 수치를 표로 깐다. 목표 수익률만 금색으로 띄워, 카드에서
+ * 시선이 가장 먼저 닿는 숫자가 "얼마를 벌어야 하는가"가 되게 한다.
+ *
+ * 색은 전부 `--tf-*` 토큰만 참조한다 (`no-hardcoded-hex` 가드).
+ */
+
+.region {
+  position: absolute;
+  inset: 0;
+  z-index: 21;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background:
+    radial-gradient(
+      120% 90% at 50% 6%,
+      color-mix(in srgb, var(--tf-bg-2) 55%, transparent) 0%,
+      transparent 62%
+    ),
+    color-mix(in srgb, var(--tf-bg-0) 94%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+/* 오버레이는 `hidden` 으로 열고 닫는다 — display:grid 가 [hidden] 을 이기므로 명시한다. */
+.region[hidden],
+.gate[hidden] {
+  display: none;
+}
+
+.region__panel {
+  position: relative;
+  width: min(920px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 30px 28px 24px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 40%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--tf-bg-1) 90%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--tf-text) 18%, transparent),
+    0 24px 60px color-mix(in srgb, var(--tf-line) 80%, transparent);
+  text-align: center;
+}
+
+.region__eyebrow {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--tf-muted);
+}
+
+.region__title {
+  margin: 0;
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--tf-text);
+}
+
+.region__lede {
+  margin: 0 0 6px;
+  max-width: 52ch;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--tf-muted);
+}
+
+.region__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.region__cell {
+  display: flex;
+}
+
+/* ── 카드 ──────────────────────────────────────────────── */
+
+.rcard {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 0 0 12px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 34%, transparent);
+  border-radius: 3px;
+  background: var(--tf-bg-0);
+  color: var(--tf-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 120ms ease;
+}
+
+.rcard:hover,
+.rcard:focus-visible {
+  border-color: var(--tf-gold);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--tf-gold) 45%, transparent),
+    0 14px 30px color-mix(in srgb, var(--tf-line) 70%, transparent);
+  transform: translateY(-2px);
+}
+
+.rcard:focus-visible {
+  outline: 2px solid var(--tf-gold);
+  outline-offset: 2px;
+}
+
+.rcard:active {
+  transform: translateY(0);
+}
+
+/**
+ * 씬 스프라이트가 꽂히는 자리. 스프라이트를 굽지 못하는 환경에서도 지역색이 남도록
+ * 팔레트 토큰 그라디언트를 바닥에 깔아 둔다 (캔버스가 꽂히면 그 위를 덮는다).
+ */
+.rcard__art {
+  position: relative;
+  display: block;
+  height: 92px;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--tf-muted) 28%, transparent);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--tf-enemy-deep) 55%, transparent),
+    var(--tf-bg-1)
+  );
+}
+
+.rcard__art-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 30%;
+  image-rendering: pixelated;
+}
+
+.rcard__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.rcard__code {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: var(--tf-gold);
+}
+
+.rcard__name {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--tf-text);
+}
+
+.rcard__sector {
+  padding: 0 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--tf-up-ally);
+}
+
+.rcard__flavor {
+  padding: 0 12px 2px;
+  font-size: 11px;
+  color: var(--tf-muted);
+}
+
+.rcard__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 4px 10px 0;
+  background: color-mix(in srgb, var(--tf-muted) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 22%, transparent);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rcard__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  background: var(--tf-bg-1);
+}
+
+.rcard__stat-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--tf-muted);
+}
+
+.rcard__stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--tf-text);
+}
+
+.rcard__stat--aum .rcard__stat-value {
+  color: var(--tf-aum);
+}
+
+.rcard__stat--gold .rcard__stat-value {
+  color: var(--tf-gold);
+}
+
+/**
+ * 목표 수익률 — 이 화면에서 가장 중요한 숫자다. 두 칸을 통째로 쓰고 금색 테두리로
+ * 띄운다. "왜 졌는지 모른다"는 지적의 답이 이 칸이다.
+ */
+.rcard__stat--target {
+  grid-column: 1 / -1;
+  background: color-mix(in srgb, var(--tf-gold) 10%, var(--tf-bg-1));
+}
+
+.rcard__stat--target .rcard__stat-label {
+  color: color-mix(in srgb, var(--tf-gold) 70%, var(--tf-muted));
+}
+
+.rcard__stat--target .rcard__stat-value {
+  font-size: 20px;
+  letter-spacing: 0.02em;
+  color: var(--tf-gold);
+}
+
+.rcard__stat--spend .rcard__stat-value {
+  color: var(--tf-up-ally);
+}
+
+/* ── 뒤로 가기 ─────────────────────────────────────────── */
+
+.region__back {
+  margin-top: 12px;
+  padding: 8px 20px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 45%, transparent);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease;
+}
+
+.region__back:hover {
+  color: var(--tf-text);
+  border-color: var(--tf-text);
+}
+
+.region__back:focus-visible {
+  outline: 2px solid var(--tf-gold);
+  outline-offset: 2px;
+}
+
+@media (max-width: 780px) {
+  .region__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rcard__art {
+    height: 72px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rcard,
+  .region__back {
+    transition: none;
+  }
+
+  .rcard:hover,
+  .rcard:focus-visible,
+  .rcard:active {
+    transform: none;
+  }
+}

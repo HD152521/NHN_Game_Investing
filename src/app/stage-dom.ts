@@ -7,6 +7,7 @@
 
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import { buildStartGateMarkup } from './start-gate';
+import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
 export const CHART_WIDTH = 1024;
@@ -60,6 +61,12 @@ export interface StageRefs {
   readonly banner: HTMLElement;
   readonly gate: HTMLElement;
   readonly startButton: HTMLButtonElement;
+  /** 지역 선택 오버레이. 게이트와 스테이지 플레이 사이에 열린다. */
+  readonly regionSelect: HTMLElement;
+  /** 지역 카드 3종. `dataset.region`이 `StageId`다. */
+  readonly regionButtons: readonly HTMLButtonElement[];
+  /** 지역 선택 → 시작 게이트로 돌아가는 버튼. */
+  readonly regionBackButton: HTMLButtonElement;
   readonly panelHost: HTMLElement;
   readonly speedButtons: readonly HTMLButtonElement[];
   readonly towerButtons: readonly HTMLButtonElement[];
@@ -167,6 +174,7 @@ export function buildStageMarkup(): string {
       </div>
 
       ${buildStartGateMarkup()}
+      ${buildRegionSelectMarkup()}
     </div>
   `;
 }
@@ -193,6 +201,10 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const gate = pick('gate');
   const panelHost = pick('panel-host');
   const startButton = root.querySelector<HTMLButtonElement>('[data-action="start-stage"]');
+  const regionSelect = pick('region-select');
+  const regionBackButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${REGION_BACK_ACTION}"]`,
+  );
 
   if (
     !chart ||
@@ -212,7 +224,9 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !banner ||
     !gate ||
     !panelHost ||
-    !startButton
+    !startButton ||
+    !regionSelect ||
+    !regionBackButton
   ) {
     return null;
   }
@@ -242,6 +256,11 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     banner,
     gate,
     startButton,
+    regionSelect,
+    regionBackButton,
+    regionButtons: Array.from(
+      root.querySelectorAll<HTMLButtonElement>(`[data-action="${REGION_SELECT_ACTION}"]`),
+    ),
     panelHost,
     speedButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-speed]')),
     towerButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tower]')),

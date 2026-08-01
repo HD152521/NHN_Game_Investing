@@ -107,15 +107,27 @@
 /*
  * ── 예측 버튼 배경 (`tf-ui-btn` 40×34 시트를 반으로 갈라 얹는다) ──────────
  *
- * 크기가 82×36 인 이유는 취향이 아니다: 테두리 1px 을 뺀 **패딩 박스가 정확히 80×34** 라
+ * ★ 박스 테두리 선을 쓰지 않는다 (플레이 피드백 ①). 스프라이트가 사다리꼴 판인데
+ *   그 위에 직사각 테두리가 겹쳐 두 겹 윤곽으로 보였다. `border: 0` 으로 지우고
+ *   **클릭 영역은 다른 수단으로 읽히게** 한다:
+ *     · 면(surface) — 방향색을 옅게 깐 배경 + 사다리꼴 스프라이트가 버튼 판을 채운다
+ *     · 호버 — 배경이 방향 딥컬러로 차오르고 스프라이트 불투명도가 0.9 → 1
+ *     · 누름 — `:active` translateY(1px)
+ *     · 포커스 — `:focus-visible` 아웃라인 링 (아래 `.trade-panel__btn:focus-visible`)
+ *   방향 3중 인코딩(색 / 스프라이트 흰 삼각형 / 라벨 `▲▼`)은 테두리와 무관하므로
+ *   그대로 살아 있다 — 테두리는 4번째 중복 채널이었을 뿐이다.
+ *
+ * 크기가 80×34 인 이유는 취향이 아니다: 테두리를 뺀 **패딩 박스가 정확히 80×34** 라
  * 2× 배율로 구운 캔버스(40×17 → 80×34)가 한 픽셀도 늘어나지 않고 들어맞는다. 여기가
  * 어긋나면 전장(정수 배율 정사각 픽셀)과 픽셀 크기가 달라져 톤이 갈라진다.
+ * (테두리 1px 을 지웠으므로 82×36 → 80×34 로 함께 줄였다.)
  */
 .trade-panel__btn--predict {
   position: relative;
-  min-width: 82px;
-  height: 36px;
+  min-width: 80px;
+  height: 34px;
   padding: 0 6px;
+  border: 0;
   overflow: hidden;
 }
 
@@ -154,25 +166,27 @@
   /* 색은 버튼에서 물려받는다 — 방향별 색(`--long`/`--short`)이 라벨에도 그대로 실려야 한다. */
 }
 
-/* LONG = 상승 = 아군(빨강), SHORT = 하락 = 적군(파랑) — design/palette.ts 설계 그대로 */
+/*
+ * LONG = 상승 = 아군(빨강), SHORT = 하락 = 적군(파랑) — design/palette.ts 설계 그대로.
+ * 테두리가 사라진 자리를 **면**이 대신한다: 방향색을 옅게 섞은 배경이 쉬는 상태에서도
+ * "여기가 누를 수 있는 판"이라고 말하고, 호버에서 딥컬러로 꽉 찬다.
+ */
 .trade-panel__btn--long {
-  border-color: var(--tf-up-deep);
+  background: color-mix(in srgb, var(--tf-up-deep) 34%, var(--tf-bg-1));
   color: var(--tf-up-ally);
 }
 
 .trade-panel__btn--long:hover:not(:disabled) {
-  border-color: var(--tf-up-ally);
   background: var(--tf-up-deep);
   color: var(--tf-text);
 }
 
 .trade-panel__btn--short {
-  border-color: var(--tf-enemy-deep);
+  background: color-mix(in srgb, var(--tf-enemy-deep) 34%, var(--tf-bg-1));
   color: var(--tf-enemy-down);
 }
 
 .trade-panel__btn--short:hover:not(:disabled) {
-  border-color: var(--tf-enemy-down);
   background: var(--tf-enemy-deep);
   color: var(--tf-text);
 }
@@ -254,6 +268,37 @@
 .trade-panel__stake--active {
   border-color: var(--tf-gold);
   color: var(--tf-gold);
+}
+
+/* ── 추가 매수 행 (보유 중 비율 선택) ───────────────────────
+   `flex-basis: 100%` 로 보유 행 안에서 자기 줄을 차지한다 — 평단가·손익 필드와
+   섞이면 "무엇에 대한 비율인지"가 흐려진다. */
+.trade-panel__add-row {
+  display: flex;
+  align-items: center;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trade-panel__add-row .trade-panel__btn--add {
+  margin-left: auto;
+}
+
+/* 분모 혼동 방지의 핵심 — "AUM 2,000 × 25% = 500" 이 그대로 찍힌다. */
+.trade-panel__stake-preview {
+  color: var(--tf-aum);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-panel__stake-preview--blocked {
+  color: var(--tf-muted);
+}
+
+.trade-panel__entries-left {
+  color: var(--tf-muted);
+  font-size: 11px;
 }
 
 /* ── 보유 중 필드 ────────────────────────────────────────── */

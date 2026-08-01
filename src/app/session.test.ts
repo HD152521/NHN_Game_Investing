@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { SKILL_SPECS } from '../combat';
-import { STARTING_AUM, STARTING_GOLD, StageSession } from './session';
+import { SKILL_SPECS, STAGES, totalBaseIncome } from '../combat';
+import type { StageId } from '../combat';
+import { DEFAULT_STAGE_ID, STARTING_AUM, STARTING_GOLD, StageSession } from './session';
 
 /**
  * 통합 레벨 검증.
@@ -303,6 +304,56 @@ describe('StageSession — 배선', () => {
 
     // 이 시드에서 강제 청산이 안 걸릴 수도 있다. 걸렸다면 위 단언이 검증한다.
     expect(typeof liquidated).toBe('boolean');
+  });
+});
+
+/**
+ * ★ 지역 선택이 실제로 세션에 닿는지 ★
+ *
+ * 지역 선택 화면(`region-select.ts`)이 고른 `StageId`는 `StageSession` 생성자를 통해서만
+ * 게임에 반영된다. 이 배선이 끊기면 화면은 R3를 골랐다고 말하면서 R1을 굴린다 —
+ * 겉으로는 아무 에러도 나지 않으므로 테스트가 아니면 잡히지 않는다.
+ */
+describe('StageSession — 지역 선택 반영', () => {
+  const ALL_STAGES: readonly StageId[] = ['R1', 'R2', 'R3'];
+
+  test('고른 지역의 시작 AUM·골드로 시작한다', () => {
+    for (const id of ALL_STAGES) {
+      const snap = new StageSession(7, 1, 0, id).snapshot(0);
+      expect(snap.wallet.aum).toBe(STAGES[id].startingAum);
+      expect(snap.wallet.gold).toBe(STAGES[id].startingGold);
+    }
+  });
+
+  test('지역을 생략하면 R1이다 (기존 호출부 호환)', () => {
+    const session = new StageSession(7, 1, 0);
+    expect(session.stage.id).toBe(DEFAULT_STAGE_ID);
+    expect(session.snapshot(0).wallet.aum).toBe(STARTING_AUM);
+  });
+
+  /** 지역 난이도의 본체 — 이걸 안 넘기면 R2·R3에서 조용히 R1 웨이브가 나온다. */
+  test('고른 지역의 웨이브 테이블이 전투 파라미터로 주입된다', () => {
+    for (const id of ALL_STAGES) {
+      const session = new StageSession(7, 1, 0, id);
+      expect(session.combatParams.waveTable).toBe(STAGES[id].waveTable);
+    }
+  });
+
+  test('기본 수입 총액이 지역 값과 일치한다', () => {
+    for (const id of ALL_STAGES) {
+      const session = new StageSession(7, 1, 0, id);
+      expect(session.combatParams.totalBaseIncome).toBe(totalBaseIncome(STAGES[id]));
+    }
+  });
+
+  test('지역이 올라갈수록 시작 AUM과 적 HP가 함께 오른다', () => {
+    const r1 = new StageSession(7, 1, 0, 'R1');
+    const r3 = new StageSession(7, 1, 0, 'R3');
+
+    expect(r3.snapshot(0).wallet.aum).toBeGreaterThan(r1.snapshot(0).wallet.aum);
+    const hp1 = r1.combatParams.waveTable?.baseHp[0] ?? 0;
+    const hp3 = r3.combatParams.waveTable?.baseHp[0] ?? 0;
+    expect(hp3).toBeGreaterThan(hp1);
   });
 });
 

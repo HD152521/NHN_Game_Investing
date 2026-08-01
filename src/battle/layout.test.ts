@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { computeBattleLayout, laneY, progressToX, slotRect } from './layout.js';
+import { computeBattleLayout, enemyBaseSpriteRect, hqSpriteRect, laneY, progressToX, slotRect } from './layout.js';
 
 describe('computeBattleLayout', () => {
   test('일반적인 캔버스 크기에서 레인 순서가 위(공중)→아래(지상)로 유효하다', () => {
@@ -161,5 +161,56 @@ describe('slotRect — 기지 옆 2줄 배치 (전쟁시대 참고)', () => {
   test('towerSlots가 0이어도 크래시하지 않는다', () => {
     const layout = computeBattleLayout(800, 300);
     expect(() => slotRect(0, layout, 0)).not.toThrow();
+  });
+});
+
+/**
+ * 기지 그리기용 사각형 — 배율의 단일 출처다(`drawSpriteStanding`이 이 사각형에 들어가는
+ * 최대 정수 배율로 그린다). 플레이 피드백 "우리 기지 크기가 너무 작아"의 회귀 방지.
+ */
+describe('hqSpriteRect / enemyBaseSpriteRect — 기지 그리기 사각형', () => {
+  const TOWER_SLOTS = 6;
+  const layout = computeBattleLayout(1024, 360);
+
+  test('사옥 그림 폭이 첫 슬롯 왼쪽 끝보다 앞에서 멈춘다', () => {
+    const rect = hqSpriteRect(layout, TOWER_SLOTS);
+    expect(rect.x + rect.w).toBeLessThan(slotRect(0, layout, TOWER_SLOTS).x);
+  });
+
+  test('사옥 스프라이트(원본 76×40)가 2× 이상 들어간다', () => {
+    const rect = hqSpriteRect(layout, TOWER_SLOTS);
+    expect(Math.floor(rect.w / 76)).toBeGreaterThanOrEqual(2);
+    expect(Math.floor(rect.h / 40)).toBeGreaterThanOrEqual(2);
+  });
+
+  test('두 사각형 모두 바닥이 지면선, 천장이 공중 레인이다', () => {
+    for (const rect of [hqSpriteRect(layout, TOWER_SLOTS), enemyBaseSpriteRect(layout)]) {
+      expect(rect.y).toBeCloseTo(layout.airY, 5);
+      expect(rect.y + rect.h).toBeCloseTo(layout.groundY, 5);
+    }
+  });
+
+  test('요새(30×44)·보스(34×46)가 공중 레인을 넘지 않는 3×로 제한된다', () => {
+    const rect = enemyBaseSpriteRect(layout);
+    expect(Math.min(Math.floor(rect.w / 30), Math.floor(rect.h / 44))).toBe(3);
+    expect(Math.min(Math.floor(rect.w / 34), Math.floor(rect.h / 46))).toBe(3);
+  });
+
+  test('캔버스가 작아지거나 0이어도 NaN·음수 크기가 나오지 않는다', () => {
+    for (const size of [[0, 0], [3, 2], [12, 12], [320, 200]] as const) {
+      for (const rect of [
+        hqSpriteRect(computeBattleLayout(size[0], size[1]), TOWER_SLOTS),
+        enemyBaseSpriteRect(computeBattleLayout(size[0], size[1])),
+      ]) {
+        expect(Number.isFinite(rect.x)).toBe(true);
+        expect(Number.isFinite(rect.y)).toBe(true);
+        expect(rect.w).toBeGreaterThanOrEqual(0);
+        expect(rect.h).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  test('towerSlots가 0이어도 사옥 사각형을 만들 수 있다', () => {
+    expect(() => hqSpriteRect(layout, 0)).not.toThrow();
   });
 });
