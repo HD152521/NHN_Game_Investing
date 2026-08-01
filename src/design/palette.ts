@@ -48,17 +48,18 @@ export const PALETTE_TOKENS = Object.keys(BASE_PALETTE) as readonly PaletteToken
 /**
  * 색약 모드 오버라이드 (아트가이드 §1.3 색약 표 / PRD FR-13.1).
  *
- * UP / DOWN 두 개만 문서에 명시되어 있습니다. 음영 토큰(UP_DEEP / ENEMY_DEEP)까지
- * 함께 바꾸지 않으면 앰버 본체에 크림슨 음영이 붙어 셰이딩이 깨지므로,
- * 기본 팔레트의 base→deep 채널 비율(약 0.6)을 그대로 적용해 파생했습니다.
+ * 네 값 모두 디자인 원본(`ticker-front-sprites.js` 의 `MAP.cb`)에 **명시**되어 있습니다.
+ *   cb: { up: '#FFB000', 'up-deep': '#B37A00', down: '#0072B2', 'down-deep': '#004E7A' }
+ * 이전에는 음영 두 개를 "문서에 없다"고 보고 ×0.6 으로 파생했지만, 그것은 추측이
+ * 명시값을 덮은 것이었습니다(실제 비율은 약 0.70). 원본값으로 되돌렸습니다.
  */
 export const COLORBLIND_OVERRIDES = {
-  /** 앰버 — 아트가이드 색약 표 */
+  /** 앰버 — 디자인 원본 `MAP.cb.up` */
   UP_ALLY: '#FFB000',
-  /** #FFB000 × 0.6 (base→deep 비율 유지, 파생값) */
-  UP_DEEP: '#996A00',
-  /** 딥 블루 — 아트가이드 색약 표 */
+  /** 앰버 음영 — 디자인 원본 `MAP.cb['up-deep']` 명시값 */
+  UP_DEEP: '#B37A00',
+  /** 딥 블루 — 디자인 원본 `MAP.cb.down` */
   ENEMY_DOWN: '#0072B2',
-  /** #0072B2 × 0.6 (base→deep 비율 유지, 파생값) */
-  ENEMY_DEEP: '#00446B',
+  /** 딥 블루 음영 — 디자인 원본 `MAP.cb['down-deep']` 명시값 */
+  ENEMY_DEEP: '#004E7A',
 } as const satisfies Partial<Record<PaletteToken, HexColor>>;
