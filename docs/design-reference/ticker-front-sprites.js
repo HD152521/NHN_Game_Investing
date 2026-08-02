@@ -425,6 +425,136 @@ class Component extends DCLogic {
     return c.g;
   }
 
+  /* --- 스킬 이펙트 5프레임 시퀀스 --- */
+  ringPx(c, cx, cy, r, sq, col, step) {
+    const n = Math.max(12, Math.round(r * 5));
+    for (let a = 0; a < n; a++) {
+      if (step && a % step) continue;
+      const t = a / n * Math.PI * 2;
+      c.px(cx + Math.cos(t) * r, cy + Math.sin(t) * r * sq, col);
+    }
+  }
+
+  /* S-01 공시 폭탄: 예고 → 섬광 → 파편링 → 확산 → 잔재 */
+  fxBomb(f) {
+    const c = this.mk(44, 40);
+    c.rect(0, 0, 44, 40, '1');
+    const cx = 22, cy = 22;
+    if (f === 0) {
+      this.ringPx(c, cx, cy, 13, 0.42, 'g', 3);
+      c.rect(cx - 1, 2, 2, 12, 'g');
+      c.poly([[cx, 15], [cx + 3, 11], [cx - 3, 11]], 'w');
+    } else if (f === 1) {
+      c.disc(cx, cy, 9, 'w');
+      this.ringPx(c, cx, cy, 12, 0.5, 'g');
+      for (let a = 0; a < 8; a++) { const t = a / 8 * Math.PI * 2; c.line(cx + Math.cos(t) * 10, cy + Math.sin(t) * 5, cx + Math.cos(t) * 20, cy + Math.sin(t) * 11, 'g'); }
+    } else if (f === 2) {
+      c.disc(cx, cy, 5, 'g');
+      this.ringPx(c, cx, cy, 11, 0.45, 'w');
+      this.ringPx(c, cx, cy, 17, 0.45, 'g', 2);
+      for (let a = 0; a < 12; a++) { const t = a / 12 * Math.PI * 2 + 0.2; c.rect(cx + Math.cos(t) * 19, cy + Math.sin(t) * 9, 2, 2, a % 2 ? 'w' : 'm'); }
+    } else if (f === 3) {
+      c.disc(cx, cy, 2, 'g');
+      this.ringPx(c, cx, cy, 20, 0.42, 'g', 2);
+      for (let a = 0; a < 10; a++) { const t = a / 10 * Math.PI * 2 + 0.5; c.rect(cx + Math.cos(t) * 15 - (a % 3), cy + Math.sin(t) * 8, 3, 2, 'm'); }
+      c.rect(2, 34, 40, 1, 'g');
+    } else {
+      for (let a = 0; a < 9; a++) { const t = a / 9 * Math.PI * 2; c.rect(cx + Math.cos(t) * 13, cy + Math.sin(t) * 7 + 3 + (a % 3), 3, 2, 'm'); }
+      this.ringPx(c, cx, cy, 23, 0.4, 'm', 4);
+    }
+    return c.g;
+  }
+
+  /* S-02 배당 살포: 낙하 → 착지링 → 상승 입자 → 흡수 → 잔광 */
+  fxHeal(f) {
+    const c = this.mk(44, 40);
+    c.rect(0, 0, 44, 40, '1');
+    const cx = 22, gy = 31;
+    if (f === 0) {
+      for (let i = 0; i < 5; i++) c.rect(8 + i * 7, 2 + (i % 3) * 3, 2, 6, 'd');
+      c.rect(cx - 1, 1, 2, 14, 'r');
+      this.ringPx(c, cx, gy, 12, 0.3, 'd', 4);
+    } else if (f === 1) {
+      this.ringPx(c, cx, gy, 8, 0.32, 'w');
+      this.ringPx(c, cx, gy, 14, 0.32, 'r');
+      for (let i = 0; i < 5; i++) c.rect(8 + i * 7, 12 + (i % 3) * 3, 2, 5, 'r');
+    } else if (f === 2) {
+      [9, 14, 19].forEach((r, i) => this.ringPx(c, cx, gy - i * 2, r, 0.32, i === 1 ? 'r' : 'd', i ? 2 : 1));
+      [[11, 22], [18, 17], [26, 20], [33, 24]].forEach(p => c.poly([[p[0], p[1]], [p[0] + 2, p[1] + 4], [p[0] - 2, p[1] + 4]], 'r'));
+    } else if (f === 3) {
+      this.ringPx(c, cx, gy, 18, 0.3, 'd', 2);
+      [[10, 14], [17, 8], [25, 12], [32, 16], [21, 5]].forEach(p => c.poly([[p[0], p[1]], [p[0] + 2, p[1] + 4], [p[0] - 2, p[1] + 4]], 'r'));
+      c.rect(cx - 6, gy, 13, 1, 'w');
+    } else {
+      [[16, 6], [24, 9], [30, 5]].forEach(p => c.px(p[0], p[1], 'r'));
+      this.ringPx(c, cx, gy, 21, 0.28, 'd', 5);
+      c.rect(cx - 9, gy + 1, 19, 1, 'd');
+    }
+    return c.g;
+  }
+
+  /* S-03 실드: 스파크 → 격자 전개 → 완성 → 피격 파문 → 소멸 */
+  fxShield(f) {
+    const c = this.mk(44, 40);
+    c.rect(0, 0, 44, 40, '1');
+    const cx = 22, gy = 34, R = 17;
+    const dome = (r, col, step) => { const n = 40; for (let a = 0; a <= n; a++) { const t = Math.PI + a / n * Math.PI; if (step && a % step) continue; c.px(cx + Math.cos(t) * r, gy + Math.sin(t) * r, col); } };
+    const hexes = (col, dense) => {
+      for (let y = gy - R + 3; y < gy - 1; y += 5) for (let x = cx - R + 3; x < cx + R - 2; x += 5) {
+        const dx = (x - cx) / R, dy = (y - gy) / R;
+        if (dx * dx + dy * dy > 0.86) continue;
+        if (!dense && (x + y) % 10 > 4) continue;
+        c.poly([[x, y], [x + 2, y + 2], [x, y + 4], [x - 2, y + 2]], col);
+      }
+    };
+    if (f === 0) {
+      c.rect(cx - 12, gy, 25, 1, 'p');
+      for (let i = 0; i < 6; i++) c.px(cx - 10 + i * 4, gy - 2 - (i % 3) * 2, 'p');
+    } else if (f === 1) {
+      dome(R * 0.6, 'p'); hexes('p', false);
+      c.rect(cx - 13, gy, 27, 1, 'p');
+    } else if (f === 2) {
+      dome(R, 'p'); dome(R - 1, 'p', 3);
+      hexes('p', true);
+      c.rect(cx - R, gy, R * 2 + 1, 1, 'w');
+    } else if (f === 3) {
+      dome(R, 'w'); dome(R - 3, 'p', 2); dome(R - 6, 'p', 3);
+      hexes('p', true);
+      for (let a = 0; a < 5; a++) { const t = Math.PI + 0.4 + a * 0.5; c.px(cx + Math.cos(t) * (R + 3), gy + Math.sin(t) * (R + 3), 'b'); }
+      c.rect(cx - R, gy, R * 2 + 1, 1, 'w');
+    } else {
+      dome(R, 'p', 3); hexes('p', false);
+      for (let i = 0; i < 7; i++) c.px(cx - 12 + i * 4, gy - 6 - (i % 4) * 3, 'p');
+    }
+    return c.g;
+  }
+
+  fxSeq(kind) {
+    const fn = kind === 1 ? this.fxBomb : kind === 2 ? this.fxHeal : this.fxShield;
+    return this.strip([0, 1, 2, 3, 4].map(i => fn.call(this, i)), 4);
+  }
+
+  /* 스킬 발동 시 화면 레벨 연출: 플래시 · 셰이크 · 방사선 */
+  fxScreen() {
+    const c = this.mk(96, 40);
+    c.rect(0, 0, 96, 40, '1');
+    const panel = (ox, tint) => {
+      c.rect(ox, 4, 28, 32, '2');
+      c.rect(ox, 4, 28, 1, 'm').rect(ox, 35, 28, 1, 'm');
+      c.rect(ox + 2, 26, 24, 8, '3');
+      c.rect(ox + 6, 20, 3, 6, 'r').rect(ox + 12, 22, 3, 4, 'r');
+      c.rect(ox + 20, 21, 3, 5, 'b');
+      if (tint) for (let y = 5; y < 35; y++) for (let x = ox + 1; x < ox + 27; x++) if ((x * 2 + y * 3) % 7 === 0) c.px(x, y, tint);
+    };
+    panel(2, null);
+    panel(34, 'g');
+    for (let a = 0; a < 20; a++) { const t = a / 20 * Math.PI * 2; c.line(48 + Math.cos(t) * 6, 20 + Math.sin(t) * 6, 48 + Math.cos(t) * 15, 20 + Math.sin(t) * 15, a % 2 ? 'g' : 'w'); }
+    panel(66, null);
+    for (let y = 5; y < 35; y += 3) c.rect(67, y, 26, 1, '1');
+    c.rect(66, 4, 28, 1, 'w');
+    return c.g;
+  }
+
   proj(kind) {
     const c = this.mk(28, 14);
     c.rect(0, 0, 28, 14, '1');
@@ -485,6 +615,106 @@ class Component extends DCLogic {
     for (let a = 0; a < 24; a++) { const t = a / 24 * Math.PI * 2; c.px(40 + Math.cos(t) * 9, 22 + Math.sin(t) * 6, 'g'); }
     c.rect(26, 21, 28, 1, 'g').rect(38, 12, 4, 1, 'g').rect(38, 31, 4, 1, 'g');
     [[12, 8], [66, 10], [18, 36], [62, 34]].forEach(pt => c.px(pt[0], pt[1], 'm'));
+    return c.g;
+  }
+
+  /* --- A-01 근거리: 칼 휘두르기 4프레임 --- */
+  meleeFrame(f) {
+    const c = this.mk(30, 34);
+    const lean = [0, 1, 2, 1][f];
+    c.rect(8 + lean, 26, 4, 6, '2').rect(14 + lean, 27, 4, 5, '2');
+    c.rect(6 + lean, 32, 7, 2, '3').rect(13 + lean, 32, 7, 2, '3');
+    c.rect(7 + lean, 15, 12, 12, '3').rect(7 + lean, 15, 12, 3, '2');
+    c.rect(10 + lean, 19, 4, 6, 'w').rect(7 + lean, 21, 12, 2, 'r');
+    c.disc(13 + lean, 9, 6, 'm').rect(7 + lean, 9, 13, 3, 'm').rect(12 + lean, 11, 8, 3, '2');
+    const hx = 19 + lean, hy = [16, 12, 18, 22][f];
+    c.rect(hx - 1, hy - 1, 3, 3, '3');
+    const blade = [
+      [[hx, hy], [hx - 4, hy - 12]],
+      [[hx, hy], [hx + 9, hy - 8]],
+      [[hx, hy], [hx + 12, hy + 3]],
+      [[hx, hy], [hx + 6, hy + 9]]
+    ][f];
+    const a = blade[0], b = blade[1];
+    c.line(a[0], a[1], b[0], b[1], 'w');
+    c.line(a[0] + 1, a[1], b[0] + 1, b[1], 'm');
+    c.line(a[0] - 1, a[1] + 1, a[0] + 2, a[1] - 1, 'r');
+    if (f === 2) for (let k = 0; k < 9; k++) { const t = -0.7 + k * 0.19; c.px(hx + Math.cos(t) * 13, hy + Math.sin(t) * 13, 'r'); }
+    if (f === 3) for (let k = 0; k < 7; k++) { const t = 0.1 + k * 0.16; c.px(hx + Math.cos(t) * 12, hy + Math.sin(t) * 12, 'd'); }
+    return c.outline('0').rim('w').g;
+  }
+
+  /* --- A-02 원거리: 캔 정지 + 회전 4프레임 --- */
+  canFrame(f) {
+    const c = this.mk(16, 20);
+    const body = ['r', 'd', 'r', 'd'][f];
+    c.rect(4, 3, 8, 14, body);
+    c.rect(4, 3, 8, 2, 'm').rect(4, 15, 8, 2, 'm');
+    c.rect(5, 1, 6, 2, 'm').rect(7, 0, 2, 1, 'w');
+    if (f === 0) { c.rect(6, 7, 4, 6, 'w'); c.rect(7, 8, 2, 4, 'd'); }
+    else if (f === 1) { c.rect(8, 6, 3, 8, 'w'); c.rect(4, 7, 2, 6, 'd'); }
+    else if (f === 2) { c.rect(5, 7, 2, 6, 'd'); c.rect(9, 7, 2, 6, 'd'); }
+    else { c.rect(5, 6, 3, 8, 'w'); c.rect(10, 7, 2, 6, 'd'); }
+    c.rect(4, 5, 1, 10, 'w');
+    return c.outline('0').g;
+  }
+
+  canSpin() {
+    const c = this.mk(84, 22);
+    for (let i = 0; i < 4; i++) {
+      const g = this.canFrame(i);
+      this.stamp(c.g, g, 3 + i * 20, 1);
+      if (i) for (let k = 0; k < 4; k++) c.px(1 + i * 20 - k, 11 + (k % 2), 'd');
+    }
+    return c.g;
+  }
+
+  throwFrame(f) {
+    const c = this.mk(30, 34);
+    const back = f === 0 || f === 1;
+    c.disc(5, 18, 4, 'm').disc(5, 18, 2, '2');
+    c.rect(9, 25, 4, 7, '2').rect(15, 26, 4, 6, '2');
+    c.rect(8, 32, 6, 2, '3').rect(14, 32, 6, 2, '3');
+    c.rect(8, 13, 11, 13, '3').rect(8, 13, 11, 3, '2');
+    c.rect(11, 17, 4, 7, 'w').rect(8, 19, 11, 2, 'r');
+    c.disc(13, 8, 5, '3').rect(15, 6, 4, 3, 'r');
+    const arm = [[[19, 15], [14, 6]], [[19, 15], [22, 5]], [[19, 15], [27, 12]], [[19, 15], [26, 20]]][f];
+    c.line(arm[0][0], arm[0][1], arm[1][0], arm[1][1], '3');
+    c.line(arm[0][0], arm[0][1] + 1, arm[1][0], arm[1][1] + 1, '3');
+    const cx = arm[1][0], cy = arm[1][1] - 2;
+    if (f < 3) { c.rect(cx - 1, cy, 3, 5, f === 1 ? 'd' : 'r'); c.rect(cx - 1, cy, 3, 1, 'm'); }
+    else { c.rect(cx + 2, cy - 2, 3, 5, 'r'); c.rect(cx + 2, cy - 2, 3, 1, 'm'); for (let k = 1; k < 5; k++) c.px(cx + 1 - k * 2, cy + (k % 2), 'd'); }
+    return c.outline('0').rim('w').g;
+  }
+
+  /* --- A-03 탱커: 방패 대기 / 밀치기 --- */
+  shieldFrame(f) {
+    const c = this.mk(34, 34);
+    const push = [0, 0, 3, 6][f];
+    c.rect(6, 25, 5, 7, '2').rect(15 + (f > 1 ? 1 : 0), 25, 5, 7, '2');
+    c.rect(4, 32, 8, 2, '3').rect(14, 32, 8, 2, '3');
+    c.rect(6, 12, 13, 14, '3').rect(6, 12, 13, 3, '2');
+    c.disc(6, 14, 4, '3').disc(19, 14, 4, '3');
+    c.rect(9, 16, 5, 7, 'w').rect(6, 18, 13, 2, 'r');
+    c.disc(12, 7, 5, '3').rect(14, 5, 4, 3, 'r');
+    const sx = 21 + push;
+    c.rect(sx, f === 1 ? 8 : 10, 6, 19, 'm');
+    c.rect(sx + 1, (f === 1 ? 8 : 10) + 1, 4, 17, '3');
+    c.disc(sx + 3, (f === 1 ? 8 : 10) + 9, 2, 'm');
+    c.rect(sx, (f === 1 ? 8 : 10) + 4, 6, 1, 'm');
+    c.rect(sx, (f === 1 ? 8 : 10) + 14, 6, 1, 'm');
+    if (f === 3) { for (let k = 0; k < 6; k++) c.px(sx + 7 + (k % 3), 12 + k * 2, 'r'); c.rect(sx + 7, 14, 2, 10, 'd'); }
+    if (f === 1) c.rect(sx - 1, 7, 8, 1, 'w');
+    return c.outline('0').rim('w').g;
+  }
+
+  strip(frames, gap) {
+    const gs = frames.map(g => g);
+    const w = gs.reduce((a, g) => a + g[0].length + gap, gap);
+    const h = Math.max.apply(null, gs.map(g => g.length)) + 2;
+    const c = this.mk(w, h);
+    let x = gap;
+    gs.forEach(g => { this.stamp(c.g, g, x, h - g.length - 1); x += g[0].length + gap; });
     return c.g;
   }
 
@@ -733,7 +963,16 @@ class Component extends DCLogic {
       'tf-r2-night': this.scene('night', 108, 56, { region: 2 }),
       'tf-r3-noon': this.scene('noon', 108, 56, { region: 3 }),
       'tf-r3-dusk': this.scene('dusk', 108, 56, { region: 3 }),
-      'tf-r3-dust': this.scene('dust', 108, 56, { region: 3, haze: true })
+      'tf-r3-dust': this.scene('dust', 108, 56, { region: 3, haze: true }),
+      'tf-melee-loop': this.strip([0, 1, 2, 3].map(i => this.meleeFrame(i)), 5),
+      'tf-melee-hold': this.meleeFrame(1),
+      'tf-can-idle': this.canFrame(0),
+      'tf-can-spin': this.canSpin(),
+      'tf-throw-loop': this.strip([0, 1, 2, 3].map(i => this.throwFrame(i)), 5),
+      'tf-shield-idle': this.shieldFrame(0),
+      'tf-shield-loop': this.strip([0, 1, 2, 3].map(i => this.shieldFrame(i)), 5),
+      'tf-fx-seq-01': this.fxSeq(1), 'tf-fx-seq-02': this.fxSeq(2), 'tf-fx-seq-03': this.fxSeq(3),
+      'tf-fx-screen': this.fxScreen()
     };
     return this._s;
   }
