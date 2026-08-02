@@ -45,12 +45,16 @@ export {
 
 export type { StageConfig, StageId } from './stages';
 export {
+  DEPLOYMENT_ALLOWANCE,
   STAGES,
   WAVE_BASE_HP_R1,
+  combatLoadPerGold,
+  gateReturnRate,
   noTradeGold,
   scaleWaveHp,
   sessionTotalStake,
   totalBaseIncome,
+  totalEnemyHp,
   totalGoldFor,
 } from './stages';
 

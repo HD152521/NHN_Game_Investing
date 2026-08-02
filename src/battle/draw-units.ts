@@ -15,11 +15,20 @@
  *   한 화면에 지상 3종 · 공중 2종이 섞여 보인다.
  */
 
+import type { EnemyKind } from '../combat/identity.js';
 import type { Combatant, Enemy, Unit, UnitKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
-import { spriteRasters, unitAnimFrameAt, unitAnimFrameRaster } from '../sprites/render/index.js';
-import type { SpriteRaster, UnitAnimId } from '../sprites/render/index.js';
-import { drawSpriteCentered, drawUnitSprite, syncSpriteColorMode } from './draw-sprite.js';
+import {
+  entityAnimFrameAt,
+  entityAnimFrameCount,
+  entityAnimFrameRaster,
+  spriteRasters,
+  unitAnimFrameAt,
+  unitAnimFrameRaster,
+  walkAnimId,
+} from '../sprites/render/index.js';
+import type { EntityAnimId, RenderableSpriteKey, SpriteRaster, UnitAnimId } from '../sprites/render/index.js';
+import { drawUnitSprite, syncSpriteColorMode } from './draw-sprite.js';
 import { drawHpBar } from './draw-hp-bar.js';
 import { ALLY_SPRITES, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
 import type { BattleLayout } from './layout.js';
@@ -70,14 +79,70 @@ const ATTACK_ANIM_COOLDOWN_RATIO = 0.7;
  *    원본 `shieldFrame` 의 몸통은 `allyAnchor` 와 좌표까지 같고(`disc(6,14,4,'3')` 어깨),
  *    `allyAnchor` 의 세로 방패(`rect(21,10,6,19,'m')`)가 `push` 만큼 앞으로 나간다.
  *
- * ⚠️ 적 5종에는 대응하는 공격 스트립이 **원본에 없다.** 억지로 아군 모션을 붙이면 악당이
- *    아군 몸통으로 변하므로, 적은 정지 스프라이트를 유지한다(피격 표현은 예광선 계층이 맡는다).
+ * (적 5종은 아래 `ENEMY_ATTACK_ANIM` 이 맡는다 — 원본 갱신으로 `tf-eatk-01~05` 가 들어왔다.)
  */
 export const UNIT_ATTACK_ANIM: Readonly<Record<UnitKind, UnitAnimId>> = {
   intern: 'melee',
   analyst: 'throw',
   trader: 'shield',
 };
+
+/**
+ * 악당 종류 → 공격 모션. **근거는 순번이다**(이름이 아니다):
+ * 원본 `sheets()` 가 `tf-eatk-01~03 = eAtk(1~3)`(지상 3종), `tf-eatk-04~05 = eAirAtk(1~2)`
+ * (공중 2종)을 §05 악당 순번(E-01~E-05) 그대로 늘어놓았다.
+ * `ENEMY_SPRITES` 의 정지 스프라이트 순번과 1:1 로 맞물린다.
+ */
+export const ENEMY_ATTACK_ANIM: Readonly<Record<EnemyKind, EntityAnimId>> = {
+  /** E-01 갭하락 첨병 — `eAtk(1)` 창 찌르기. */
+  gapScout: 'eatk-01',
+  /** E-02 반대매매 집행관 — `eAtk(2)` 망치. */
+  marginEnforcer: 'eatk-02',
+  /** E-03 청산 굴착기 — `eAtk(3)` 집게. */
+  liquidationDigger: 'eatk-03',
+  /** E-04 루머 연 — `eAirAtk(1)`. */
+  rumorKite: 'eatk-04',
+  /** E-05 패닉 사이렌 — `eAirAtk(2)`. */
+  panicSiren: 'eatk-05',
+};
+
+/* ------------------------------------------------------------------ *
+ * 걷기 모션 (원본 갱신분 `tf-walk-ally` / `tf-walk-tank` / `tf-walk-enemy`)
+ *
+ * ★ 상태를 새로 만들지 않는다 ★ `CombatState` 에 "이동 중" 플래그도, 이전 프레임의 x 도
+ *   없다. 대신 **위치 자체를 위상으로 쓴다**: 프레임 번호를 `x`(0~1 진행도)에서 뽑으면
+ *
+ *     - 이동 중이면 `x` 가 계속 변하므로 프레임이 자동으로 돌아간다,
+ *     - 막혀 서 있으면 `x` 가 멈추므로 프레임도 멈춘다(제자리 걸음이 안 생긴다),
+ *     - 렌더러가 이전 프레임을 기억할 필요가 없다(프레임당 할당 0, id별 Map 불필요).
+ *
+ *   즉 "이동 여부"를 따로 역산할 필요 자체가 없어진다. 걸음 간격은 아래 상수 하나다.
+ * ------------------------------------------------------------------ */
+
+/**
+ * 트랙(진행도 0→1) 하나를 지나는 동안 넘기는 걷기 프레임 수.
+ *
+ * 유닛 속도 0.05/트랙·초 → 160 × 0.05 = 초당 8프레임 = 4프레임 루프가 2회/초.
+ * 사람 걸음 정도의 보폭이고, 가장 느린 적(1/22 ≈ 0.045)에서도 7.3프레임/초라 끊겨 보이지 않는다.
+ */
+export const WALK_FRAMES_PER_TRACK = 160;
+
+/** 진행도 → 걷기 프레임 번호. `x` 가 멈추면 프레임도 멈춘다. */
+export function walkFrameAt(x: number, frameCount: number): number {
+  if (!Number.isFinite(x) || frameCount <= 0) return 0;
+  const step = Math.floor(x * WALK_FRAMES_PER_TRACK);
+  return ((step % frameCount) + frameCount) % frameCount;
+}
+
+/**
+ * 걷기 프레임 래스터. 걷기가 없는 스프라이트(공중 2종)나 굽기 실패 시 `null`.
+ * 공중을 뺀 이유는 `sprites/render/entity-anim.ts` 의 `WALK_BASES` 주석에 있다.
+ */
+function walkFrameRaster(key: RenderableSpriteKey, x: number): SpriteRaster | null {
+  const anim = walkAnimId(key);
+  if (anim === null) return null;
+  return entityAnimFrameRaster(spriteRasters, anim, walkFrameAt(x, entityAnimFrameCount(anim)));
+}
 
 /**
  * 공격 모션 재생 진행도(0~1). 재생 구간이 아니면 `null`.
@@ -103,6 +168,22 @@ function attackFrameRaster(unit: Unit): SpriteRaster | null {
   return unitAnimFrameRaster(spriteRasters, anim, unitAnimFrameAt(anim, progress));
 }
 
+/** 지금 이 악당이 보여야 할 공격 프레임 래스터. 아군과 **같은 쿨다운 역산**을 쓴다. */
+function enemyAttackFrameRaster(enemy: Enemy, kind: EnemyKind): SpriteRaster | null {
+  const progress = attackAnimProgress(enemy);
+  if (progress === null) return null;
+  const anim = ENEMY_ATTACK_ANIM[kind];
+  return entityAnimFrameRaster(spriteRasters, anim, entityAnimFrameAt(anim, progress));
+}
+
+/**
+ * 이 개체가 지금 보여야 할 프레임 — **공격이 걷기보다 우선**이다.
+ * 둘 다 아니면 `null`(정지 스프라이트).
+ */
+function motionFrame(attack: SpriteRaster | null, key: RenderableSpriteKey, x: number): SpriteRaster | null {
+  return attack ?? walkFrameRaster(key, x);
+}
+
 function hpBarRect(cx: number, cy: number): { x: number; y: number; w: number; h: number } {
   return { x: cx - HP_BAR_WIDTH / 2, y: cy - HP_BAR_OFFSET_Y, w: HP_BAR_WIDTH, h: HP_BAR_HEIGHT };
 }
@@ -115,7 +196,10 @@ export function drawEnemies(ctx: BattleCtx, palette: Palette, layout: BattleLayo
     const cy = laneY(enemyUnit.lane, layout);
 
     const kind = enemyKindForId(enemyUnit.lane, enemyUnit.id);
-    drawSpriteCentered(ctx, ENEMY_SPRITES[kind].key, cx, cy, UNIT_SPRITE_SCALE);
+    const key = ENEMY_SPRITES[kind].key;
+    const frame = motionFrame(enemyAttackFrameRaster(enemyUnit, kind), key, enemyUnit.x);
+    // 정지 스프라이트 원점을 그대로 쓴다 — 프레임이 더 넓어도 몸이 좌우로 튀지 않는다.
+    drawUnitSprite(ctx, key, frame, cx, cy, UNIT_SPRITE_SCALE);
 
     const bar = hpBarRect(cx, cy);
     drawHpBar(ctx, { ...bar, hp: enemyUnit.hp, maxHp: enemyUnit.maxHp, color: palette.ENEMY_DOWN, palette });
@@ -145,7 +229,8 @@ export function drawAllies(ctx: BattleCtx, palette: Palette, layout: BattleLayou
     const cx = progressToX(unit.x, layout);
     const cy = allyUnitScreenY(unit, layout);
 
-    drawUnitSprite(ctx, ALLY_SPRITES[unit.kind].key, attackFrameRaster(unit), cx, cy, UNIT_SPRITE_SCALE);
+    const key = ALLY_SPRITES[unit.kind].key;
+    drawUnitSprite(ctx, key, motionFrame(attackFrameRaster(unit), key, unit.x), cx, cy, UNIT_SPRITE_SCALE);
 
     const bar = hpBarRect(cx, cy);
     drawHpBar(ctx, { ...bar, hp: unit.hp, maxHp: unit.maxHp, color: palette.UP_ALLY, palette });

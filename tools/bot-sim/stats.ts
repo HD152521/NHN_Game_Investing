@@ -7,8 +7,7 @@
  * 비중으로 들어가 실제 골드와 어긋난다. 그래서 pnl 총합 ÷ 투입 총합으로 낸다.
  */
 
-import { GOLD_CONVERSION } from '../../src/position/index.js';
-import { noTradeGold, sessionTotalStake, type StageConfig } from '../../src/combat/index.js';
+import { gateReturnRate, sessionTotalStake, type StageConfig } from '../../src/combat/index.js';
 import type { SessionResult } from './types.js';
 
 /** 한 조합(전략 × 스테이지 × 차트 공급원)의 집계 결과. */
@@ -46,20 +45,14 @@ export interface Aggregate {
 /**
  * 이 스테이지를 클리어하기 위해 **실제로 필요한** ρ.
  *
- * `stage.targetReturnRate`(기획 목표)와는 다른 값이다 — §9.3 검산표가 보여주듯 목표 ρ에서
- * 총골드는 필요지출의 99.4~99.8%라 **엄밀히는 미달**이다. 판정은 기획 목표가 아니라
- * 실제 게이트를 기준으로 해야 하므로 총골드 식을 ρ에 대해 푼 값을 쓴다.
- * ```
- * 필요지출 = noTradeGold + S × (1 + ρ) × GOLD_CONVERSION
- * ρ* = (필요지출 − noTradeGold) / (S × GOLD_CONVERSION) − 1
- * ```
- * ⚠️ 이 식은 **S를 전액 투입했을 때**의 값이다. 소진율이 100% 미만이면 실제로 필요한 ρ는
- * 이보다 높아지고, 소진율이 충분히 낮으면 ρ가 아무리 높아도 클리어가 불가능해진다.
+ * `stage.targetReturnRate`(기획 목표 = 0)와는 다른 값이다. v1.4에서 필요지출을
+ * `DEPLOYMENT_ALLOWANCE`(0.92)로 역산했으므로 실제 게이트는 그만큼 아래(**ρ* ≈ −8%**)에 있다.
+ *
+ * ★ 정의는 `src/combat/stages.ts`의 `gateReturnRate`에 있다 — 여기서는 재수출만 한다 ★
+ * 시뮬레이터가 게이트 식을 자기 버전으로 갖는 순간 "게임을 검증한 것"이 아니라
+ * "시뮬레이터를 검증한 것"이 된다(`engine.ts` 서두의 원칙과 같다).
  */
-export function requiredReturnRate(stage: StageConfig): number {
-  const capacity = sessionTotalStake(stage) * GOLD_CONVERSION;
-  return (stage.requiredSpend - noTradeGold(stage)) / capacity - 1;
-}
+export { gateReturnRate as requiredReturnRate };
 
 /** 목표 ρ를 내려면 평균적으로 몇 σ를 먹어야 하는가 — `ρ = B × z − feeRate` 역산. */
 export function requiredZ(rho: number, payoutBase: number, feeRate: number): number {

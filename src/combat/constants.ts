@@ -66,8 +66,19 @@ export const BASE_INCOME_PER_WAVE = STAGES.R1.baseIncomePerWave[0] ?? 15;
  * 전 지역 공통값이라 `STAGES.R1.startingGold`를 그대로 쓴다.
  */
 export const STARTING_GOLD = STAGES.R1.startingGold;
-/** 경계도 계수 증가분(지역 1점령당). heat = 1 + 점령수 × HEAT_PER_TERRITORY (FR-6.7). */
-export const HEAT_PER_TERRITORY = 0.02;
+/**
+ * 경계도 계수 증가분(지역 1점령당). heat = 1 + 점령수 × HEAT_PER_TERRITORY (FR-6.7).
+ *
+ * ★ 0.02 → 0.04 `[v1.4]` ★ 지역 난이도 차등이 매매 수익률에서 전투로 넘어오면서
+ * "이미 점령한 지역이 많을수록 다음 전장이 뜨겁다"는 축도 같이 키웠다. R3(2점령)의
+ * heat가 1.04 → 1.08이 된다.
+ *
+ * ⚠️ **런타임 효과는 현재 0이다.** `src/app/session.ts`의 `TERRITORIES`가 0으로 고정되어
+ * (지역 간 진행 상태를 저장하지 않는다) heat는 항상 1이다. 즉 이번 난이도 이전의 실질은
+ * **100% `STAGES[*].waveTable.baseHp` 계수**가 지고 있고, 이 상수는 지역 캐리오버가
+ * 붙는 시점에 살아나는 설계표 값이다 — 이 사실을 모르면 "heat를 올렸는데 왜 그대로냐"가 된다.
+ */
+export const HEAT_PER_TERRITORY = 0.04;
 
 // ── 타워 3종 (FR-6.4, PRD 명시값: 건설/업그레이드 비용) ──────────
 export const TOWER_BUILD_COST: Record<TowerKind, number> = {

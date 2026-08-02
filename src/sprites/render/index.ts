@@ -17,6 +17,7 @@ export {
   COMPOSITE_SPECS,
   NON_RENDERABLE_SPRITE_KEYS,
   RENDERABLE_SPRITE_KEYS,
+  SCREEN_ONLY_SPRITE_KEYS,
   SPRITE_COMPOSITE,
   compositeSpec,
 } from './composite';
@@ -26,7 +27,22 @@ export type {
   CompositeSpec,
   NonRenderableSpriteKey,
   RenderableSpriteKey,
+  ScreenOnlySpriteKey,
 } from './composite';
+
+export {
+  ENTITY_ANIM_IDS,
+  WALKABLE_SPRITE_KEYS,
+  entityAnimComposite,
+  entityAnimFrameAt,
+  entityAnimFrameCount,
+  entityAnimFrameGrid,
+  entityAnimFrameRaster,
+  entityAnimFrameSource,
+  entityAnimSheetKey,
+  walkAnimId,
+} from './entity-anim';
+export type { EntityAnimId } from './entity-anim';
 
 export {
   UNIT_ANIM_IDS,

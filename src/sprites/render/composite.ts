@@ -183,7 +183,75 @@ export const SPRITE_COMPOSITE = {
   'tf-fx-seq-02': 'additive',
   'tf-fx-seq-03': 'additive',
   'tf-fx-screen': 'opaque',
+
+  /**
+   * ── 적공격·이동·구조물·화면 22키 — 이름이 아니라 **그리드를 실제로 세어서** 정했다.
+   *   (수치는 `docs/design-reference/grids.json` 실측. "투명" = `.` 셀 비율,
+   *    "잉크 중 어두움" = 투명이 아닌 셀 중 최대 채널이 `ADDITIVE_INK_FLOOR`(24) 미만인 비율.
+   *    측정·기준점은 `composite-evidence.test.ts` 가 다시 계산해 고정한다.)
+   *
+   *  1. 적 공격 5키 `tf-eatk-01~05`: 투명 54.8 / 57.1 / 60.6 / 65.4 / 73.1%,
+   *     잉크 중 어두움 21.3~38.7%. 기준점 `tf-enemy-01`(37.0% / 22.4%)·
+   *     `tf-enemy-air-01`(58.5% / 28.0%) 과 같은 분포 — 실루엣 주위가 진짜로 비어 있다 → `alpha`.
+   *  2. 걷기 3키 `tf-walk-*`: 투명 48.5~60.6% / 어두움 18.7~23.5%. 원본 유닛을 그대로 옮긴
+   *     그림이므로 당연히 유닛과 같은 분포다 → `alpha`.
+   *  3. 사망 2키 `tf-death-*`: 투명 73.8 / 77.3% — 22키 중 가장 비어 있다(f 3 은 파편 14개뿐).
+   *     `opaque` 로 두면 그 빈 자리가 전부 검은 사각형이 된다 → `alpha`.
+   *  4. 타워 발사 3키 `tf-tfire-*` · 티어2 3키 `tf-t2-*`: 투명 60.8~73.3% / 어두움 18.1~23.9%.
+   *     기준점 `tf-tower-01`(47.4% / 21.4%)·`tf-tower-02`(37.7% / 24.5%) 와 같은 분포 → `alpha`.
+   *  5. 보스 2키 `tf-boss-p*`: 투명 48.4 / 50.4% / 어두움 18.6~19.9%.
+   *     기준점 `tf-boss`(26.8% / 15.6%) 와 같은 계열(무기가 뻗어 캔버스가 넓어 투명이 더 많다) → `alpha`.
+   *  6. 기지 피격 2키 `tf-basedmg-*`: 투명 41.6 / 48.8% / 어두움 19.5 / 26.4%.
+   *     기준점 `tf-base-ally`(46.9% / 14.6%)·`tf-base-enemy`(28.9% / 14.8%) 와 같은 계열 → `alpha`.
+   *  7. `tf-title`: 투명 5.9% / 어두움 7.1%, 셀의 94.1% 가 생 색(`darken` + `stamp` 로 구워졌다).
+   *     기준점 `tf-sky-wide`(9.9% / 2.0%)·`tf-sky-dusk`(6.3% / 0.0%) 와 판박이다 — 씬 그리드라
+   *     실루엣 사이에 진짜 구멍이 있다(투명 행은 y 51~67, 스카이라인 아래 · 지면 밴드 위) → `alpha`.
+   *  8. `tf-reveal`: 투명 0% / 어두움 77.8%, 전부 팔레트 문자.
+   *     기준점 `tf-ui-reveal`(0% / 87.2%)·`tf-ui-icons`(0% / 83.4%) 와 같은 **불투명 UI 판**이다.
+   *     `additive` 는 배제된다 — 굽는 시점에 24 미만을 지우면 화면의 77.8% 가 사라진다 → `opaque`.
+   *
+   * ★★ `tf-title` · `tf-reveal` 은 **전장에 blit 금지** ★★
+   *   다만 `tf-fx-screen`·`tf-sky-scrim` 같은 "패널 여러 개 + 구분선" 비교 시트는 **아니다.**
+   *   실측 근거: `tf-fx-screen` 은 위아래로 균일한 열이 9개(x = 0,1,30,31,32,64,65,94,95),
+   *   `tf-sky-scrim` 은 2개(x = 60,61)로 패널을 가르는데, `tf-title`·`tf-reveal` 은 **0개**다.
+   *   같은 렌더를 두 번 이상 반복하는 구조도 없다. 즉 둘은 168×76 짜리 **화면 목업 1장**이며
+   *   (`tf-sky-wide` 와 같은 부류), 전장 좌표에 얹으면 화면 안에 화면이 생긴다.
+   *   타이틀/공개 화면이 생기면 그때 화면 단위로 쓰면 된다(`sprites/screens.ts` 머리말).
+   */
+  'tf-eatk-01': 'alpha',
+  'tf-eatk-02': 'alpha',
+  'tf-eatk-03': 'alpha',
+  'tf-eatk-04': 'alpha',
+  'tf-eatk-05': 'alpha',
+  'tf-walk-ally': 'alpha',
+  'tf-walk-tank': 'alpha',
+  'tf-walk-enemy': 'alpha',
+  'tf-death-ally': 'alpha',
+  'tf-death-enemy': 'alpha',
+  'tf-tfire-01': 'alpha',
+  'tf-tfire-02': 'alpha',
+  'tf-tfire-03': 'alpha',
+  'tf-t2-01': 'alpha',
+  'tf-t2-02': 'alpha',
+  'tf-t2-03': 'alpha',
+  'tf-boss-p1': 'alpha',
+  'tf-boss-p2': 'alpha',
+  'tf-basedmg-ally': 'alpha',
+  'tf-basedmg-enemy': 'alpha',
+  'tf-title': 'alpha',
+  'tf-reveal': 'opaque',
 } as const satisfies Record<RenderableSpriteKey, CompositeClass>;
+
+/**
+ * 전장(`src/battle/**`)에 통째로 그리면 안 되는 시트.
+ *
+ * 렌더는 가능하다(화면 단위로는 정상적인 그림이다) — 금지되는 것은 **전장 좌표에 얹는 것**이다.
+ * 타입으로는 못 막으므로(`RenderableSpriteKey` 에서 빼면 굽지도 못한다) 목록으로 두고
+ * `composite-evidence.test.ts` 가 `src/battle/**` 안에서의 참조를 막는다.
+ */
+export const SCREEN_ONLY_SPRITE_KEYS = ['tf-sky-wide', 'tf-sky-scrim', 'tf-fx-screen', 'tf-title', 'tf-reveal'] as const;
+
+export type ScreenOnlySpriteKey = (typeof SCREEN_ONLY_SPRITE_KEYS)[number];
 
 export const RENDERABLE_SPRITE_KEYS = Object.keys(SPRITE_COMPOSITE) as readonly RenderableSpriteKey[];
 

@@ -50,8 +50,8 @@ function expectedChannels(cell: SpriteCell, mode: 'default' | 'colorblind' = 'de
 }
 
 describe('합성 분류표', () => {
-  test('72키에서 `tf-ally-parts` 만 빠진 71키를 전수 분류한다', () => {
-    expect(RENDERABLE_SPRITE_KEYS).toHaveLength(71);
+  test('94키에서 `tf-ally-parts` 만 빠진 93키를 전수 분류한다', () => {
+    expect(RENDERABLE_SPRITE_KEYS).toHaveLength(93);
     expect(RENDERABLE_SPRITE_KEYS).not.toContain('tf-ally-parts');
     expect(NON_RENDERABLE_SPRITE_KEYS).toEqual(['tf-ally-parts']);
   });
@@ -75,10 +75,10 @@ describe('합성 분류표', () => {
   test('유닛·타워·기지·하늘씬·공격모션은 alpha, 배경밴드·발판·UI 는 opaque 다', () => {
     const alphaKeys = RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'alpha');
     const opaqueKeys = RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'opaque');
-    // 유닛·타워·기지 14 + 시간대·하늘 씬 18 + 공격 모션 7 = 39
-    expect(alphaKeys).toHaveLength(39);
-    // 배경밴드·발판·UI 17 + `tf-fx-screen` 비교 시트 1 = 18
-    expect(opaqueKeys).toHaveLength(18);
+    // 유닛·타워·기지 14 + 시간대·하늘 씬 18 + 공격 모션 7 + 적공격·이동·구조물 20 + `tf-title` 1 = 60
+    expect(alphaKeys).toHaveLength(60);
+    // 배경밴드·발판·UI 17 + `tf-fx-screen` 비교 시트 1 + `tf-reveal` 화면 목업 1 = 19
+    expect(opaqueKeys).toHaveLength(19);
     // 날씨 4 + FX 3 + 발사체 4 + FX 5프레임 시퀀스 3 = 14
     expect(RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'additive')).toHaveLength(14);
   });
@@ -143,6 +143,122 @@ describe('합성 분류표', () => {
     // `tf-ui-btn`(불투명 패널)과 같은 대역이다 — 발광체가 아니다.
     expect(screen.darkInk).toBeLessThan(0.5);
     expect(screen.darkInk).toBeCloseTo(stats('tf-ui-btn').darkInk, 1);
+  });
+
+  /**
+   * 적공격·이동·구조물·화면 22키의 분류 근거를 **그리드로** 고정한다.
+   * 이름이 아니라 실제 셀을 세서 정했으므로, 원본이 바뀌면 여기서 먼저 깨져야 한다.
+   */
+  test('신규 22키의 분류 근거 — 투명 비율과 어두운 잉크 비율', () => {
+    const floor = COMPOSITE_SPECS.additive.inkFloor as number;
+    const palette = resolvePalette('default');
+    const stats = (key: RenderableSpriteKey) => {
+      const grid = spriteGrid(key);
+      let cells = 0;
+      let transparent = 0;
+      let ink = 0;
+      let dark = 0;
+      for (const row of grid)
+        for (const cell of row) {
+          cells += 1;
+          if (cell === TRANSPARENT) {
+            transparent += 1;
+            continue;
+          }
+          ink += 1;
+          const hex = cell.startsWith('#') ? cell : palette[SPRITE_PALETTE[cell as SpriteChar]];
+          const { r, g, b } = parseHex(hex);
+          if (Math.max(r, g, b) < floor) dark += 1;
+        }
+      return { transparency: transparent / cells, darkInk: dark / ink };
+    };
+
+    /**
+     * 엔티티 모션 20키 — 전부 유닛·타워·기지 기준점과 같은 분포다:
+     * 투명이 40% 이상 있고(실루엣 주위가 진짜로 비어 있다), 잉크 중 어두움은 40% 미만이다
+     * (가산으로 그리면 외곽선 `'0'` 이 통째로 날아간다).
+     */
+    const entityMotion: readonly RenderableSpriteKey[] = [
+      'tf-eatk-01',
+      'tf-eatk-02',
+      'tf-eatk-03',
+      'tf-eatk-04',
+      'tf-eatk-05',
+      'tf-walk-ally',
+      'tf-walk-tank',
+      'tf-walk-enemy',
+      'tf-death-ally',
+      'tf-death-enemy',
+      'tf-tfire-01',
+      'tf-tfire-02',
+      'tf-tfire-03',
+      'tf-t2-01',
+      'tf-t2-02',
+      'tf-t2-03',
+      'tf-boss-p1',
+      'tf-boss-p2',
+      'tf-basedmg-ally',
+      'tf-basedmg-enemy',
+    ];
+    expect(entityMotion).toHaveLength(20);
+    for (const key of entityMotion) {
+      const { transparency, darkInk } = stats(key);
+      expect(transparency, `${key} 투명 비율`).toBeGreaterThan(0.4);
+      expect(darkInk, `${key} 어두운 잉크 비율`).toBeLessThan(0.4);
+      expect(SPRITE_COMPOSITE[key], key).toBe('alpha');
+    }
+
+    // `tf-title` 은 씬 그리드다 — `tf-sky-dusk` 와 같은 대역(스카이라인 사이에 구멍이 있다).
+    const title = stats('tf-title');
+    expect(title.transparency).toBeGreaterThan(0);
+    expect(title.transparency).toBeLessThan(0.15);
+    expect(title.darkInk).toBeLessThan(0.15);
+    expect(SPRITE_COMPOSITE['tf-title']).toBe('alpha');
+
+    // `tf-reveal` 은 꽉 찬 UI 판이다 — `tf-ui-reveal` 과 같은 대역.
+    const reveal = stats('tf-reveal');
+    expect(reveal.transparency).toBe(0);
+    expect(reveal.darkInk).toBeGreaterThan(0.7);
+    expect(reveal.darkInk).toBeCloseTo(stats('tf-ui-reveal').darkInk, 0);
+    expect(SPRITE_COMPOSITE['tf-reveal']).toBe('opaque');
+
+    // 22키 전부가 분류를 갖는다(빠진 키가 없다).
+    for (const key of [...entityMotion, 'tf-title', 'tf-reveal'] as readonly RenderableSpriteKey[]) {
+      expect(SPRITE_COMPOSITE[key], key).toBeDefined();
+    }
+  });
+
+  /**
+   * `tf-title` · `tf-reveal` 이 **비교 시트가 아니라 화면 목업**이라는 판정을 고정한다.
+   *
+   * 비교 시트(`tf-fx-screen` · `tf-sky-scrim`)의 특징은 "패널을 세로로 가르는 균일한 열" 이다.
+   * 그 열이 실제로 몇 개인지 세어 판정한다 — 이름이나 크기로 짐작하지 않는다.
+   */
+  test('`tf-title`·`tf-reveal` 에는 패널 구분선이 없다 (비교 시트가 아니다)', () => {
+    const uniformColumns = (key: RenderableSpriteKey): number => {
+      const grid = spriteGrid(key);
+      const width = grid[0]?.length ?? 0;
+      let count = 0;
+      for (let x = 0; x < width; x += 1) {
+        const first = grid[0]?.[x];
+        let same = true;
+        for (let y = 1; y < grid.length; y += 1) {
+          if (grid[y]?.[x] !== first) {
+            same = false;
+            break;
+          }
+        }
+        if (same) count += 1;
+      }
+      return count;
+    };
+
+    // 기준점: 비교 시트에는 구분선이 실제로 있다.
+    expect(uniformColumns('tf-fx-screen')).toBe(9);
+    expect(uniformColumns('tf-sky-scrim')).toBe(2);
+    // 판정 대상: 화면을 가르는 열이 하나도 없다 → 패널 나열이 아니라 한 화면이다.
+    expect(uniformColumns('tf-title')).toBe(0);
+    expect(uniformColumns('tf-reveal')).toBe(0);
   });
 
   /**

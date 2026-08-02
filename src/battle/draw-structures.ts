@@ -24,12 +24,64 @@
 import type { CombatState } from '../combat/types.js';
 import { BOSS_IDENTITY } from '../combat/identity.js';
 import type { Palette } from '../design/index.js';
-import { drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
+import type { DamageStage } from '../sprites/base-anim';
+import { entityAnimFrameCount, entityAnimFrameRaster, spriteRasters } from '../sprites/render/index.js';
+import type { EntityAnimId } from '../sprites/render/index.js';
+import { drawRasterStanding, drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
 import { BOSS_SPRITE, ENEMY_BASE_SPRITE, HQ_SPRITE } from './entity-sprites.js';
 import { drawHpBar } from './draw-hp-bar.js';
-import type { BattleLayout } from './layout.js';
+import type { BattleLayout, Rect } from './layout.js';
 import { enemyBaseSpriteRect, hqSpriteRect } from './layout.js';
 import type { BattleCtx } from './surface.js';
+
+/** 아군 사옥 피해 모션. 프레임 번호 = 피해 단계다(루프가 아니다 — `sprites/base-anim.ts`). */
+const HQ_DAMAGE_ANIM: EntityAnimId = 'basedmg-ally';
+
+/* ------------------------------------------------------------------ *
+ * 기지 피격 · 보스 (원본 갱신분 `tf-basedmg-ally` / `tf-boss-p1`)
+ * ------------------------------------------------------------------ */
+
+/**
+ * `baseHp / maxBaseHp` → 피해 단계(0 = 멀쩡 … 3 = 붕괴 직전).
+ *
+ * 원본 `baseAllyDamage` 의 창문 점등 비율이 `[1, 0.7, 0.35, 0]` 이라 4단계이므로, 체력을
+ * 4등분해 그대로 대응시킨다. **새 상태를 만들지 않는다** — `baseHp` 는 이미 있는 필드다.
+ */
+export function baseDamageStage(hp: number, maxHp: number): DamageStage {
+  if (!Number.isFinite(hp) || !Number.isFinite(maxHp) || maxHp <= 0) return 0;
+  const ratio = hp / maxHp;
+  if (ratio > 0.75) return 0;
+  if (ratio > 0.5) return 1;
+  if (ratio > 0.25) return 2;
+  return 3;
+}
+
+/**
+ * 단계 1 부터 손상 시트로 갈아끼운다.
+ *
+ * ⚠️ **두 시트는 같은 건물이 아니다** ⚠️
+ *    `tf-base-ally` 는 76×40 짜리 4동 사옥이고, `tf-basedmg-ally` 는 30×44 짜리 **1동**이다
+ *    (원본이 그렇게 그려져 있다 — 실측·비교는 이 파일의 테스트에 있다). 그래서 단계 0 에서
+ *    손상 시트를 쓰면 멀쩡한데도 사옥 실루엣이 통째로 바뀐다. 체력 75% 를 넘는 동안에는
+ *    기존 사옥을 그대로 두고, **눈에 띄게 깎인 뒤(≤75%)** 부터 손상 시트로 바꾼다.
+ *    "언제나 손상 시트" 로 통일할지는 디자인 결정이 필요하다 — 임의로 정하지 않는다.
+ */
+const HQ_DAMAGE_MIN_STAGE = 1;
+
+/**
+ * 보스 모션의 한 프레임 길이(ms). 보스는 시뮬레이션 개체가 아니라 연출이므로
+ * 쿨다운이 없다 — 대신 이미 있는 `waveElapsedMs` 로 루프를 돌린다(새 상태 없음).
+ */
+const BOSS_FRAME_MS = 220;
+
+/**
+ * ⚠️ 보스는 **패턴 1 만** 배선한다.
+ *    `tf-boss-p2`(포신 패턴)는 "보스가 2페이즈에 들어갔다"는 신호가 있어야 하는데,
+ *    `CombatState` 에 보스 개체가 없다 — `enemies` 로 스폰되지 않고 `wave` 로만 등장한다
+ *    (`identity.ts`). 즉 보스 HP 비율을 역산할 근거가 0이다. 필요한 것은
+ *    `CombatState.boss?: { hp, maxHp }` 하나이며, 그것이 생기면 여기서 패턴만 바꾸면 된다.
+ */
+const BOSS_ANIM: EntityAnimId = 'boss-p1';
 
 /** HP 바 높이(px) — 가시성 수정으로 5→6. */
 const HP_BAR_HEIGHT = 6;
@@ -52,7 +104,28 @@ export function drawHq(ctx: BattleCtx, palette: Palette, layout: BattleLayout, s
   if (w <= 0 || rect.h <= 0) return;
 
   syncSpriteColorMode(palette);
-  drawSpriteStanding(ctx, HQ_SPRITE.key, hqSpriteRect(layout, state.towerSlots), layout.groundY);
+  const spriteRect = hqSpriteRect(layout, state.towerSlots);
+  const stage = baseDamageStage(state.baseHp, state.maxBaseHp);
+  if (stage >= HQ_DAMAGE_MIN_STAGE) {
+    const raster = entityAnimFrameRaster(spriteRasters, HQ_DAMAGE_ANIM, stage);
+    if (raster !== null && drawRasterStanding(ctx, raster, spriteRect, layout.groundY)) {
+      drawHqHpBar(ctx, palette, rect, x, w, state);
+      return;
+    }
+  }
+  drawSpriteStanding(ctx, HQ_SPRITE.key, spriteRect, layout.groundY);
+  drawHqHpBar(ctx, palette, rect, x, w, state);
+}
+
+/** 사옥 상단 HP 바. 그림이 바뀌어도 읽는 위치가 바뀌지 않게 사옥 **영역**(`hqRect`) 기준이다. */
+function drawHqHpBar(
+  ctx: BattleCtx,
+  palette: Palette,
+  rect: Rect,
+  x: number,
+  w: number,
+  state: CombatState,
+): void {
 
   drawHpBar(ctx, {
     x,
@@ -87,6 +160,15 @@ export function drawEnemyBase(
   drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, rect, layout.groundY);
 
   if (state && state.wave >= BOSS_IDENTITY.appearWave) {
-    drawSpriteStanding(ctx, BOSS_SPRITE.key, rect, layout.groundY);
+    // 보스는 쿨다운이 없다(연출이라 시뮬레이션 개체가 아니다) — 이미 있는 교전 경과로 루프를 돈다.
+    const index = Math.floor(Math.max(0, state.waveElapsedMs) / BOSS_FRAME_MS);
+    const frame = entityAnimFrameRaster(
+      spriteRasters,
+      BOSS_ANIM,
+      index % entityAnimFrameCount(BOSS_ANIM),
+    );
+    if (frame === null || !drawRasterStanding(ctx, frame, rect, layout.groundY)) {
+      drawSpriteStanding(ctx, BOSS_SPRITE.key, rect, layout.groundY);
+    }
   }
 }

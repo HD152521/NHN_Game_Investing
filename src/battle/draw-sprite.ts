@@ -129,12 +129,60 @@ export function drawSpriteStanding(
   rect: Rect,
   baselineY: number,
 ): void {
-  const raster = spriteRasters.ofKey(key);
-  if (raster === null) return;
+  drawSpriteStandingFrame(ctx, key, null, rect, baselineY);
+}
+
+/**
+ * 이미 구워진 래스터를 사각형 안에 정수 배율로 맞춰 **바닥선 기준**으로 세운다.
+ *
+ * `drawSpriteStanding` 과 달리 **래스터 자신의 크기로** 배율을 잡는다. 정지 스프라이트와
+ * 크기가 다른 그림(예: 기지 피해 시트 30×44 vs 사옥 76×40)을 같은 자리에 세울 때 쓴다.
+ * 그릴 수 없는 컨텍스트면 `false` 를 돌려준다 — 호출부가 정지 스프라이트로 폴백한다.
+ */
+export function drawRasterStanding(
+  ctx: BattleCtx,
+  raster: SpriteRaster,
+  rect: Rect,
+  baselineY: number,
+): boolean {
   const target = spriteCtxOf(ctx);
-  if (target === null) return;
+  if (target === null) return false;
 
   const step = fitScale(rect, raster.width, raster.height);
   const width = raster.width * step;
   drawSprite(target, raster, rect.x + (rect.w - width) / 2, baselineY - raster.height * step, step);
+  return true;
+}
+
+/**
+ * `drawSpriteStanding` 의 모션 프레임 버전.
+ *
+ * ★ 배율과 원점은 **언제나 정지 스프라이트 기준**이다 ★
+ *   모션 프레임(타워 발사 등)은 총구 섬광이 삐져나오는 만큼 캔버스가 더 크고, 그 안에서
+ *   몸통이 `(originX, originY)` 만큼 안쪽에 들어앉아 있다. 프레임 크기로 배율·중앙을 다시
+ *   잡으면 발사할 때마다 타워가 통째로 움직인다. 그래서 정지 스프라이트로 자리를 잡고,
+ *   프레임은 그 자리에서 몸통 오프셋만큼 되돌려 그린다 — 포신만 움직인다.
+ */
+export function drawSpriteStandingFrame(
+  ctx: BattleCtx,
+  key: RenderableSpriteKey,
+  frame: SpriteRaster | null,
+  rect: Rect,
+  baselineY: number,
+  originX = 0,
+  originY = 0,
+): void {
+  const idle = spriteRasters.ofKey(key);
+  if (idle === null) return;
+  const target = spriteCtxOf(ctx);
+  if (target === null) return;
+
+  const step = fitScale(rect, idle.width, idle.height);
+  const x = rect.x + (rect.w - idle.width * step) / 2;
+  const y = baselineY - idle.height * step;
+  if (frame === null) {
+    drawSprite(target, idle, x, y, step);
+    return;
+  }
+  drawSprite(target, frame, x - originX * step, y - originY * step, step);
 }

@@ -13,12 +13,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { BOSS_IDENTITY } from '../combat/identity.js';
 import { createTheme } from '../design/index.js';
+import { bossFrame } from '../sprites/boss-anim.js';
+import { baseAllyDamage } from '../sprites/base-anim.js';
 import { spriteGrid } from '../sprites/index.js';
+import type { SpriteGrid } from '../sprites/index.js';
 import { spriteRasters } from '../sprites/render/index.js';
 import type { RenderableSpriteKey } from '../sprites/render/index.js';
 import { createSoftwareSurface } from '../sprites/render/testing/software-canvas.js';
 import { makeCombatState as combatState } from './combat-fixtures.js';
-import { drawEnemyBase, drawHq } from './draw-structures.js';
+import { baseDamageStage, drawEnemyBase, drawHq } from './draw-structures.js';
 import { BOSS_SPRITE, ENEMY_BASE_SPRITE, HQ_SPRITE } from './entity-sprites.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 import type { FakeBattleCtx } from './fake-ctx.js';
@@ -54,7 +57,15 @@ function standingPlacement(
   rect: Rect,
   baselineY: number,
 ): { originX: number; originY: number; scale: number } {
-  const grid = spriteGrid(key);
+  return gridPlacement(spriteGrid(key), rect, baselineY);
+}
+
+/** 키가 아니라 그리드로 배치를 계산한다 — 모션 프레임은 정지 스프라이트와 크기가 다르다. */
+function gridPlacement(
+  grid: readonly (readonly string[])[],
+  rect: Rect,
+  baselineY: number,
+): { originX: number; originY: number; scale: number } {
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
   const scale = Math.max(1, Math.min(Math.floor(rect.w / width), Math.floor(rect.h / height)));
@@ -72,8 +83,18 @@ function expectSpriteMatchesGrid(
   rect: Rect,
   baselineY: number,
 ): void {
-  const { originX, originY, scale } = standingPlacement(key, rect, baselineY);
-  const grid = spriteGrid(key);
+  expectGridMatchesAt(target, key, spriteGrid(key), rect, baselineY);
+}
+
+function expectGridMatchesAt(
+  target: SpriteBattleSurface,
+  label: string,
+  grid: SpriteGrid,
+  rect: Rect,
+  baselineY: number,
+): void {
+  const { originX, originY, scale } = gridPlacement(grid, rect, baselineY);
+  const key = label;
   const half = Math.floor(scale / 2);
   let painted = 0;
 
@@ -168,7 +189,57 @@ describe('drawHq — 아군 사옥(원본 baseAlly)', () => {
     }
   });
 
-  test('HP 바 채움 폭이 HP 비율을 따라 줄어든다 — 피해의 유일한 시각 신호', () => {
+  /* ── 기지 피격(원본 갱신분 `tf-basedmg-ally`) ─────────────────────── */
+
+  test('baseDamageStage — 체력 4등분이 원본 창문 점등 4단계에 그대로 대응한다', () => {
+    expect(baseDamageStage(100, 100)).toBe(0);
+    expect(baseDamageStage(76, 100)).toBe(0);
+    expect(baseDamageStage(75, 100)).toBe(1);
+    expect(baseDamageStage(51, 100)).toBe(1);
+    expect(baseDamageStage(50, 100)).toBe(2);
+    expect(baseDamageStage(26, 100)).toBe(2);
+    expect(baseDamageStage(25, 100)).toBe(3);
+    expect(baseDamageStage(0, 100)).toBe(3);
+    // 방어적: 잘못된 입력이면 멀쩡한 사옥으로 폴백한다.
+    expect(baseDamageStage(10, 0)).toBe(0);
+    expect(baseDamageStage(Number.NaN, 100)).toBe(0);
+  });
+
+  test('체력이 75% 를 넘는 동안에는 기존 사옥 그림 그대로다 (실루엣이 바뀌지 않는다)', () => {
+    const target = createSpriteBattleSurface(800, 300);
+    drawHq(target.ctx, palette, layout, combatState({ baseHp: 100, maxBaseHp: 100 }));
+    expectSpriteMatchesGrid(target, HQ_SPRITE.key, hqSpriteRect(layout, TOWER_SLOTS), layout.groundY);
+  });
+
+  test('체력이 깎이면 피해 시트로 갈아끼우고, 단계마다 다른 그림이 나온다', () => {
+    const hashOf = (baseHp: number): string => {
+      const target = createSpriteBattleSurface(800, 300);
+      drawHq(target.ctx, palette, layout, combatState({ baseHp, maxBaseHp: 100 }));
+      return hashRegion(target.surface, 0, 0, 260, 300);
+    };
+    const stages = [100, 60, 40, 10].map(hashOf);
+    expect(new Set(stages).size).toBe(4);
+  });
+
+  test('피해 단계 픽셀이 원본 `baseAllyDamage(stage)` 그리드와 일치한다', () => {
+    for (const [baseHp, stage] of [
+      [60, 1],
+      [40, 2],
+      [10, 3],
+    ] as const) {
+      const target = createSpriteBattleSurface(800, 300);
+      drawHq(target.ctx, palette, layout, combatState({ baseHp, maxBaseHp: 100 }));
+      expectGridMatchesAt(
+        target,
+        `basedmg-ally#${stage}`,
+        baseAllyDamage(stage),
+        hqSpriteRect(layout, TOWER_SLOTS),
+        layout.groundY,
+      );
+    }
+  });
+
+  test('HP 바 채움 폭이 HP 비율을 따라 줄어든다', () => {
     const fillWidth = (ctx: FakeBattleCtx): number =>
       ctx.calls.reduce((widest, call) => (call.kind === 'fillRect' && call.fillStyle === palette.UP_ALLY ? call.w : widest), 0);
 
@@ -235,12 +306,39 @@ describe('보스 B-03 마진콜 심판관 — 마지막 웨이브에만 요새 �
     expect(baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave }))).not.toBe(baseRegion(null));
   });
 
-  test('보스는 요새와 같은 지면선 위에 선다', () => {
+  /**
+   * 원본 갱신으로 `tf-boss-p1`(4프레임)이 들어와, 보스는 이제 정지 스프라이트가 아니라
+   * **모션 프레임**으로 그려진다. 프레임 번호는 새 상태가 아니라 이미 있는
+   * `waveElapsedMs` 로 돈다(`draw-structures.ts` 참조).
+   */
+  test('보스는 요새와 같은 지면선 위에 선다 (패턴 1 모션 프레임)', () => {
     const target = createSpriteBattleSurface(800, 300);
-    drawEnemyBase(target.ctx, palette, layout, combatState({ wave: BOSS_IDENTITY.appearWave }));
+    drawEnemyBase(target.ctx, palette, layout, combatState({ wave: BOSS_IDENTITY.appearWave, waveElapsedMs: 0 }));
 
-    // 보스가 요새 위에 덮이므로, 보스 그리드의 불투명 픽셀만 검사한다.
-    expectSpriteMatchesGrid(target, BOSS_SPRITE.key, enemyBaseSpriteRect(layout), layout.groundY);
+    // 보스가 요새 위에 덮이므로, 보스 프레임 그리드의 불투명 픽셀만 검사한다.
+    expectGridMatchesAt(target, 'boss-p1#0', bossFrame(1, 0), enemyBaseSpriteRect(layout), layout.groundY);
+  });
+
+  test('교전 경과가 흐르면 보스 프레임이 실제로 바뀐다', () => {
+    const hashes = [0, 250, 500, 750].map((waveElapsedMs) =>
+      baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave, waveElapsedMs })),
+    );
+    expect(new Set(hashes).size).toBe(4);
+  });
+
+  /**
+   * ⚠️ `tf-boss-p2`(포신 패턴)는 **배선하지 않았다.**
+   *    페이즈를 가르려면 보스 HP 비율이 필요한데 `CombatState` 에 보스 개체가 없다
+   *    (보스는 `enemies` 로 스폰되지 않는 연출이다). 필요한 것은 `boss?: { hp, maxHp }`
+   *    하나뿐이며, 그 전까지 패턴 1 만 재생한다는 사실을 여기서 못 박는다.
+   */
+  test('보스 HP 를 알 수 없으므로 패턴 2 는 아직 배선하지 않는다', () => {
+    const state = combatState({ wave: BOSS_IDENTITY.appearWave });
+    expect(Object.keys(state)).not.toContain('boss');
+    const target = createSpriteBattleSurface(800, 300);
+    drawEnemyBase(target.ctx, palette, layout, state);
+    // 그려진 그림은 패턴 1 이다 — 패턴 2 였다면 픽셀이 어긋난다.
+    expectGridMatchesAt(target, 'boss-p1#0', bossFrame(1, 0), enemyBaseSpriteRect(layout), layout.groundY);
   });
 });
 

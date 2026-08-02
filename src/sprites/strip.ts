@@ -58,6 +58,12 @@ export const UNIT_STRIP_GAP = 5;
 /** 스킬 FX 5프레임 시퀀스의 간격. 원본 `fxSeq()` 의 `strip([...], 4)`. */
 export const FX_SEQ_STRIP_GAP = 4;
 
+/** 사망 4프레임의 간격. 원본 `strip([...], 4)` — 유닛 공격(5)과 다르다. */
+export const DEATH_STRIP_GAP = 4;
+
+/** 타워 발사 4프레임의 간격. 원본 `strip([...], 4)`. */
+export const TOWER_FIRE_STRIP_GAP = 4;
+
 /** 유닛 공격 스트립의 프레임 수. 원본 `[0, 1, 2, 3].map(...)`. */
 export const UNIT_STRIP_FRAMES = 4;
 
@@ -77,6 +83,26 @@ export const SPRITE_STRIPS = {
   'tf-fx-seq-01': { frames: FX_SEQ_STRIP_FRAMES, gap: FX_SEQ_STRIP_GAP },
   'tf-fx-seq-02': { frames: FX_SEQ_STRIP_FRAMES, gap: FX_SEQ_STRIP_GAP },
   'tf-fx-seq-03': { frames: FX_SEQ_STRIP_FRAMES, gap: FX_SEQ_STRIP_GAP },
+
+  // ── 원본 재갱신분. 전부 4프레임이고, 간격만 5(공격·걷기·보스·기지)와 4(사망·타워발사)로 갈린다.
+  //    ⚠️ `tf-t2-01~03` 은 스트립이 **아니다** — `towerFire(kind, 0, true)` 한 장이라 여기 없다.
+  'tf-eatk-01': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-eatk-02': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-eatk-03': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-eatk-04': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-eatk-05': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-walk-ally': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-walk-tank': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-walk-enemy': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-death-ally': { frames: UNIT_STRIP_FRAMES, gap: DEATH_STRIP_GAP },
+  'tf-death-enemy': { frames: UNIT_STRIP_FRAMES, gap: DEATH_STRIP_GAP },
+  'tf-tfire-01': { frames: UNIT_STRIP_FRAMES, gap: TOWER_FIRE_STRIP_GAP },
+  'tf-tfire-02': { frames: UNIT_STRIP_FRAMES, gap: TOWER_FIRE_STRIP_GAP },
+  'tf-tfire-03': { frames: UNIT_STRIP_FRAMES, gap: TOWER_FIRE_STRIP_GAP },
+  'tf-boss-p1': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-boss-p2': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-basedmg-ally': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
+  'tf-basedmg-enemy': { frames: UNIT_STRIP_FRAMES, gap: UNIT_STRIP_GAP },
 } as const satisfies Record<string, StripMeta>;
 
 /** `strip()` 으로 만들어진 시트 키. */

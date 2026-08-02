@@ -65,6 +65,35 @@ const ANIM_KEYS_ADDED: readonly SpriteKey[] = [
   'tf-fx-screen',
 ];
 
+/**
+ * 원본 재갱신으로 추가된 적공격·이동·구조물·화면 22키. 앞선 72키는 한 픽셀도 바뀌지 않았다.
+ * 순서는 원본 `sheets()` 그대로다.
+ */
+const MOTION2_KEYS_ADDED: readonly SpriteKey[] = [
+  'tf-eatk-01',
+  'tf-eatk-02',
+  'tf-eatk-03',
+  'tf-eatk-04',
+  'tf-eatk-05',
+  'tf-walk-ally',
+  'tf-walk-tank',
+  'tf-walk-enemy',
+  'tf-death-ally',
+  'tf-death-enemy',
+  'tf-tfire-01',
+  'tf-tfire-02',
+  'tf-tfire-03',
+  'tf-t2-01',
+  'tf-t2-02',
+  'tf-t2-03',
+  'tf-boss-p1',
+  'tf-boss-p2',
+  'tf-basedmg-ally',
+  'tf-basedmg-enemy',
+  'tf-title',
+  'tf-reveal',
+];
+
 /** 셀이 팔레트 문자이거나 씬 전용 생 색(`#RRGGBB`)인지. */
 function isKnownCell(cell: string): boolean {
   return isSpriteCell(cell) || /^#[0-9a-f]{6}$/i.test(cell);
@@ -82,9 +111,9 @@ function charSet(grid: readonly (readonly string[])[]): readonly string[] {
 }
 
 describe('스프라이트 이식 — 원본 대조', () => {
-  test('키 72개가 원본 `sheets()` 와 이름·순서까지 같다', () => {
+  test('키 94개가 원본 `sheets()` 와 이름·순서까지 같다', () => {
     expect(SPRITE_KEYS).toEqual(Object.keys(reference));
-    expect(SPRITE_KEYS).toHaveLength(72);
+    expect(SPRITE_KEYS).toHaveLength(94);
   });
 
   test('시간대·하늘 18키가 전부 들어와 있다 (원본 갱신분)', () => {
@@ -95,8 +124,19 @@ describe('스프라이트 이식 — 원본 대조', () => {
   test('공격 모션·스킬 시퀀스 11키가 전부 들어와 있다 (원본 재갱신분)', () => {
     expect(ANIM_KEYS_ADDED).toHaveLength(11);
     for (const key of ANIM_KEYS_ADDED) expect(SPRITE_KEYS).toContain(key);
-    // 72 = 43(초기) + 18(하늘) + 11(모션)
-    expect(SPRITE_KEYS.length).toBe(43 + SKY_KEYS_ADDED.length + ANIM_KEYS_ADDED.length);
+  });
+
+  test('적공격·이동·구조물·화면 22키가 전부 들어와 있다 (원본 재갱신분)', () => {
+    expect(MOTION2_KEYS_ADDED).toHaveLength(22);
+    for (const key of MOTION2_KEYS_ADDED) expect(SPRITE_KEYS).toContain(key);
+    // 94 = 43(초기) + 18(하늘) + 11(모션) + 22(적공격·이동·구조물·화면)
+    expect(SPRITE_KEYS.length).toBe(
+      43 + SKY_KEYS_ADDED.length + ANIM_KEYS_ADDED.length + MOTION2_KEYS_ADDED.length,
+    );
+  });
+
+  test('22키가 원본 `sheets()` 의 마지막 22칸에 그 순서로 들어 있다', () => {
+    expect(SPRITE_KEYS.slice(-22)).toEqual(MOTION2_KEYS_ADDED);
   });
 
   test.each(SPRITE_KEYS)('%s 그리드가 원본과 문자 단위로 일치한다', (key) => {
@@ -135,7 +175,10 @@ describe('스프라이트 그리드 불변식', () => {
   });
 
   test('기존 43키는 PAL 문자만 쓴다 (생 색은 신규 키에만 등장한다)', () => {
-    const legacy = SPRITE_KEYS.filter((key) => !SKY_KEYS_ADDED.includes(key) && !ANIM_KEYS_ADDED.includes(key));
+    const legacy = SPRITE_KEYS.filter(
+      (key) =>
+        !SKY_KEYS_ADDED.includes(key) && !ANIM_KEYS_ADDED.includes(key) && !MOTION2_KEYS_ADDED.includes(key),
+    );
     expect(legacy).toHaveLength(43);
     for (const key of legacy) {
       expect(charSet(spriteGrid(key)).filter((char) => !isSpriteCell(char)), key).toEqual([]);

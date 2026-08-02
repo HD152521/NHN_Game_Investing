@@ -11,12 +11,19 @@ import {
   throwFrame,
   type AnimFrame,
 } from './anim';
+import { allyAnchor, allyRookie } from './ally';
+import { baseAllyDamage, baseEnemyCollapse } from './base-anim';
+import { bossFrame } from './boss-anim';
+import { enemyBlocker, enemyRusher } from './enemy';
+import { eAirAtk, eAtk } from './enemy-anim';
 import { FX_FRAMES, fxBomb, fxHeal, fxShield } from './fx-seq';
 import { mk, type SpriteGrid } from './grid';
 import { spriteGrid } from './index';
 import { TRANSPARENT } from './palette';
 import { stampGrid } from './scene-wide';
 import { SPRITE_STRIPS, STRIP_SPRITE_KEYS, stripFrameGrid, stripFrameRect, type StripSpriteKey } from './strip';
+import { towerFire } from './tower-anim';
+import { death, walk } from './walk';
 
 /**
  * 스트립 프레임 절단 검사.
@@ -43,7 +50,32 @@ const STRIP_FRAME_BUILDER: Readonly<Record<StripSpriteKey, (index: number) => Sp
   'tf-fx-seq-01': (i) => fxBomb(FX_FRAMES[i] ?? 0),
   'tf-fx-seq-02': (i) => fxHeal(FX_FRAMES[i] ?? 0),
   'tf-fx-seq-03': (i) => fxShield(FX_FRAMES[i] ?? 0),
+  'tf-eatk-01': (i) => eAtk(1, ANIM_FRAMES[i] as AnimFrame),
+  'tf-eatk-02': (i) => eAtk(2, ANIM_FRAMES[i] as AnimFrame),
+  'tf-eatk-03': (i) => eAtk(3, ANIM_FRAMES[i] as AnimFrame),
+  'tf-eatk-04': (i) => eAirAtk(1, ANIM_FRAMES[i] as AnimFrame),
+  'tf-eatk-05': (i) => eAirAtk(2, ANIM_FRAMES[i] as AnimFrame),
+  'tf-walk-ally': (i) => walk(allyRookie, ANIM_FRAMES[i] as AnimFrame),
+  'tf-walk-tank': (i) => walk(allyAnchor, ANIM_FRAMES[i] as AnimFrame),
+  'tf-walk-enemy': (i) => walk(enemyBlocker, ANIM_FRAMES[i] as AnimFrame),
+  'tf-death-ally': (i) => death(allyRookie, ANIM_FRAMES[i] as AnimFrame, 'r'),
+  'tf-death-enemy': (i) => death(enemyRusher, ANIM_FRAMES[i] as AnimFrame, 'b'),
+  'tf-tfire-01': (i) => towerFire(1, ANIM_FRAMES[i] as AnimFrame),
+  'tf-tfire-02': (i) => towerFire(2, ANIM_FRAMES[i] as AnimFrame),
+  'tf-tfire-03': (i) => towerFire(3, ANIM_FRAMES[i] as AnimFrame),
+  'tf-boss-p1': (i) => bossFrame(1, ANIM_FRAMES[i] as AnimFrame),
+  'tf-boss-p2': (i) => bossFrame(2, ANIM_FRAMES[i] as AnimFrame),
+  'tf-basedmg-ally': (i) => baseAllyDamage(ANIM_FRAMES[i] as AnimFrame),
+  'tf-basedmg-enemy': (i) => baseEnemyCollapse(ANIM_FRAMES[i] as AnimFrame),
 };
+
+/**
+ * 걷기 3키는 프레임 0 과 2 가 **원본에서 같은 그림**이다.
+ * `walk` 의 `bob = [0, -1, 0, 1]` · `stride = [0, 2, 0, -2]` 가 f 0 과 f 2 에서 둘 다 0 이라,
+ * 두 프레임은 정지 자세 그대로다(발이 교차하는 중간 포즈 2장 사이의 "지나가는 자세").
+ * 재해석 금지 원칙에 따라 그대로 두고, 아래 "프레임이 실제로 다르다" 검사에서만 예외로 센다.
+ */
+const WALK_KEYS_WITH_REPEATED_FRAME: readonly StripSpriteKey[] = ['tf-walk-ally', 'tf-walk-tank', 'tf-walk-enemy'];
 
 describe('stripFrameRect — 원본 `strip(frames, gap)` 배치', () => {
   test('여백은 프레임 사이가 아니라 양끝까지 n+1 개다', () => {
@@ -112,7 +144,26 @@ describe('stripFrameRect — 원본 `strip(frames, gap)` 배치', () => {
       const meta = SPRITE_STRIPS[key];
       const seen = new Set<string>();
       for (let i = 0; i < meta.frames; i += 1) seen.add(render(stripFrameGrid(sheet, meta, i)));
-      expect(seen.size, key).toBe(meta.frames);
+      // 걷기만 f 0 ≡ f 2 라 3장이다(위 주석 참조). 나머지는 전부 프레임 수만큼 서로 다르다.
+      const expected = WALK_KEYS_WITH_REPEATED_FRAME.includes(key) ? meta.frames - 1 : meta.frames;
+      expect(seen.size, key).toBe(expected);
+    }
+  });
+
+  test('걷기의 f 0 과 f 2 는 원본에서 같은 그림이다 (버그가 아니라 원본 데이터다)', () => {
+    for (const key of WALK_KEYS_WITH_REPEATED_FRAME) {
+      const sheet = spriteGrid(key);
+      const meta = SPRITE_STRIPS[key];
+      expect(render(stripFrameGrid(sheet, meta, 0)), key).toBe(render(stripFrameGrid(sheet, meta, 2)));
+      expect(render(stripFrameGrid(sheet, meta, 1)), key).not.toBe(render(stripFrameGrid(sheet, meta, 3)));
+    }
+  });
+
+  test('`tf-t2-01~03` 은 스트립이 아니다 (한 장짜리 티어2 그림)', () => {
+    for (const key of ['tf-t2-01', 'tf-t2-02', 'tf-t2-03'] as const) {
+      expect(STRIP_SPRITE_KEYS).not.toContain(key);
+      // 폭 = 정지 스프라이트 폭 + 14 (원본 `mk(w + 14, h + 4)`) — 4프레임 스트립 폭이 아니다.
+      expect(spriteGrid(key)[0]?.length).toBeLessThan(50);
     }
   });
 });

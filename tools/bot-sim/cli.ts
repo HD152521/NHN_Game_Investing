@@ -1,9 +1,15 @@
 /**
  * 봇 시뮬레이터 CLI — PRD §10 ⑥.
  *
- * `npm run bot-sim` 으로 실행한다. 하는 일은 하나다:
- * **"블라인드 차트에서 R1/R2/R3의 목표 수익률에 실제로 닿을 수 있는가"**를 판정한다.
- * (PRD §15 RK-2 / §16 결정 기록 / `src/combat/stages.ts` R3 주석)
+ * `npm run bot-sim` 으로 실행한다.
+ *
+ * ★ 이 도구가 묻는 질문이 v1.4에서 바뀌었다 ★
+ * 원래 질문은 **"블라인드 차트에서 R1/R2/R3의 목표 수익률(+20/+30/+45%)에 닿을 수 있는가"**
+ * 였고, 이 도구가 그 답을 **"닿을 수 없다"**로 확정했다(RK-2 현실화). 목표는 전 지역 0으로
+ * 내려갔고 난이도는 전투로 이전됐다(PRD §16 결정 기록 2026-08-02).
+ *
+ * 그래서 지금의 질문은 **"게이트가 전략을 판별하는가"**다 — 본전치기가 통과하고
+ * 원금을 태우는 플레이가 떨어지는지. 판정표 두 개 중 뒤쪽(`renderSpread`)이 그것이다.
  */
 
 import { STAGES, type StageConfig, type StageId } from '../../src/combat/index.js';
@@ -271,6 +277,10 @@ interface Verdict {
   readonly clearRate: number;
   readonly blockClearRange: readonly [number, number];
   readonly reachable: boolean;
+  /** 최악(클리어율 최저) 전략 — 판별력을 재려면 하한도 같이 봐야 한다. */
+  readonly worstStrategy: string;
+  readonly worstRho: number;
+  readonly worstClearRate: number;
 }
 
 /**
@@ -279,6 +289,12 @@ interface Verdict {
  * 판정 기준은 **클리어율**이다(ρ가 아니라). ρ는 투입액 가중이라 소진율이 낮으면 좋게 나와도
  * 골드가 모자랄 수 있고, 반대로 목표 ρ에 못 미쳐도 소진율이 높으면 닿을 수 있기 때문이다.
  * 클리어율 50% 이상 = "그 전략을 쓰면 절반 이상의 차트에서 통과한다"를 도달 가능으로 본다.
+ *
+ * ⚠️ `[v1.4]` **이 "가능/불가능" 축은 이제 부차적이다.** 그건 "목표 ρ에 닿는가"라는
+ * v1.3의 질문이었고, 그 질문의 답은 이미 "아니오"로 확정돼 목표 자체를 0으로 내렸다.
+ * v1.4가 묻는 것은 **"게이트가 전략을 판별하는가"**이며, 그 답은 아래 `judgeSpread`가
+ * 내는 최선−최악 격차에 있다. 통과선이 본전(ρ=0)인 이상 유능한 플레이의 클리어율은
+ * 마팅게일의 성질상 50% 근처에 붙박이고, 그 절대값이 아니라 **하한과의 거리**가 설계 지표다.
  */
 function judge(
   stageId: StageId,
@@ -287,6 +303,7 @@ function judge(
 ): Verdict {
   const stage = STAGES[stageId];
   let best: { strategy: BotStrategy; agg: Aggregate; results: readonly SessionResult[] } | null = null;
+  let worst: { strategy: BotStrategy; agg: Aggregate } | null = null;
 
   for (const strategy of options.strategies) {
     const results = perStrategy.get(`${strategy.id}|${stageId}`);
@@ -297,9 +314,12 @@ function judge(
     if (best === null || agg.clearRate > best.agg.clearRate) {
       best = { strategy, agg, results };
     }
+    if (worst === null || agg.clearRate < worst.agg.clearRate) {
+      worst = { strategy, agg };
+    }
   }
 
-  if (best === null) {
+  if (best === null || worst === null) {
     return {
       stageId,
       bestStrategy: '-',
@@ -308,6 +328,9 @@ function judge(
       clearRate: 0,
       blockClearRange: [0, 0],
       reachable: false,
+      worstStrategy: '-',
+      worstRho: 0,
+      worstClearRate: 0,
     };
   }
 
@@ -327,7 +350,50 @@ function judge(
     clearRate: best.agg.clearRate,
     blockClearRange: [Math.min(...blockRates), Math.max(...blockRates)],
     reachable: best.agg.clearRate >= 0.5,
+    worstStrategy: worst.strategy.label,
+    worstRho: worst.agg.rho,
+    worstClearRate: worst.agg.clearRate,
   };
+}
+
+/**
+ * ★ v1.4 핵심 지표 ★ 게이트가 전략을 판별하는가.
+ *
+ * 통과선을 본전(ρ=0)으로 내린 뒤로 "최선 전략이 목표에 닿는가"는 의미가 없다 — 목표가 0이니
+ * 마팅게일에서 웬만한 전략은 다 근처에 온다. 설계가 실제로 요구하는 것은
+ * **"원금을 태우는 플레이가 확실히 떨어지는가"**이고, 그 척도가 최선−최악 클리어율 격차다.
+ * 격차 20%p 이상을 판별력 있음으로 본다(v1.3 마팅게일 실측 격차는 전액 투입 기준
+ * 18~20%p였고, 투입을 낮추면 최선 전략까지 같이 무너져 격차가 오히려 줄었다).
+ */
+function renderSpread(verdicts: readonly Verdict[]): string {
+  const columns: Column[] = [
+    { header: '스테이지' },
+    { header: '최선 전략' },
+    { header: '최선 ρ', numeric: true },
+    { header: '최선 클리어율', numeric: true },
+    { header: '최악 전략' },
+    { header: '최악 ρ', numeric: true },
+    { header: '최악 클리어율', numeric: true },
+    { header: '격차(%p)', numeric: true },
+    { header: '판별력' },
+  ];
+
+  const rows = verdicts.map((v) => {
+    const spread = v.clearRate - v.worstClearRate;
+    return [
+      v.stageId,
+      v.bestStrategy,
+      signedPct(v.bestRho, 1),
+      pct(v.clearRate, 1),
+      v.worstStrategy,
+      signedPct(v.worstRho, 1),
+      pct(v.worstClearRate, 1),
+      num(spread * 100, 1),
+      spread >= 0.2 ? '있음' : '★ 없음',
+    ];
+  });
+
+  return renderTable(columns, rows);
 }
 
 function renderVerdicts(verdicts: readonly Verdict[]): string {
@@ -479,7 +545,11 @@ export function main(argv: readonly string[]): number {
     lines.push('★'.repeat(48));
     lines.push(`★ 핵심 판정 — 차트 공급원: ${regime}`);
     lines.push('★'.repeat(48));
+    lines.push('· 참고 축(v1.3의 질문): 최선 전략이 목표 ρ에 닿는가');
     lines.push(renderVerdicts(verdicts));
+    lines.push('');
+    lines.push('· ★ 설계 축(v1.4의 질문): 게이트가 전략을 판별하는가');
+    lines.push(renderSpread(verdicts));
   }
 
   console.log(lines.join('\n'));

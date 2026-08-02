@@ -12,11 +12,27 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createTheme } from '../design/index.js';
 import { spriteGrid } from '../sprites/index.js';
 import type { SpriteGrid } from '../sprites/index.js';
-import { spriteRasters, unitAnimFrameAt, unitAnimFrameGrid } from '../sprites/render/index.js';
+import {
+  entityAnimFrameAt,
+  entityAnimFrameGrid,
+  spriteRasters,
+  unitAnimFrameAt,
+  unitAnimFrameGrid,
+  walkAnimId,
+  WALKABLE_SPRITE_KEYS,
+} from '../sprites/render/index.js';
 import type { RenderableSpriteKey } from '../sprites/render/index.js';
 import { createSoftwareSurface } from '../sprites/render/testing/software-canvas.js';
 import { makeEnemy as enemy, makeUnit as unit } from './combat-fixtures.js';
-import { allyUnitScreenY, attackAnimProgress, drawAllies, drawEnemies, UNIT_ATTACK_ANIM } from './draw-units.js';
+import {
+  allyUnitScreenY,
+  attackAnimProgress,
+  drawAllies,
+  drawEnemies,
+  ENEMY_ATTACK_ANIM,
+  UNIT_ATTACK_ANIM,
+  walkFrameAt,
+} from './draw-units.js';
 import { ALLY_SPRITES, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 import { cellRgb, createSpriteBattleSurface, hashRegion, pixelAt } from './sprite-fake-ctx.js';
@@ -252,13 +268,97 @@ describe('drawAllies — 공격 모션', () => {
     expect(attackAnimProgress({ ...attacking('intern', 1), hp: 0 })).toBeNull();
   });
 
-  test('적은 공격 스트립이 원본에 없으므로 쿨다운이 달라도 그림이 그대로다', () => {
-    const hashOf = (cooldownMs: number): string => {
+  /* ── 적 5종 공격(원본 갱신분 `tf-eatk-01~05`) ─────────────────────── */
+
+  const enemyHash = (overrides: Parameters<typeof enemy>[0]): string => {
+    const target = createSpriteBattleSurface(800, 300);
+    drawEnemies(target.ctx, palette, layout, [enemy(overrides)]);
+    // 공중 레인은 지상보다 위에 있으므로 세로 전체를 훑는다.
+    return hashRegion(target.surface, 320, 0, 160, 300);
+  };
+
+  test('적도 쿨다운 역산으로 공격 모션을 재생한다 (프레임마다 다른 그림)', () => {
+    // 적 기본 주기는 900ms — 재생 창은 쿨다운 630~900ms 구간이다(아군과 같은 규칙).
+    const hashes = [900, 830, 750, 690].map((cooldownMs) =>
+      enemyHash({ id: 0, lane: 'ground', x: 0.5, cooldownMs }),
+    );
+    expect(new Set(hashes).size).toBe(4);
+  });
+
+  test('재장전 중(창 밖)에는 공격 모션이 나오지 않는다', () => {
+    expect(enemyHash({ id: 0, lane: 'ground', x: 0.5, cooldownMs: 600 })).toBe(
+      enemyHash({ id: 0, lane: 'ground', x: 0.5, cooldownMs: 0 }),
+    );
+  });
+
+  test('악당 5종이 서로 다른 공격 모션을 쓴다 (순번 매핑)', () => {
+    expect(ENEMY_ATTACK_ANIM).toEqual({
+      gapScout: 'eatk-01',
+      marginEnforcer: 'eatk-02',
+      liquidationDigger: 'eatk-03',
+      rumorKite: 'eatk-04',
+      panicSiren: 'eatk-05',
+    });
+    // id 로 종류가 갈리므로, 같은 자리·같은 쿨다운이어도 그림이 달라야 한다.
+    const ground = [0, 1, 2].map((id) => enemyHash({ id, lane: 'ground', x: 0.5, cooldownMs: 880 }));
+    expect(new Set(ground).size).toBe(3);
+    const air = [0, 1].map((id) => enemyHash({ id, lane: 'air', x: 0.5, cooldownMs: 880 }));
+    expect(new Set(air).size).toBe(2);
+  });
+
+  test('공격 프레임 픽셀이 원본 `eAtk` 그리드와 일치한다 (원점은 정지 스프라이트 기준)', () => {
+    const cooldownMs = 880;
+    const foe = enemy({ id: 0, lane: 'ground', x: 0.5, cooldownMs });
+    const target = createSpriteBattleSurface(800, 300);
+    drawEnemies(target.ctx, palette, layout, [foe]);
+
+    const kind = enemyKindForId('ground', 0);
+    expect(kind).toBe('gapScout');
+    const idle = spriteGrid(ENEMY_SPRITES[kind].key);
+    const originX = Math.round(progressToX(foe.x, layout) - (idle[0]?.length ?? 0) / 2);
+    const originY = Math.round(laneY('ground', layout) - idle.length / 2);
+
+    const progress = attackAnimProgress(foe);
+    expect(progress).not.toBeNull();
+    const anim = ENEMY_ATTACK_ANIM[kind];
+    const frame = entityAnimFrameGrid(anim, entityAnimFrameAt(anim, progress as number));
+    expectGridMatches(target, frame, originX, originY, 1);
+  });
+
+  /* ── 걷기(원본 갱신분 `tf-walk-*`) ────────────────────────────────── */
+
+  test('walkFrameAt — 위치가 프레임을 돌리고, 멈추면 프레임도 멈춘다', () => {
+    // 트랙 1/160 마다 한 프레임. 같은 x 는 항상 같은 프레임이다(렌더러가 상태를 안 든다).
+    expect(walkFrameAt(0, 4)).toBe(0);
+    expect(walkFrameAt(1 / 160, 4)).toBe(1);
+    expect(walkFrameAt(2 / 160, 4)).toBe(2);
+    expect(walkFrameAt(4 / 160, 4)).toBe(0);
+    expect(walkFrameAt(0.5, 4)).toBe(walkFrameAt(0.5, 4));
+    expect(walkFrameAt(Number.NaN, 4)).toBe(0);
+  });
+
+  test('지상 유닛·적은 x 가 달라지면 걷기 프레임이 바뀐다', () => {
+    const allyHash = (x: number): string => {
       const target = createSpriteBattleSurface(800, 300);
-      drawEnemies(target.ctx, palette, layout, [enemy({ id: 0, lane: 'ground', x: 0.5, cooldownMs })]);
-      return hashRegion(target.surface, 340, 180, 120, 100);
+      drawAllies(target.ctx, palette, layout, [unit({ id: 0, kind: 'intern', x, cooldownMs: 0 })]);
+      return hashRegion(target.surface, 0, 150, 800, 140);
     };
-    expect(hashOf(900)).toBe(hashOf(0));
+    // 같은 화면 위치가 되지 않도록 프레임만 다른 두 지점을 쓰지 말고, 프레임 위상 차이를 본다.
+    const frames = [0, 1, 3].map((i) => walkFrameAt(0.5 + i / 160, 4));
+    expect(new Set(frames).size).toBe(3);
+    expect(allyHash(0.5)).not.toBe(allyHash(0.5 + 1 / 160));
+  });
+
+  /**
+   * ⚠️ 공중 2종에는 걷기를 붙이지 않았다 — `walk` 은 아래 10px 띠를 다리로 보고 좌우로
+   *    미는데, 다리가 없는 연·사이렌은 꼬리가 어긋나 보인다(`entity-anim.ts` 참조).
+   */
+  test('공중 적은 걷기 모션을 쓰지 않는다', () => {
+    for (const key of ['tf-enemy-air-01', 'tf-enemy-air-02'] as const) {
+      expect(walkAnimId(key)).toBeNull();
+      expect(WALKABLE_SPRITE_KEYS).not.toContain(key);
+    }
+    expect(WALKABLE_SPRITE_KEYS).toHaveLength(6);
   });
 });
 

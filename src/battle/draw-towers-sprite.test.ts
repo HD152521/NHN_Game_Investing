@@ -7,14 +7,17 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
+import { TOWER_COOLDOWN_MS } from '../combat/index.js';
 import type { TowerKind } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
+import type { AnimFrame } from '../sprites/anim.js';
 import { spriteGrid } from '../sprites/index.js';
-import { spriteRasters } from '../sprites/render/index.js';
+import { TOWER_FIRE_BODY_ORIGIN, towerFireFrame } from '../sprites/tower-anim.js';
+import { entityAnimFrameAt, spriteRasters } from '../sprites/render/index.js';
 import type { RenderableSpriteKey } from '../sprites/render/index.js';
 import { createSoftwareSurface } from '../sprites/render/testing/software-canvas.js';
 import { makeCombatState as combatState, makeTower } from './combat-fixtures.js';
-import { drawTowers } from './draw-towers.js';
+import { drawTowers, towerFireProgress } from './draw-towers.js';
 import { TOWER_SPRITES } from './entity-sprites.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 import { computeBattleLayout, slotRect } from './layout.js';
@@ -138,5 +141,98 @@ describe('drawTowers — 타워 3종이 원본 스프라이트 그대로 슬롯 
     drawTowers(ctx, palette, layout, combatState({ towerSlots: SLOTS, towers: [] }), null, 'splash');
 
     expect(ctx.calls.some((call) => call.kind === 'fillRect' && call.fillStyle.startsWith('rgba('))).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 발사 모션 · 티어2 (원본 갱신분 `tf-tfire-01~03` / `tf-t2-01~03`)
+ * ------------------------------------------------------------------ */
+
+function towerHash(tower: Parameters<typeof makeTower>[0]): string {
+  const target = createSpriteBattleSurface(1024, 300);
+  drawTowers(
+    target.ctx,
+    palette,
+    layout,
+    combatState({ towerSlots: SLOTS, towers: [makeTower(tower)] }),
+    null,
+    null,
+  );
+  const rect = slotRect(0, layout, SLOTS);
+  return hashRegion(target.surface, Math.round(rect.x) - 20, Math.round(rect.y) - 12, 100, 80);
+}
+
+describe('drawTowers — 발사 모션(쿨다운 역산)', () => {
+  test('towerFireProgress — 예광선과 같은 창(쿨다운 70~100%)에서만 값이 나온다', () => {
+    // basic 은 800ms 주기라 재생 창은 마지막 240ms(= 쿨다운 800 → 560)다.
+    const max = TOWER_COOLDOWN_MS.basic;
+    expect(max).toBe(800);
+    expect(towerFireProgress(makeTower({ kind: 'basic', cooldownMs: max }))).toBeCloseTo(0, 6);
+    expect(towerFireProgress(makeTower({ kind: 'basic', cooldownMs: 680 }))).toBeCloseTo(0.5, 6);
+    // 창 길이 240ms 는 부동소수(800 × 0.30000000000000004)라 경계 한 칸은 애매하다 —
+    // 아군 공격(`attackAnimProgress`)과 **같은 식**을 쓰므로 여기서 고치지 않는다.
+    expect(towerFireProgress(makeTower({ kind: 'basic', cooldownMs: 559 }))).toBeNull();
+    expect(towerFireProgress(makeTower({ kind: 'basic', cooldownMs: 0 }))).toBeNull();
+  });
+
+  test('발사 창 안에서는 쿨다운마다 다른 프레임이 나온다', () => {
+    // 진행도 0.1 / 0.3 / 0.6 / 0.9 → 프레임 0 / 1 / 2 / 3 (창 길이 240ms).
+    const hashes = [776, 728, 656, 584].map((cooldownMs) =>
+      towerHash({ kind: 'basic', level: 1, cooldownMs }),
+    );
+    expect(new Set(hashes).size).toBe(4);
+  });
+
+  test('재장전 중에는 정지 스프라이트로 돌아온다', () => {
+    expect(towerHash({ kind: 'basic', level: 1, cooldownMs: 400 })).toBe(
+      towerHash({ kind: 'basic', level: 1, cooldownMs: 0 }),
+    );
+  });
+
+  test('발사 프레임 픽셀이 원본 `towerFire` 그리드와 일치한다 (원점은 정지 스프라이트 기준)', () => {
+    const tower = makeTower({ kind: 'basic', level: 1, cooldownMs: 728 });
+    const target = createSpriteBattleSurface(1024, 300);
+    drawTowers(target.ctx, palette, layout, combatState({ towerSlots: SLOTS, towers: [tower] }), null, null);
+
+    const rect = slotRect(0, layout, SLOTS);
+    const { originX, originY, scale } = placement(TOWER_SPRITES.basic.key, rect);
+    const progress = towerFireProgress(tower);
+    expect(progress).not.toBeNull();
+    const frame = towerFireFrame(1, entityAnimFrameAt('tfire-01-l1', progress as number) as AnimFrame);
+
+    // 프레임 안에서 몸통은 (2, 4) 에 들어앉아 있으므로 그만큼 되돌린 자리에 그려져야 한다.
+    const half = Math.floor(scale / 2);
+    let painted = 0;
+    for (let y = 0; y < frame.length; y += 1) {
+      const row = frame[y];
+      if (row === undefined) continue;
+      for (let x = 0; x < row.length; x += 1) {
+        const cell = row[x];
+        if (cell === undefined) continue;
+        const expected = cellRgb(palette, cell);
+        if (expected === null) continue;
+        const px = originX + (x - TOWER_FIRE_BODY_ORIGIN.x) * scale + half;
+        const py = originY + (y - TOWER_FIRE_BODY_ORIGIN.y) * scale + half;
+        if (px < 0 || py < 0 || px >= 1024 || py >= 300) continue;
+        const pixel = pixelAt(target.surface, px, py);
+        expect([pixel[0], pixel[1], pixel[2]], `tfire (${x}, ${y})`).toEqual([...expected]);
+        painted += 1;
+      }
+    }
+    expect(painted).toBeGreaterThan(0);
+  });
+
+  test('레벨 2 는 쉬는 동안에도 금색 장식이 보인다 (level 로 바로 판별)', () => {
+    const idle = towerHash({ kind: 'basic', level: 1, cooldownMs: 0 });
+    const tier2 = towerHash({ kind: 'basic', level: 2, cooldownMs: 0 });
+    expect(tier2).not.toBe(idle);
+  });
+
+  test('세 종류 × 두 레벨이 전부 다른 그림이다', () => {
+    const hashes: string[] = [];
+    for (const kind of ['basic', 'antiair', 'splash'] as const) {
+      for (const level of [1, 2] as const) hashes.push(towerHash({ kind, level, cooldownMs: 0 }));
+    }
+    expect(new Set(hashes).size).toBe(6);
   });
 });

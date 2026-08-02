@@ -26,9 +26,13 @@
  *   담당 레인(공중/지상) 쪽으로 조준선 + 마커를 그려 한눈에 알 수 있게 한다.
  */
 
+import { TOWER_COOLDOWN_MS } from '../combat/index.js';
 import type { CombatState, Tower, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
-import { drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
+import { TOWER_FIRE_BODY_ORIGIN } from '../sprites/tower-anim';
+import { entityAnimFrameAt, entityAnimFrameRaster, spriteRasters } from '../sprites/render/index.js';
+import type { EntityAnimId, SpriteRaster } from '../sprites/render/index.js';
+import { drawSpriteStanding, drawSpriteStandingFrame, syncSpriteColorMode } from './draw-sprite.js';
 import { TOWER_SPRITES } from './entity-sprites.js';
 import type { BattleLayout, Rect } from './layout.js';
 import { slotRect } from './layout.js';
@@ -93,6 +97,65 @@ function drawTowerSprite(ctx: BattleCtx, rect: Rect, kind: TowerKind): void {
   drawSpriteStanding(ctx, TOWER_SPRITES[kind].key, rect, rect.y + rect.h);
 }
 
+/* ------------------------------------------------------------------ *
+ * 발사 모션 · 티어2 (원본 갱신분 `tf-tfire-01~03` / `tf-t2-01~03`)
+ *
+ * ★ 상태를 새로 만들지 않는다 ★ 예광선(`draw-tracers.ts`)과 **완전히 같은 역산**을 쓴다:
+ *   `Tower.cooldownMs` 가 막 `TOWER_COOLDOWN_MS[kind]` 로 리셋된 직후가 발사 구간이다.
+ *   두 계층이 같은 창(70~100%)을 쓰므로 포신 반동과 탄이 어긋나지 않는다.
+ *
+ * ★ 티어2 는 `tower.level === 2` 로 **바로** 판별된다(역산 불필요).
+ *   원본 `towerFire(kind, f, t2)` 가 파라메트릭이라, 레벨 2 는 같은 4프레임 위에 금색 장식이
+ *   얹힌 조합이다 — 원본 키 `tf-t2-*` 는 그중 f 0 한 장이다. 지어져 있기만 하면 늘 장식이
+ *   보이고, 쏠 때는 장식을 유지한 채 포신이 움직인다.
+ * ------------------------------------------------------------------ */
+
+/** 쿨다운이 최댓값의 이 비율을 넘으면 "막 발사함" — `draw-tracers.ts` 와 같은 값이라야 그림이 맞는다. */
+const FIRE_ANIM_COOLDOWN_RATIO = 0.7;
+
+/** 타워 종류 → 발사 모션 id. 레벨 1/2 는 같은 프레임 세트의 장식 유무 차이다. */
+const TOWER_FIRE_ANIM: Readonly<Record<TowerKind, readonly [EntityAnimId, EntityAnimId]>> = {
+  /** T-01 지지선 앵커포 — 원본 `towerFire(1, …)`. */
+  basic: ['tfire-01-l1', 'tfire-01-l2'],
+  /** T-02 공시 리피터 — 원본 `towerFire(2, …)`. 유일하게 위로 쏘므로 반동이 없다. */
+  antiair: ['tfire-02-l1', 'tfire-02-l2'],
+  /** T-03 물타기 살포기 — 원본 `towerFire(3, …)`. */
+  splash: ['tfire-03-l1', 'tfire-03-l2'],
+};
+
+function towerFireAnim(tower: Tower): EntityAnimId {
+  const pair = TOWER_FIRE_ANIM[tower.kind];
+  return tower.level === 2 ? pair[1] : pair[0];
+}
+
+/**
+ * 발사 재생 진행도(0~1). 재생 구간이 아니면 `null`.
+ * `cooldownMs` 는 발사 직후 최댓값으로 리셋되고 0 을 향해 줄어든다 —
+ * 경과 = `max - cooldownMs` 이고 창 길이는 `max × (1 - 비율)` 이다.
+ */
+export function towerFireProgress(tower: Tower): number | null {
+  const max = TOWER_COOLDOWN_MS[tower.kind];
+  const window = max * (1 - FIRE_ANIM_COOLDOWN_RATIO);
+  if (window <= 0) return null;
+  const elapsed = max - tower.cooldownMs;
+  if (elapsed < 0 || elapsed >= window) return null;
+  return elapsed / window;
+}
+
+/**
+ * 지금 이 타워가 보여야 할 프레임.
+ *
+ * 레벨 2 는 **쉬는 동안에도** 프레임 0(= 원본 `tf-t2-*`)을 보여야 장식이 계속 보인다.
+ * 레벨 1 은 쉬는 동안 정지 스프라이트를 그대로 쓴다(`null`).
+ */
+function towerFrameRaster(tower: Tower): SpriteRaster | null {
+  const progress = towerFireProgress(tower);
+  if (progress === null && tower.level !== 2) return null;
+  const anim = towerFireAnim(tower);
+  const index = progress === null ? 0 : entityAnimFrameAt(anim, progress);
+  return entityAnimFrameRaster(spriteRasters, anim, index);
+}
+
 /** 업그레이드(level 2) 강조 — GOLD 외곽선 + 우상단 점. 재화 색과 진영 색을 혼동하지 않도록 GOLD만 사용. */
 function drawUpgradeAccent(ctx: BattleCtx, palette: Palette, rect: Rect): void {
   ctx.save();
@@ -145,7 +208,15 @@ function drawLaneAimIndicator(ctx: BattleCtx, palette: Palette, layout: BattleLa
 }
 
 function drawTowerAt(ctx: BattleCtx, palette: Palette, layout: BattleLayout, rect: Rect, tower: Tower): void {
-  drawTowerSprite(ctx, rect, tower.kind);
+  drawSpriteStandingFrame(
+    ctx,
+    TOWER_SPRITES[tower.kind].key,
+    towerFrameRaster(tower),
+    rect,
+    rect.y + rect.h,
+    TOWER_FIRE_BODY_ORIGIN.x,
+    TOWER_FIRE_BODY_ORIGIN.y,
+  );
   if (tower.level === 2) {
     drawUpgradeAccent(ctx, palette, rect);
   }

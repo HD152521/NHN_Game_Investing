@@ -90,11 +90,13 @@ describe('밸런스 근거 고정', () => {
    * 올리면 180 G가 되어 균형이 회복되지만, 그건 이번 개정(정산식·게이트)의 범위 밖이라
    * 손대지 않았다. 봇 시뮬레이터(§10 ⑥)로 실드 남용 여부를 확인한 뒤 결정할 것.
    */
-  test('S-03의 실효 골드 비용은 cost × (1 + ρ) × 전환율로 딱 떨어진다 (R1 기준 90 G)', () => {
+  test('S-03의 실효 골드 비용은 cost × (1 + ρ) × 전환율로 딱 떨어진다 (R1 기준 75 G)', () => {
+    // `[v1.4]` 90 → 75. 목표 ρ가 +20% → 0으로 내려가면서 "태운 AUM이 포기하게 만드는 골드"도
+    // 같은 비율로 줄었다. 아래 ⚠️의 균형 이슈는 그만큼 더 벌어진 상태다.
     const forgoneGold =
       SKILL_SPECS['S-03'].cost * (1 + STAGES.R1.targetReturnRate) * GOLD_CONVERSION;
 
-    expect(forgoneGold).toBe(90);
+    expect(forgoneGold).toBe(75);
     expect(forgoneGold).toBeLessThan(SKILL_SPECS['S-01'].cost); // 현재는 S-01보다 싸다
   });
 

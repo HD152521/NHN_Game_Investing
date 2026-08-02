@@ -27,8 +27,11 @@ import {
 import { createCombat, step } from './simulate';
 import type { CombatParams, CombatState } from './types';
 
-/** PRD §9.3 기준 R1 필요지출 — 한 스테이지를 클리어하려면 써야 하는 골드 총량. */
-const R1_REQUIRED_SPEND = 2700;
+/**
+ * PRD §9.3 기준 R1 필요지출 — 한 스테이지를 클리어하려면 써야 하는 골드 총량.
+ * `[v1.4]` 2,700 → 2,130. 목표 ρ가 0으로 내려가면서 총골드가 같이 내려간 결과다.
+ */
+const R1_REQUIRED_SPEND = 2130;
 
 /** 매매를 한 번도 하지 않았을 때 스테이지 전체에서 손에 들어오는 골드 총액. */
 const NO_TRADE_GOLD = STARTING_GOLD + BASE_INCOME_PER_WAVE * WAVE_COUNT;
@@ -70,9 +73,9 @@ describe('검산 4 — 매매 미실행 플레이의 골드 상한', () => {
     expect(NO_TRADE_GOLD).toBe(315);
   });
 
-  test('그 315 G는 PRD §9.3 R1 필요지출(2,700 G)의 12%에 불과하다', () => {
+  test('그 315 G는 PRD §9.3 R1 필요지출(2,130 G)의 15%에 불과하다', () => {
     expect(NO_TRADE_GOLD).toBeLessThan(R1_REQUIRED_SPEND);
-    expect(NO_TRADE_GOLD / R1_REQUIRED_SPEND).toBeLessThan(0.12);
+    expect(NO_TRADE_GOLD / R1_REQUIRED_SPEND).toBeLessThan(0.15);
   });
 
   test('315 G로는 6개 슬롯 중 2개만 채울 수 있다 (기본 포탑 120 G 기준)', () => {

@@ -11,10 +11,13 @@
  */
 
 import { allyAnchor, allyParts, allyRookie, allyScout } from './ally';
-import { ANIM_FRAMES, canFrame, canSpin, meleeFrame, shieldFrame, throwFrame } from './anim';
+import { ANIM_FRAMES, canFrame, canSpin, meleeFrame, shieldFrame, throwFrame, type AnimFrame } from './anim';
 import { baseAlly, baseEnemy, boss } from './base';
+import { baseAllyDamage, baseEnemyCollapse } from './base-anim';
 import { bgFar, bgMid } from './bg';
+import { bossFrame } from './boss-anim';
 import { enemyBlocker, enemyKite, enemyRusher, enemySiren, enemyTank } from './enemy';
+import { eAirAtk, eAtk } from './enemy-anim';
 import { fx } from './fx';
 import { fxScreen, fxSeq } from './fx-seq';
 import type { SpriteGrid } from './grid';
@@ -22,10 +25,21 @@ import { ground, groundSlot } from './ground';
 import { proj } from './proj';
 import { scene } from './scene';
 import { scrimCompare, wideScene } from './scene-wide';
+import { revealScreen, titleScreen } from './screens';
 import { SPRITE_STRIPS, strip } from './strip';
 import { towerAA, towerBasic, towerSplash } from './tower';
+import { towerFire } from './tower-anim';
 import { uiButtons, uiChart, uiIcons, uiReveal } from './ui';
+import { death, walk } from './walk';
 import { weather } from './weather';
+
+/** 4프레임 생성기를 원본 `strip([0,1,2,3].map(...), gap)` 그대로 한 장으로 만든다. */
+function stripFrames(build: (frame: AnimFrame) => SpriteGrid, gap: number): SpriteGrid {
+  return strip(
+    ANIM_FRAMES.map((f) => build(f)),
+    gap,
+  );
+}
 
 export { mk } from './grid';
 export type { GridBuilder, Point, SpriteGrid } from './grid';
@@ -50,6 +64,17 @@ export { fxBomb, fxHeal, fxScreen, fxSeq, fxShield, ringPx, FX_FRAMES } from './
 export type { FxFrame } from './fx-seq';
 export { strip, stripFrameGrid, stripFrameRect, SPRITE_STRIPS, STRIP_SPRITE_KEYS } from './strip';
 export type { FrameRect, StripMeta, StripSpriteKey } from './strip';
+export { eAirAtk, eAtk } from './enemy-anim';
+export type { EnemyAirAtkKind, EnemyAtkKind } from './enemy-anim';
+export { death, walk } from './walk';
+export type { SpriteBase } from './walk';
+export { towerFire } from './tower-anim';
+export type { TowerFireKind } from './tower-anim';
+export { bossFrame } from './boss-anim';
+export type { BossPattern } from './boss-anim';
+export { baseAllyDamage, baseEnemyCollapse } from './base-anim';
+export type { DamageStage } from './base-anim';
+export { revealScreen, titleScreen, SCREEN_HEIGHT, SCREEN_WIDTH } from './screens';
 
 // 고정 스프라이트
 export { allyAnchor, allyParts, allyRookie, allyScout } from './ally';
@@ -141,9 +166,37 @@ export const SPRITE_BUILDERS = {
   'tf-fx-seq-02': () => fxSeq(2),
   'tf-fx-seq-03': () => fxSeq(3),
   'tf-fx-screen': fxScreen,
+  // ── 적 공격 · 걷기 · 사망 · 타워 발사 · 보스 페이즈 · 기지 피격 · 화면 목업 (원본 갱신분 22키).
+  //    ⚠️ `tf-t2-01~03` 은 스트립이 아니라 `towerFire(kind, 0, true)` 한 장이다.
+  //    ⚠️ `tf-title` · `tf-reveal` 은 화면 목업이라 전장에 blit 하면 안 된다(`screens.ts` 머리말).
+  'tf-eatk-01': () => stripFrames((f) => eAtk(1, f), SPRITE_STRIPS['tf-eatk-01'].gap),
+  'tf-eatk-02': () => stripFrames((f) => eAtk(2, f), SPRITE_STRIPS['tf-eatk-02'].gap),
+  'tf-eatk-03': () => stripFrames((f) => eAtk(3, f), SPRITE_STRIPS['tf-eatk-03'].gap),
+  'tf-eatk-04': () => stripFrames((f) => eAirAtk(1, f), SPRITE_STRIPS['tf-eatk-04'].gap),
+  'tf-eatk-05': () => stripFrames((f) => eAirAtk(2, f), SPRITE_STRIPS['tf-eatk-05'].gap),
+  'tf-walk-ally': () => stripFrames((f) => walk(allyRookie, f), SPRITE_STRIPS['tf-walk-ally'].gap),
+  'tf-walk-tank': () => stripFrames((f) => walk(allyAnchor, f), SPRITE_STRIPS['tf-walk-tank'].gap),
+  'tf-walk-enemy': () => stripFrames((f) => walk(enemyBlocker, f), SPRITE_STRIPS['tf-walk-enemy'].gap),
+  'tf-death-ally': () => stripFrames((f) => death(allyRookie, f, 'r'), SPRITE_STRIPS['tf-death-ally'].gap),
+  'tf-death-enemy': () => stripFrames((f) => death(enemyRusher, f, 'b'), SPRITE_STRIPS['tf-death-enemy'].gap),
+  'tf-tfire-01': () => stripFrames((f) => towerFire(1, f), SPRITE_STRIPS['tf-tfire-01'].gap),
+  'tf-tfire-02': () => stripFrames((f) => towerFire(2, f), SPRITE_STRIPS['tf-tfire-02'].gap),
+  'tf-tfire-03': () => stripFrames((f) => towerFire(3, f), SPRITE_STRIPS['tf-tfire-03'].gap),
+  'tf-t2-01': () => towerFire(1, 0, true),
+  'tf-t2-02': () => towerFire(2, 0, true),
+  'tf-t2-03': () => towerFire(3, 0, true),
+  'tf-boss-p1': () => stripFrames((f) => bossFrame(1, f), SPRITE_STRIPS['tf-boss-p1'].gap),
+  'tf-boss-p2': () => stripFrames((f) => bossFrame(2, f), SPRITE_STRIPS['tf-boss-p2'].gap),
+  'tf-basedmg-ally': () => stripFrames(baseAllyDamage, SPRITE_STRIPS['tf-basedmg-ally'].gap),
+  'tf-basedmg-enemy': () => stripFrames(baseEnemyCollapse, SPRITE_STRIPS['tf-basedmg-enemy'].gap),
+  'tf-title': titleScreen,
+  'tf-reveal': revealScreen,
 } as const satisfies Record<string, () => SpriteGrid>;
 
-/** 원본 `sheets()` 의 72개 키(기존 43 + 시간대·하늘 18 + 공격 모션·스킬 시퀀스 11). */
+/**
+ * 원본 `sheets()` 의 94개 키
+ * (기존 43 + 시간대·하늘 18 + 공격 모션·스킬 시퀀스 11 + 적공격·이동·구조물 22).
+ */
 export type SpriteKey = keyof typeof SPRITE_BUILDERS;
 
 export const SPRITE_KEYS = Object.keys(SPRITE_BUILDERS) as readonly SpriteKey[];
