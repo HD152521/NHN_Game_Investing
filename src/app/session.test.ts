@@ -497,3 +497,64 @@ describe('StageSession — 스킬 재화 반영', () => {
     expect(session.snapshot(0).wallet.aum).toBe(STARTING_AUM - SKILL_SPECS['S-03'].cost);
   });
 });
+
+/**
+ * CLICK-PATH-003 — `upgrade`가 `void`라 골드 부족으로 조용히 실패해도 셸이 성공 로그를
+ * 찍었다. 세 액션 모두 `useSkill`과 같은 불리언 계약으로 맞춘다.
+ */
+describe('StageSession — 재화 소모 액션은 성공 여부를 돌려준다', () => {
+  test('골드가 모자란 건설은 false 이고 지갑이 그대로다', () => {
+    const session = makeSession();
+    // 시작 골드는 기본 포탑 1기(120G) 정확히 한 채 분량이다 (FR-6.8-b).
+    expect(session.build(0, 'basic')).toBe(true);
+    expect(session.snapshot(0).wallet.gold).toBe(0);
+
+    expect(session.build(1, 'basic')).toBe(false);
+    expect(session.snapshot(0).wallet.gold).toBe(0);
+  });
+
+  test('골드가 모자란 업그레이드는 false 다', () => {
+    const session = makeSession();
+    expect(session.build(0, 'basic')).toBe(true);
+    expect(session.upgrade(0)).toBe(false);
+  });
+
+  test('골드가 모자란 소환은 false 이고 유닛이 늘지 않는다', () => {
+    const session = makeSession();
+    expect(session.build(0, 'basic')).toBe(true); // 골드를 0으로 만든다
+    expect(session.summon('trader')).toBe(false);
+    expect(session.combatState.units).toHaveLength(0);
+  });
+});
+
+/** FR-8.1 정산의 입력. 셸이 세션을 버리지 않게 됐으므로 이 수치가 화면까지 간다. */
+describe('StageSession — 정산 누적치', () => {
+  test('총 획득 골드는 시작 골드에서 출발한다 (FR-6.8-b)', () => {
+    const session = makeSession();
+    expect(session.settlementFacts.totalGoldEarned).toBe(STARTING_GOLD);
+    expect(session.settlementFacts.closeCount).toBe(0);
+    expect(session.settlementFacts.profitCloseCount).toBe(0);
+  });
+
+  test('청산하면 총 획득 골드와 청산 횟수가 함께 늘어난다', () => {
+    const session = makeSession();
+    session.openTrade('long', 0.25, 0);
+    session.closeTrade(5_000);
+
+    const facts = session.settlementFacts;
+    const notice = session.takeNotice();
+    expect(notice).not.toBeNull();
+    expect(facts.closeCount).toBe(1);
+    expect(facts.totalGoldEarned).toBe(STARTING_GOLD + (notice?.goldGained ?? 0));
+    expect(facts.profitCloseCount).toBe((notice?.position.pnl ?? 0) > 0 ? 1 : 0);
+  });
+
+  test('스테이지 종료 청산도 집계에 잡힌다 (FR-8.1 강제 청산)', () => {
+    const session = makeSession();
+    session.openTrade('short', 0.25, 0);
+    session.closeAtStageEnd(300_000);
+
+    expect(session.settlementFacts.closeCount).toBe(1);
+    expect(session.takeNotice()).not.toBeNull();
+  });
+});

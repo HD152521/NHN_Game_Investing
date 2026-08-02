@@ -15,10 +15,18 @@ export {
   buildUnitRosterMarkup,
   createRosterFlavorTip,
   formatCostLabel,
+  formatUnaffordableNotice,
   resolveFlavorText,
+  resolveRosterButtonState,
   rosterEntryFor,
 } from './roster';
-export type { RosterEntry, RosterFlavorTip, RosterFlavorTipOptions } from './roster';
+export type {
+  RosterButtonInput,
+  RosterButtonState,
+  RosterEntry,
+  RosterFlavorTip,
+  RosterFlavorTipOptions,
+} from './roster';
 
 export {
   SKILL_AUM_CLASS,

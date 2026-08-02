@@ -110,6 +110,41 @@ export function buildRosterMarkup(
   return entries.map((entry) => buildRosterButton(entry, attrName, className)).join('');
 }
 
+/** 로스터 버튼 하나의 현재 표시 상태 (`SkillButtonState`와 같은 계약). */
+export interface RosterButtonState {
+  readonly disabled: boolean;
+  /** 골드가 모자라서 못 쓰는 상태인가 — 세션 부재와 다른 이유이므로 따로 알린다. */
+  readonly unaffordable: boolean;
+}
+
+export interface RosterButtonInput {
+  readonly cost: number;
+  readonly gold: number;
+  /** 스테이지가 굴러가고 있는가. 세션이 없으면 누를 대상 자체가 없다. */
+  readonly hasSession: boolean;
+}
+
+/**
+ * 로스터 버튼 활성 판정.
+ *
+ * ★ 소환 버튼은 **항상 활성**이었다 ★ 골드가 모자라면 `summonUnit`이 조용히 거부하는데
+ * 화면에는 아무 표시도 변화도 없어서 "눌리는데 아무 일도 안 일어나는 버튼"이 됐다
+ * (CLICK-PATH-004). 스킬 쪽 `resolveSkillButtonState`와 같은 규칙으로 맞춘다 —
+ * 판정 기준은 소환 판정(`summonUnit`)의 거부 조건과 같아야 한다.
+ */
+export function resolveRosterButtonState(input: RosterButtonInput): RosterButtonState {
+  if (!input.hasSession) {
+    return { disabled: true, unaffordable: false };
+  }
+  const unaffordable = input.gold < input.cost;
+  return { disabled: unaffordable, unaffordable };
+}
+
+/** 골드 부족으로 눌리지 않는 버튼을 눌렀을 때 화면에 남길 한 줄. */
+export function formatUnaffordableNotice(displayName: string, cost: number): string {
+  return `골드 부족 — ${displayName} 소환에 ${cost}G 필요`;
+}
+
 /** hover/focus 대상이 없을 때는 기본 안내 문구로 되돌린다. */
 export function resolveFlavorText(flavor: string | null, fallback: string): string {
   return flavor !== null && flavor.length > 0 ? flavor : fallback;

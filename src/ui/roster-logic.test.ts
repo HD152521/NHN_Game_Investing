@@ -16,6 +16,8 @@ import {
   UNIT_ROSTER,
   buildRosterMarkup,
   formatCostLabel,
+  formatUnaffordableNotice,
+  resolveRosterButtonState,
   rosterEntryFor,
 } from './roster-logic';
 
@@ -102,5 +104,44 @@ describe('버튼 마크업', () => {
   test('클래스와 data 속성이 기존 빌드바 계약을 유지한다', () => {
     expect(towerMarkup.startsWith('<button class="btn btn--build"')).toBe(true);
     expect(unitMarkup).toContain('type="button"');
+  });
+});
+
+/**
+ * CLICK-PATH-004 — 유닛 소환 버튼 3종이 **항상 활성**이었다.
+ * 골드가 모자라면 `summonUnit`이 조용히 거부하는데 화면에는 아무 변화가 없었다.
+ * 판정 기준은 스킬 버튼(`resolveSkillButtonState`)과 같은 규칙이어야 한다.
+ */
+describe('resolveRosterButtonState — 골드 부족이 버튼에 보인다', () => {
+  test('골드가 모자라면 비활성이고 그 이유가 따로 표시된다', () => {
+    const state = resolveRosterButtonState({
+      cost: UNIT_COST.trader,
+      gold: UNIT_COST.trader - 1,
+      hasSession: true,
+    });
+    expect(state.disabled).toBe(true);
+    expect(state.unaffordable).toBe(true);
+  });
+
+  test('비용과 잔액이 정확히 같으면 살 수 있다 (경계 포함)', () => {
+    const state = resolveRosterButtonState({
+      cost: UNIT_COST.intern,
+      gold: UNIT_COST.intern,
+      hasSession: true,
+    });
+    expect(state.disabled).toBe(false);
+    expect(state.unaffordable).toBe(false);
+  });
+
+  test('세션이 없으면 비활성이지만 "돈이 없어서"는 아니다', () => {
+    const state = resolveRosterButtonState({ cost: UNIT_COST.analyst, gold: 9999, hasSession: false });
+    expect(state.disabled).toBe(true);
+    expect(state.unaffordable).toBe(false);
+  });
+
+  test('안내 문구가 필요한 금액을 말한다', () => {
+    const notice = formatUnaffordableNotice(ALLY_IDENTITY.trader.displayName, UNIT_COST.trader);
+    expect(notice).toContain(ALLY_IDENTITY.trader.displayName);
+    expect(notice).toContain(String(UNIT_COST.trader));
   });
 });

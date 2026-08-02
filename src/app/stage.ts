@@ -21,7 +21,14 @@ import '../ui/skill-tooltip.css';
 
 import { drawBattle, computeBattleLayout, progressToX, slotAt } from '../battle';
 import { drawChart } from '../chart';
-import { SKILL_SPECS, TOWER_IDENTITY, TOWER_UPGRADE_COST } from '../combat';
+import {
+  ALLY_IDENTITY,
+  SKILL_SPECS,
+  TOWER_BUILD_COST,
+  TOWER_IDENTITY,
+  TOWER_UPGRADE_COST,
+  UNIT_COST,
+} from '../combat';
 import type { SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
 import type { SkillFxField, SkillFxViewport } from '../fx';
@@ -33,8 +40,10 @@ import {
   createGoldMeter,
   createSkillTooltip,
   createTradePanel,
+  formatUnaffordableNotice,
   mountHudIcons,
   prefersReducedMotion,
+  resolveRosterButtonState,
   resolveSkillButtonState,
   skillIdFor,
 } from '../ui';
@@ -48,12 +57,27 @@ import type {
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, stageIdFor } from './region-select';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
+import type { StageOutcome } from './settlement';
+import {
+  computeSettlement,
+  settlementRows,
+  settlementSubtitle,
+  settlementTitle,
+} from './settlement';
+import {
+  decideFrame,
+  formatActionLog,
+  resolveSpeedChange,
+  shouldSkipPrep,
+} from './stage-flow';
+import type { FocusKind } from './stage-flow';
 import {
   BATTLE_HEIGHT,
   BATTLE_WIDTH,
   CHART_HEIGHT,
   CHART_WIDTH,
   SPEEDS,
+  buildSettlementRowsMarkup,
   buildStageMarkup,
   collectStageRefs,
   formatPrepCountdown,
@@ -65,6 +89,9 @@ const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
 
 /** 프레임 간격이 이보다 크면 탭 비활성 복귀로 보고 버린다. */
 const MAX_FRAME_DT_MS = 250;
+
+/** 재생이 끝난 프레임에 남기는 안내. 판이 사라진 게 아니라 매매만 닫혔다는 뜻이다. */
+const MARKET_CLOSE_LOG = '장 마감 — 매매 종료. 남은 적을 정리하면 정산합니다';
 
 /** 스테이지를 마운트하고 정리 함수를 돌려준다 (HMR 대비). */
 export function mountStage(root: HTMLElement): () => void {
@@ -91,6 +118,25 @@ export function mountStage(root: HTMLElement): () => void {
   let session: StageSession | null = null;
   let elapsedMs = 0;
   let lastFrameMs = 0;
+
+  /**
+   * ── 스테이지 종료 상태 (CLICK-PATH-001) ─────────────────────
+   *
+   * `STAGE_DURATION_MS`(390초)와 전투 총시간 `13 × 30초`가 **정확히 같다.** 그런데 전투의
+   * `cleared` 조건은 "웨이브 13 교전창 소진 + 생존 적 0"이라, 25초 창에 14마리를 뿌리는
+   * 13웨이브에서는 390초 시점에 반드시 생존자가 있다. 즉 재생 종료와 전투 종료는 같은
+   * 사건이 될 수 없다. 전투 dt 가 `MAX_FRAME_DT_MS`로 잘리는 반면 리플레이는 절대 벽시계라
+   * 탭 전환·히치가 있으면 격차는 더 벌어진다.
+   *
+   * 그래서 재생 종료를 **장 마감**으로만 해석한다 — 매매만 닫고(FR-8.1 강제 청산),
+   * 전투는 `overtimeRemainingMs` 동안 스스로 결론에 도달할 때까지 계속 돈다.
+   */
+  let marketClosed = false;
+  let overtimeRemainingMs = 0;
+  /** 결과 화면이 떠 있는가. 떠 있는 동안 프레임은 아무 것도 진행시키지 않는다. */
+  let resultShown = false;
+  /** 배속 버튼이 예고한 배속 (CLICK-PATH-002). 두 번째 클릭이 동의다. */
+  let armedSpeed: number | null = null;
 
   const scheduler = createRafScheduler();
   const battleLayout = computeBattleLayout(BATTLE_WIDTH, BATTLE_HEIGHT);
@@ -166,13 +212,24 @@ export function mountStage(root: HTMLElement): () => void {
   function startSession(nowMs: number): void {
     session = new StageSession(seed, speed, nowMs, stageId);
     lastFrameMs = nowMs;
+    marketClosed = false;
+    overtimeRemainingMs = 0;
+    armedSpeed = null;
     refs!.volume.textContent = `거래량 ${session.set.volumeMultiple.toFixed(1)}×`;
-    refs!.banner.hidden = true;
+    hideResult();
+  }
+
+  /** 결과 화면을 닫고 다음 세션이 만들어질 수 있는 상태로 되돌린다. */
+  function hideResult(): void {
+    resultShown = false;
+    refs!.result.hidden = true;
+    refs!.result.classList.remove('stage__result--win');
   }
 
   function syncButtons(): void {
     for (const button of refs!.speedButtons) {
       button.classList.toggle('btn--active', Number(button.dataset['speed']) === speed);
+      button.classList.toggle('btn--armed', Number(button.dataset['speed']) === armedSpeed);
     }
     for (const button of refs!.towerButtons) {
       button.classList.toggle('btn--active', button.dataset['tower'] === selectedTower);
@@ -232,6 +289,35 @@ export function mountStage(root: HTMLElement): () => void {
     }
   }
 
+  /**
+   * 유닛 소환 버튼의 활성 상태를 현재 골드에 맞춘다(매 프레임) — CLICK-PATH-004.
+   *
+   * 타워 버튼은 **선택**만 하므로 비활성화하지 않는다(건설은 슬롯 클릭이다). 대신 살 수
+   * 없는 타워는 `btn--broke`로 표시해, 슬롯 데칼의 '배치 불가'와 같은 사실을 빌드바에서도
+   * 미리 읽을 수 있게 한다.
+   */
+  function syncRosterButtons(current: StageSession | null): void {
+    const gold = current?.walletSnapshot.gold ?? 0;
+
+    for (const button of refs!.unitButtons) {
+      const kind = button.dataset['unit'] as UnitKind | undefined;
+      if (!kind) continue;
+      const state = resolveRosterButtonState({
+        cost: UNIT_COST[kind],
+        gold,
+        hasSession: current !== null,
+      });
+      button.disabled = state.disabled;
+      button.classList.toggle('btn--broke', state.unaffordable);
+    }
+
+    for (const button of refs!.towerButtons) {
+      const kind = button.dataset['tower'] as TowerKind | undefined;
+      if (!kind) continue;
+      button.classList.toggle('btn--broke', current !== null && gold < TOWER_BUILD_COST[kind]);
+    }
+  }
+
   function toViewModel(current: StageSession): TradePanelViewModel {
     const snap = current.snapshot(elapsedMs);
     return {
@@ -242,14 +328,16 @@ export function mountStage(root: HTMLElement): () => void {
       avgEntryPrice: snap.position?.openPrice ?? 0,
       currentPrice: snap.position ? current.priceAt(elapsedMs) : 0,
       addCount: snap.position?.addCount ?? 0,
-      canAdd: current.canAdd(),
+      canAdd: !marketClosed && current.canAdd(),
       aum: snap.wallet.aum,
       gold: snap.wallet.gold,
       pnl: snap.evaluation?.pnl ?? 0,
       distanceToLiquidation: snap.distanceToLiquidation,
       warning: snap.evaluation?.warning ?? false,
-      canOpen: current.canOpen(),
-      canClose: current.canCloseAt(elapsedMs),
+      // 장이 마감되면(연장 전투 중) 매매는 전부 잠긴다 — 리플레이가 더 이상 흐르지 않아
+      // 진입해도 가격이 움직이지 않는다.
+      canOpen: !marketClosed && current.canOpen(),
+      canClose: !marketClosed && current.canCloseAt(elapsedMs),
       positionsUsed: snap.openCount,
       positionsMax: snap.maxPositions,
     };
@@ -283,6 +371,13 @@ export function mountStage(root: HTMLElement): () => void {
   }
 
   function render(nowMs: number): void {
+    // 결과 화면이 떠 있으면 화면을 그 상태로 고정한다. 다음 판은 결과 화면의 두 버튼
+    // ([다시] / [지역 선택으로])에서만 시작된다 — 저절로 재시작되는 경로는 없다.
+    if (resultShown) {
+      lastFrameMs = nowMs;
+      return;
+    }
+
     if (!session) {
       startSession(nowMs);
       return;
@@ -353,27 +448,85 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.wave.textContent = `${combat.wave}/${combat.waveCount}`;
     refs!.baseHp.textContent = String(combat.baseHp);
 
-    // 준비 구간 카운트다운. 전투가 끝난 뒤에는 배너가 화면을 가지므로 항상 숨긴다.
+    // 준비 구간 카운트다운. 전투가 끝난 뒤에는 결과 화면이 화면을 가지므로 항상 숨긴다.
     const prepText = combat.phase === 'running' ? formatPrepCountdown(combat.prepRemainingMs) : '';
     refs!.prep.hidden = prepText === '';
-    refs!.prep.textContent = prepText;
+    refs!.prepText.textContent = prepText;
 
     panel.update(toViewModel(session));
     syncSkillButtons(session);
+    syncRosterButtons(session);
 
-    if (combat.phase !== 'running') {
-      refs!.banner.hidden = false;
-      refs!.banner.textContent =
-        combat.phase === 'cleared' ? '스테이지 클리어' : '본진 함락 — 패배';
-      refs!.banner.classList.toggle('stage__banner--win', combat.phase === 'cleared');
-      return; // 전투가 끝나면 화면을 고정한다. "새 스테이지"로 재시작.
-    }
+    const decision = decideFrame({
+      phase: combat.phase,
+      replayFinished: state.finished,
+      marketClosed,
+      overtimeRemainingMs,
+    });
 
-    if (state.finished) {
+    if (decision.kind === 'close-market') {
+      marketClosed = true;
+      // 연장은 한 웨이브 주기만 준다. 13웨이브 교전창(25초)에 등장한 마지막 무리가 사옥까지
+      // 걸어 들어오기에 충분한 길이이며, 배속이 바뀌면 같이 줄어드는 파생값이다.
+      overtimeRemainingMs = session.combatParams.waveDurationMs;
+      // FR-8.1 — 열려 있던 포지션을 강제 청산하고, **그 연출을 반드시 소비한다.**
+      // 예전 셸은 여기서 세션을 버려 정산 골드와 `pendingNotice`를 함께 폐기했다.
       session.closeAtStageEnd(elapsedMs);
-      seed += 1;
-      session = null;
+      announceClose(session);
+      refs!.log.textContent = MARKET_CLOSE_LOG;
+      return;
     }
+
+    if (decision.kind === 'overtime') {
+      overtimeRemainingMs = Math.max(0, overtimeRemainingMs - dt);
+      return;
+    }
+
+    if (decision.kind === 'finish') {
+      showResult(session, decision.outcome);
+    }
+  }
+
+  /** 정산을 계산해 결과 화면에 꽂는다. 스테이지가 끝나는 **유일한** 경로다. */
+  function showResult(current: StageSession, outcome: StageOutcome): void {
+    // 전투가 먼저 끝난 경우(클리어·패배)에는 아직 포지션이 열려 있을 수 있다 (FR-8.1).
+    current.closeAtStageEnd(elapsedMs);
+    announceClose(current);
+
+    const wallet = current.walletSnapshot;
+    const combat = current.combatState;
+    const facts = current.settlementFacts;
+    const settlement = computeSettlement({
+      outcome,
+      remainingGold: wallet.gold,
+      remainingAum: wallet.aum,
+      totalGoldEarned: facts.totalGoldEarned,
+      closeCount: facts.closeCount,
+      profitCloseCount: facts.profitCloseCount,
+      baseHp: combat.baseHp,
+      maxBaseHp: combat.maxBaseHp,
+      // 전투 시뮬레이션에 적 본진 개념이 아직 없다 (`CombatState` 참고).
+      enemyBaseDestroyed: false,
+    });
+
+    refs!.resultTitle.textContent = settlementTitle(outcome);
+    refs!.resultSubtitle.textContent = settlementSubtitle(outcome);
+    refs!.resultBody.innerHTML = buildSettlementRowsMarkup(
+      settlementRows(settlement, wallet, facts),
+    );
+    refs!.result.classList.toggle('stage__result--win', outcome === 'cleared');
+    refs!.result.hidden = false;
+    refs!.prep.hidden = true;
+    resultShown = true;
+    refs!.resultRetryButton.focus();
+  }
+
+  /** 결과 화면에서 같은 지역을 새 시드로 다시 시작한다. */
+  function restartStage(): void {
+    seed += 1;
+    session = null;
+    hideResult();
+    loop.start(); // 이미 돌고 있으면 아무 일도 하지 않는다.
   }
 
   const loop = createFrameLoop(scheduler, render);
@@ -423,11 +576,28 @@ export function mountStage(root: HTMLElement): () => void {
 
   // ── 이벤트 배선 ───────────────────────────────────────────
 
+  /**
+   * 배속 (FR-3.5) — CLICK-PATH-002.
+   *
+   * 예전에는 클릭 한 번에 `session = null`이 **무음으로** 실행돼 웨이브 10에서 4x 를 누르면
+   * 지갑·타워·웨이브가 통째로 사라졌다. 판정은 전부 `resolveSpeedChange`(순수)에 있고
+   * 여기서는 그 결과를 화면에 옮기기만 한다.
+   */
   for (const button of refs.speedButtons) {
     button.addEventListener('click', () => {
-      speed = Number(button.dataset['speed']) || 1;
+      const result = resolveSpeedChange({
+        requested: Number(button.dataset['speed']) || 1,
+        current: speed,
+        armed: armedSpeed,
+        hasSession: session !== null,
+      });
+      speed = result.speed;
+      armedSpeed = result.armed;
+      refs.log.textContent = result.message;
+      if (result.restart) {
+        restartStage();
+      }
       syncButtons();
-      session = null; // 배속은 진행 중 바뀌지 않는다 (FR-3.5)
     });
   }
 
@@ -439,12 +609,31 @@ export function mountStage(root: HTMLElement): () => void {
     });
   }
 
-  for (const button of root.querySelectorAll<HTMLButtonElement>('[data-unit]')) {
+  /**
+   * 유닛 소환 — CLICK-PATH-004.
+   *
+   * 버튼은 `syncRosterButtons`가 매 프레임 비활성으로 만들지만, 골드가 딱 떨어지는 순간의
+   * 클릭이나 스크린리더 경로가 남아 있으므로 **실패도 화면에 남긴다**. 성공/실패 문구는
+   * 반드시 `summon`의 불리언에서만 갈린다.
+   */
+  for (const button of refs.unitButtons) {
     button.addEventListener('click', () => {
       const kind = button.dataset['unit'] as UnitKind | undefined;
-      if (kind) {
-        session?.summon(kind);
+      const current = session;
+      if (!kind || !current) {
+        return;
       }
+      const identity = ALLY_IDENTITY[kind];
+      if (current.summon(kind)) {
+        refs.log.textContent = formatActionLog({
+          ok: true,
+          verb: '소환',
+          displayName: identity.displayName,
+          cost: UNIT_COST[kind],
+        });
+        return;
+      }
+      refs.log.textContent = formatUnaffordableNotice(identity.displayName, UNIT_COST[kind]);
     });
   }
 
@@ -482,25 +671,80 @@ export function mountStage(root: HTMLElement): () => void {
 
     const existing = current.combatState.towers.find((tower) => tower.slot === slot);
     if (!existing) {
-      current.build(slot, selectedTower);
+      // 건설 실패(골드 부족)도 화면에 남긴다 — 예전에는 아무 피드백이 없었다.
+      refs.log.textContent = formatActionLog({
+        ok: current.build(slot, selectedTower),
+        verb: '건설',
+        displayName: TOWER_IDENTITY[selectedTower].displayName,
+        cost: TOWER_BUILD_COST[selectedTower],
+      });
       return;
     }
     if (existing.level === 1) {
-      current.upgrade(slot);
-      refs.log.textContent = `${TOWER_IDENTITY[existing.kind].displayName} 업그레이드 (${TOWER_UPGRADE_COST[existing.kind]}G)`;
+      // ★ 성공 여부를 확인한 뒤에 로그를 찍는다 (CLICK-PATH-003) ★
+      // 예전에는 `upgrade`가 `void`라 골드 부족으로 조용히 실패해도 성공 로그가 나갔다.
+      refs.log.textContent = formatActionLog({
+        ok: current.upgrade(slot),
+        verb: '업그레이드',
+        displayName: TOWER_IDENTITY[existing.kind].displayName,
+        cost: TOWER_UPGRADE_COST[existing.kind],
+      });
     }
   });
 
-  root.querySelector<HTMLButtonElement>('[data-action="restart"]')?.addEventListener('click', () => {
-    seed += 1;
+  root
+    .querySelector<HTMLButtonElement>('[data-action="restart"]')
+    ?.addEventListener('click', restartStage);
+
+  refs.resultRetryButton.addEventListener('click', restartStage);
+
+  /** 결과 화면 → 지역 선택. 루프를 세워야 오버레이 뒤에서 새 판이 시작되지 않는다. */
+  refs.resultRegionButton.addEventListener('click', () => {
+    loop.stop();
     session = null;
+    hideResult();
+    refs.stage.classList.add('stage--gated');
+    showRegionSelect();
   });
+
+  /** 카운트다운의 [바로 시작] — Space 가 막힌 상황의 대비책 (CLICK-PATH-005). */
+  refs.prepSkipButton.addEventListener('click', () => {
+    session?.skipPrep();
+  });
+
+  /** Space 를 받은 시점의 포커스 대상 분류. 판정은 `shouldSkipPrep`이 한다. */
+  function focusKindOf(target: EventTarget | null): FocusKind {
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLTextAreaElement
+    ) {
+      return 'text-field';
+    }
+    return target instanceof HTMLButtonElement ? 'button' : 'none';
+  }
+
+  /**
+   * 포커스가 **키보드로** 들어왔는가.
+   *
+   * `:focus-visible`은 마우스 클릭으로 남은 포커스를 제외한다 — 바로 이 구분이
+   * CLICK-PATH-005 의 해법이다. 지원하지 않는 환경에서는 `matches`가 던지므로,
+   * 그 경우 보수적으로 "키보드 포커스"로 보고 Space 를 버튼에 양보한다.
+   */
+  function isKeyboardFocused(target: Element): boolean {
+    try {
+      return target.matches(':focus-visible');
+    } catch {
+      return true;
+    }
+  }
 
   /**
    * Space — 준비 시간 즉시 종료. "아는 사람은 기다리지 않는다."
    *
-   * 폼 컨트롤에 포커스가 있으면 가로채지 않는다 — Space는 버튼의 기본 활성화 키라,
-   * 여기서 먹어버리면 빌드바 버튼이 키보드로 눌리지 않게 된다(접근성 회귀).
+   * 예전에는 포커스 대상이 버튼이기만 하면 무조건 반환했다. 그런데 준비 5초는 **정확히
+   * 빌드바 버튼을 누르는 구간**이라, 타워를 하나 고른 직후 포커스가 그 버튼에 남아
+   * Space 가 늘 삼켜졌다 — 화면은 계속 "Space로 바로 시작"이라고 말하면서.
    */
   function onKeyDown(event: KeyboardEvent): void {
     // Esc — 지역 선택에서 타이틀로. 다이얼로그의 관습적인 탈출 키다.
@@ -510,18 +754,18 @@ export function mountStage(root: HTMLElement): () => void {
       return;
     }
     if (event.code !== 'Space') return;
+
     const target = event.target;
-    if (
-      target instanceof HTMLButtonElement ||
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLSelectElement ||
-      target instanceof HTMLTextAreaElement
-    ) {
-      return;
-    }
-    if (!session || session.prepRemainingMs <= 0) return;
+    const skip = shouldSkipPrep({
+      hasSession: session !== null,
+      prepRemainingMs: session?.prepRemainingMs ?? 0,
+      focusKind: focusKindOf(target),
+      keyboardFocused: target instanceof Element ? isKeyboardFocused(target) : false,
+    });
+    if (!skip) return;
+
     event.preventDefault(); // 스페이스바 스크롤 방지
-    session.skipPrep();
+    session?.skipPrep();
   }
   window.addEventListener('keydown', onKeyDown);
 

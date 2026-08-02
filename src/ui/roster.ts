@@ -13,7 +13,7 @@ import {
   resolveFlavorText,
 } from './roster-logic';
 
-export type { RosterEntry } from './roster-logic';
+export type { RosterButtonInput, RosterButtonState, RosterEntry } from './roster-logic';
 export {
   ROSTER_FLAVOR_ATTR,
   TOWER_ROSTER,
@@ -21,7 +21,9 @@ export {
   buildRosterButton,
   buildRosterMarkup,
   formatCostLabel,
+  formatUnaffordableNotice,
   resolveFlavorText,
+  resolveRosterButtonState,
   rosterEntryFor,
 } from './roster-logic';
 

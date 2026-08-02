@@ -6,6 +6,7 @@
  */
 
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
+import type { SettlementRow } from './settlement';
 import { buildStartGateMarkup } from './start-gate';
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
 import { STARTING_AUM, STARTING_GOLD } from './session';
@@ -23,6 +24,12 @@ export const BATTLE_HEIGHT = 360;
 
 /** FR-3.5 — 배속은 스테이지 시작 전에만 정해진다. */
 export const SPEEDS = [1, 2, 4] as const;
+
+/** 준비 카운트다운의 클릭 가능한 즉시 시작 버튼 (CLICK-PATH-005 대비책). */
+export const SKIP_PREP_ACTION = 'skip-prep';
+/** 결과 화면의 두 출구. 여기서만 스테이지가 다시 시작된다. */
+export const RESULT_RETRY_ACTION = 'result-retry';
+export const RESULT_REGION_ACTION = 'result-region';
 
 /**
  * 타워·유닛 라벨에 **담당 레인과 역할을 반드시 함께 노출**한다.
@@ -58,7 +65,22 @@ export interface StageRefs {
   readonly log: HTMLElement;
   /** 웨이브 준비 시간 카운트다운 오버레이. */
   readonly prep: HTMLElement;
-  readonly banner: HTMLElement;
+  /** 카운트다운 문구가 들어가는 칸. 오버레이 자체에는 버튼도 함께 있다. */
+  readonly prepText: HTMLElement;
+  /** 카운트다운의 [바로 시작] 버튼 — Space 가 안 먹히는 상황의 대비책. */
+  readonly prepSkipButton: HTMLButtonElement;
+  /**
+   * 스테이지 결과 화면 (FR-8 정산).
+   *
+   * 예전의 `stage__banner`(문구 한 줄)를 대체한다. 배너는 재생이 끝난 경우를 아예 다루지
+   * 못했고 — 그 경로는 무음 리셋이었다 — 정산 수치도 재시작 출구도 없었다.
+   */
+  readonly result: HTMLElement;
+  readonly resultTitle: HTMLElement;
+  readonly resultSubtitle: HTMLElement;
+  readonly resultBody: HTMLElement;
+  readonly resultRetryButton: HTMLButtonElement;
+  readonly resultRegionButton: HTMLButtonElement;
   readonly gate: HTMLElement;
   readonly startButton: HTMLButtonElement;
   /** 지역 선택 오버레이. 게이트와 스테이지 플레이 사이에 열린다. */
@@ -70,6 +92,8 @@ export interface StageRefs {
   readonly panelHost: HTMLElement;
   readonly speedButtons: readonly HTMLButtonElement[];
   readonly towerButtons: readonly HTMLButtonElement[];
+  /** 유닛 소환 3종. 골드 부족이면 셸이 매 프레임 비활성으로 만든다(CLICK-PATH-004). */
+  readonly unitButtons: readonly HTMLButtonElement[];
   /** 스킬 3종 버튼. 쿨다운·재화 부족 상태를 매 프레임 셸이 반영한다. */
   readonly skillButtons: readonly HTMLButtonElement[];
 }
@@ -92,6 +116,21 @@ export function formatPrepCountdown(prepRemainingMs: number): string {
 
 export function formatSignedPercent(value: number): string {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
+}
+
+function escapeText(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** 정산 항목을 `<dt>/<dd>` 쌍으로 편다. 값은 전부 `settlementRows`가 만든 문자열이다. */
+export function buildSettlementRowsMarkup(rows: readonly SettlementRow[]): string {
+  return rows
+    .map(
+      (row) =>
+        `<div class="stage__result-row"><dt>${escapeText(row.label)}</dt>` +
+        `<dd>${escapeText(row.value)}</dd></div>`,
+    )
+    .join('');
 }
 
 export function buildStageMarkup(): string {
@@ -154,9 +193,27 @@ export function buildStageMarkup(): string {
       <div class="stage__battle">
         <canvas data-ref="battle" width="${BATTLE_WIDTH}" height="${BATTLE_HEIGHT}"
                 aria-label="전장"></canvas>
-        <!-- 준비 시간 카운트다운. pointer-events:none 이라 준비 중에도 슬롯 클릭이 막히지 않는다. -->
-        <div class="stage__prep" data-ref="prep" role="status" aria-live="polite" hidden></div>
-        <div class="stage__banner" data-ref="banner" hidden></div>
+        <!--
+          준비 시간 카운트다운. 오버레이는 pointer-events:none 이라 준비 중에도 슬롯 클릭이
+          막히지 않는다. 단 [바로 시작] 버튼만 pointer-events 를 되살린다(shell.css) —
+          Space 가 삼켜지는 상황에서도 손으로 끝낼 길이 하나는 있어야 한다.
+        -->
+        <div class="stage__prep" data-ref="prep" role="status" aria-live="polite" hidden>
+          <span data-ref="prep-text"></span>
+          <button class="stage__prep-skip" type="button" data-action="${SKIP_PREP_ACTION}">바로 시작</button>
+        </div>
+
+        <!-- 결과 화면. 전투가 끝나거나 장이 마감되면 여기로 끝난다 — 무음 리셋은 없다. -->
+        <div class="stage__result" data-ref="result" role="dialog" aria-live="polite"
+             aria-labelledby="tf-result-title" hidden>
+          <h2 class="stage__result-title" id="tf-result-title" data-ref="result-title"></h2>
+          <p class="stage__result-subtitle" data-ref="result-subtitle"></p>
+          <dl class="stage__result-body" data-ref="result-body"></dl>
+          <div class="stage__result-actions">
+            <button class="btn" type="button" data-action="${RESULT_RETRY_ACTION}">다시</button>
+            <button class="btn" type="button" data-action="${RESULT_REGION_ACTION}">지역 선택으로</button>
+          </div>
+        </div>
       </div>
 
       <div class="buildbar">
@@ -197,7 +254,20 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const baseHp = pick('basehp');
   const log = pick('log');
   const prep = pick('prep');
-  const banner = pick('banner');
+  const prepText = pick('prep-text');
+  const prepSkipButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${SKIP_PREP_ACTION}"]`,
+  );
+  const result = pick('result');
+  const resultTitle = pick('result-title');
+  const resultSubtitle = pick('result-subtitle');
+  const resultBody = pick('result-body');
+  const resultRetryButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${RESULT_RETRY_ACTION}"]`,
+  );
+  const resultRegionButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${RESULT_REGION_ACTION}"]`,
+  );
   const gate = pick('gate');
   const panelHost = pick('panel-host');
   const startButton = root.querySelector<HTMLButtonElement>('[data-action="start-stage"]');
@@ -221,7 +291,14 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !baseHp ||
     !log ||
     !prep ||
-    !banner ||
+    !prepText ||
+    !prepSkipButton ||
+    !result ||
+    !resultTitle ||
+    !resultSubtitle ||
+    !resultBody ||
+    !resultRetryButton ||
+    !resultRegionButton ||
     !gate ||
     !panelHost ||
     !startButton ||
@@ -253,7 +330,14 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     baseHp,
     log,
     prep,
-    banner,
+    prepText,
+    prepSkipButton,
+    result,
+    resultTitle,
+    resultSubtitle,
+    resultBody,
+    resultRetryButton,
+    resultRegionButton,
     gate,
     startButton,
     regionSelect,
@@ -264,6 +348,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     panelHost,
     speedButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-speed]')),
     towerButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tower]')),
+    unitButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-unit]')),
     skillButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-skill]')),
   };
 }

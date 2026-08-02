@@ -14,7 +14,7 @@
  * ★ `hidden` 속성을 클래스가 이기지 못하게 못박는다.
  *
  * 브라우저 기본 스타일시트의 `[hidden] { display: none }` 은 명시도가 (0,1,0)이라
- * `.stage__banner { display: grid }` 같은 **작성자 스타일시트의 클래스 규칙에 항상 진다**.
+ * `.stage__result { display: flex }` 같은 **작성자 스타일시트의 클래스 규칙에 항상 진다**.
  * 그래서 `el.hidden = true` 로 숨긴 요소가 화면에 그대로 남는다.
  *
  * 실제로 이 프로젝트에서 다음 버그를 냈다:
@@ -219,22 +219,112 @@ body {
   pointer-events: none;
 }
 
-/* 클리어·패배 배너. 전투가 끝나면 화면 위에 얹힌다. */
-.stage__banner {
+/*
+ * 준비 카운트다운 안의 [바로 시작] 버튼.
+ * 오버레이가 pointer-events:none 이므로 이 버튼만 명시적으로 되살린다 —
+ * 그러지 않으면 "눌러도 아무 일이 없는 버튼"이 하나 더 생긴다.
+ */
+.stage__prep-skip {
+  padding: 2px 8px;
+  border: 1px solid var(--tf-gold);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--tf-gold);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.stage__prep-skip:hover,
+.stage__prep-skip:focus-visible {
+  background: color-mix(in srgb, var(--tf-gold) 18%, transparent);
+}
+
+/*
+ * 스테이지 결과 화면 (FR-8 정산). 전투가 끝나거나 장이 마감되면 여기서 멈춘다.
+ * 클릭을 받아야 하므로 pointer-events 는 기본값(auto) 그대로 둔다.
+ */
+.stage__result {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: clamp(20px, 4vw, 34px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 16px;
+  background: color-mix(in srgb, var(--tf-bg-0) 88%, transparent);
+  backdrop-filter: blur(2px);
+  text-align: center;
+}
+
+.stage__result-title {
+  margin: 0;
+  font-size: clamp(18px, 3.2vw, 28px);
   font-weight: 700;
   letter-spacing: 0.16em;
   color: var(--tf-enemy-down);
-  background: color-mix(in srgb, var(--tf-bg-0) 78%, transparent);
-  backdrop-filter: blur(1.5px);
 }
 
-.stage__banner--win {
+/* 승리는 색으로도 갈린다 — 문구만으로는 스치듯 읽힌다. */
+.stage__result--win .stage__result-title {
   color: var(--tf-gold);
+}
+
+.stage__result-subtitle {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--tf-muted);
+}
+
+.stage__result-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  gap: 2px 20px;
+  margin: 6px 0 0;
+  width: min(520px, 100%);
+  font-size: 12px;
+}
+
+.stage__result-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--tf-bg-2);
+}
+
+.stage__result-row dt {
+  color: var(--tf-muted);
+  letter-spacing: 0.06em;
+}
+
+.stage__result-row dd {
+  margin: 0;
+  color: var(--tf-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 자본금은 이 화면의 결론이다 — 마지막 줄만 폭 전체를 쓰고 금색으로 강조한다. */
+.stage__result-row:last-child {
+  grid-column: 1 / -1;
+  border-bottom: none;
+  font-size: 14px;
+}
+
+.stage__result-row:last-child dd {
+  color: var(--tf-gold);
+  font-weight: 700;
+}
+
+.stage__result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 /* ── 빌드바 ──────────────────────────────────────────────── */
@@ -355,6 +445,16 @@ body {
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/*
+ * 예고 상태 — "한 번 더 누르면 지금 판을 버린다"(배속). 활성과 다른 신호여야 하므로
+ * 점선 테두리로 구분한다.
+ */
+.btn--armed {
+  border-style: dashed;
+  border-color: var(--tf-enemy-down);
+  color: var(--tf-enemy-down);
 }
 
 .btn--active {

@@ -113,6 +113,17 @@ export class StageSession {
   private combat: CombatState;
 
   /**
+   * FR-8.1 정산 분모 — **총 획득 골드**.
+   *
+   * 시작 골드(FR-6.8-b가 명시적으로 포함하라고 못박은 값) + 웨이브 기본 수입 + 청산 대금.
+   * 골드가 들어오는 경로는 이 셋뿐이므로(FR-5.7) 여기 세 군데만 더하면 총액이 확정된다.
+   */
+  private goldEarned: number;
+  /** 총 청산 수 / 그중 `pnl > 0`인 수 — FR-8.1 적중률과 `aumGate`의 입력이다. */
+  private closeCount = 0;
+  private profitCloseCount = 0;
+
+  /**
    * @param stageId 플레이할 지역. 생략하면 R1 — 지역 선택 화면이 붙기 전 호출부와
    *   테스트가 그대로 동작하도록 남긴 기본값이다.
    */
@@ -123,6 +134,7 @@ export class StageSession {
     this.replay = createReplay(this.set, { speed, startAtMs });
     this.params = { ...DEFAULT_POSITION_PARAMS, sigma: this.set.sigma30 };
     this.wallet = { gold: stage.startingGold, aum: stage.startingAum };
+    this.goldEarned = stage.startingGold;
 
     this.combatParams = {
       // ★ 지역 난이도가 실제로 반영되는 지점 ★ 생략하면 `DEFAULT_WAVE_TABLE`(=R1)이라
@@ -165,7 +177,21 @@ export class StageSession {
         gold: this.wallet.gold + goldIncome,
         aum: this.wallet.aum + aumDropped,
       };
+      this.goldEarned += goldIncome;
     }
+  }
+
+  /** FR-8.1 정산에 필요한 누적 수치. 계산은 `src/app/settlement.ts`가 한다. */
+  get settlementFacts(): {
+    readonly totalGoldEarned: number;
+    readonly closeCount: number;
+    readonly profitCloseCount: number;
+  } {
+    return {
+      totalGoldEarned: this.goldEarned,
+      closeCount: this.closeCount,
+      profitCloseCount: this.profitCloseCount,
+    };
   }
 
   /** 다음 웨이브까지 남은 준비 시간(ms). 0이면 교전 중이다 (HUD 카운트다운용). */
@@ -178,31 +204,41 @@ export class StageSession {
     this.combat = skipPrep(this.combat);
   }
 
-  build(slot: number, kind: TowerKind): void {
+  /**
+   * ★ 세 액션 모두 **성공 여부를 돌려준다** ★
+   *
+   * 예전에는 `void`였다. 골드가 모자라 조용히 실패해도 셸은 성공 로그를 찍었고
+   * (CLICK-PATH-003), 화면은 있지도 않은 지출을 사실로 말했다. `useSkill`이 이미
+   * 불리언을 돌려주고 셸이 그것만 믿는 구조였으니, 나머지 셋을 같은 계약으로 맞춘다.
+   */
+  build(slot: number, kind: TowerKind): boolean {
     const result = buildTower(this.combat, slot, kind, this.wallet.gold, this.combatParams);
     if (!result.ok) {
-      return;
+      return false;
     }
     this.combat = result.state;
     this.wallet = { ...this.wallet, gold: result.gold };
+    return true;
   }
 
-  upgrade(slot: number): void {
+  upgrade(slot: number): boolean {
     const result = upgradeTower(this.combat, slot, this.wallet.gold);
     if (!result.ok) {
-      return;
+      return false;
     }
     this.combat = result.state;
     this.wallet = { ...this.wallet, gold: result.gold };
+    return true;
   }
 
-  summon(kind: UnitKind): void {
+  summon(kind: UnitKind): boolean {
     const result = summonUnit(this.combat, kind, this.wallet.gold);
     if (!result.ok) {
-      return;
+      return false;
     }
     this.combat = result.state;
     this.wallet = { ...this.wallet, gold: result.gold };
+    return true;
   }
 
   /**
@@ -376,6 +412,11 @@ export class StageSession {
 
     this.wallet = result.result.wallet;
     this.position = null;
+    this.goldEarned += result.result.goldGained;
+    this.closeCount += 1;
+    if (result.result.position.pnl > 0) {
+      this.profitCloseCount += 1;
+    }
     this.pendingNotice = {
       position: result.result.position,
       goldGained: result.result.goldGained,
