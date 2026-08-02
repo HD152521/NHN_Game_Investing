@@ -35,6 +35,19 @@ export {
 export type { SkillButtonInput, SkillButtonState } from './skill-bar-logic';
 
 export {
+  SKILL_TOOLTIPS,
+  buildSkillTooltipMarkup,
+  clampTooltipLeft,
+  formatSeconds,
+  resolveTooltipTop,
+  skillTooltipContent,
+} from './skill-tooltip-logic';
+export type { SkillTooltipContent, SkillTooltipRow } from './skill-tooltip-logic';
+
+export { SKILL_TOOLTIP_ID, createSkillTooltip } from './skill-tooltip';
+export type { SkillTooltip, SkillTooltipOptions } from './skill-tooltip';
+
+export {
   HUD_ICON_ATTR,
   UI_ICON_COLUMNS,
   UI_ICON_HEIGHT,

@@ -22,13 +22,14 @@
  * 방향을 보여주면 충분하다(타워 예광선처럼 상태에 새 필드를 추가하지 않는다는 원칙 유지).
  */
 
-import type { CombatState, Enemy, Unit, UnitKind } from '../combat/types.js';
+import { UNIT_MELEE_RANGE } from '../combat/index.js';
+import type { CombatState, Enemy, Unit } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
-import { impactKindForProjectile } from '../fx/index.js';
-import type { ProjectileKind } from '../fx/index.js';
-import { spriteRasters } from '../sprites/render/index.js';
+import type { ImpactKind } from '../fx/index.js';
+import { spriteRasters, unitAnimFrameAt, unitAnimFrameRaster } from '../sprites/render/index.js';
 import type { SpriteRasterCache } from '../sprites/render/index.js';
-import { drawImpactSprite, drawProjectileSprite, projectileTravel } from './draw-tracers.js';
+import { drawRasterCentered } from './draw-sprite.js';
+import { drawImpactSprite, projectileTravel, PROJECTILE_SPRITE_SCALE } from './draw-tracers.js';
 import { allyUnitScreenY } from './draw-units.js';
 import type { BattleLayout } from './layout.js';
 import { laneY, progressToX } from './layout.js';
@@ -45,15 +46,34 @@ const RANGE_HINT_ALPHA = 0.12;
 const RANGE_HINT_LINE_WIDTH = 1;
 const RANGE_HINT_DASH: readonly number[] = [4, 3];
 
-/** 원거리 유닛 사거리 안내선을 보여줄 종류 — analyst만 대상으로 화면 혼잡을 절제한다. */
-const RANGED_UNIT_KIND: UnitKind = 'analyst';
+/**
+ * ★ 발사체 수정 (피드백: "제자리에서 이상한 화살표만 나간다") ★
+ *
+ * 예전에는 유닛·적 **전원**이 타워용 발사체 시트(`ally_flare` = `tf-w-01` 붉은 화살,
+ * `enemy_arrow` = `tf-w-03` 푸른 화살)를 썼다. 그런데:
+ *
+ *   - `intern`·`trader` 는 사거리 0.05 = **밀착 근접**이다(`UNIT_MELEE_RANGE`).
+ *   - 적 5종도 전부 근접이다(`combat/waves.ts`: `range: UNIT_MELEE_RANGE`, 주석에
+ *     "근접이므로 유닛의 밀착 거리와 같다").
+ *
+ * 즉 화면의 화살표 대부분이 **근접 개체가 쏜 것**이었다. 이제 근접 개체는 탄을 그리지 않고
+ * 접촉 타격(피격 스프라이트)만 그린다 — 때리는 동작은 `draw-units.ts` 의 공격 모션이 맡는다.
+ * 남은 원거리 유닛(`analyst`)의 탄도 화살이 아니라 **캔**이다: 원본 `throwFrame` 의 손에서
+ * 떠나는 물건이 `canFrame`(`tf-can-idle` / `tf-can-spin`)이고, 날아가는 동안 회전한다.
+ *
+ * `tf-w-01`/`tf-w-03` 은 여전히 **타워**가 쓴다(`draw-tracers.ts`) — 시트가 죽지 않는다.
+ */
+const ALLY_IMPACT: ImpactKind = 'ally';
+const ENEMY_IMPACT: ImpactKind = 'enemy';
 
 /**
- * 진영 → 발사체 종류 (시트 §08). 아군은 신호탄(적색), 적은 하강 화살(청색)이다 —
- * 앵커 탄(`anchor_bolt`)은 광역 **타워** 전용이라 여기 없다(`draw-tracers.ts`).
+ * 원거리 공격자인지 — 종류 이름이 아니라 **개체에 실린 사거리**로 판정한다.
+ * (스탯은 개체에 실린다: `combat/types.ts` `Combatant` 주석. 부서 업그레이드로 사거리가
+ * 달라져도 이 판정은 그대로 맞는다.)
  */
-const ALLY_PROJECTILE: ProjectileKind = 'ally_flare';
-const ENEMY_PROJECTILE: ProjectileKind = 'enemy_arrow';
+function isRangedAttacker(unit: Unit): boolean {
+  return unit.range > UNIT_MELEE_RANGE;
+}
 
 /** 타워 예광선과 같은 규칙 — 이만큼 날아간 뒤에야 피격이 뜬다. */
 const IMPACT_TRAVEL_AT = 0.5;
@@ -127,24 +147,42 @@ function drawTracerLine(ctx: BattleCtx, from: Point, to: Point, strokeStyle: str
 }
 
 /**
- * 시트 스프라이트로 유닛·적의 탄 한 발을 그린다. 그릴 수 없으면 `false` — 호출부가
- * 벡터 공격선으로 넘어간다. 진행도는 타워와 같은 규칙(쿨다운 역산)이라 두 계층이
- * 서로 다른 속도로 움직이지 않는다.
+ * 날아가는 캔 한 발. 비행 진행도로 `canFrame` 4프레임을 골라 **회전하는 그림**을 만든다
+ * (원본 `canSpin()` 이 보여주는 그 회전이다). 그릴 수 없으면 `false`.
  */
-function drawAttackSprites(
+function drawFlyingCan(
   ctx: BattleCtx,
   rasters: SpriteRasterCache,
-  kind: ProjectileKind,
-  attacker: Attacker,
+  x: number,
+  y: number,
+  travel: number,
+  facingLeft: boolean,
+): boolean {
+  const raster = unitAnimFrameRaster(rasters, 'can', unitAnimFrameAt('can', travel));
+  if (raster === null) return false;
+  return drawRasterCentered(ctx, raster, x, y, PROJECTILE_SPRITE_SCALE, facingLeft);
+}
+
+/**
+ * 아군 유닛 한 체의 공격 그림. 그릴 수 없으면 `false` — 호출부가 벡터 공격선으로 넘어간다.
+ * 진행도는 타워와 같은 규칙(쿨다운 역산)이라 두 계층이 서로 다른 속도로 움직이지 않는다.
+ */
+function drawUnitShot(
+  ctx: BattleCtx,
+  rasters: SpriteRasterCache,
+  unit: Unit,
   from: Point,
   to: Point,
 ): boolean {
-  const travel = projectileTravel(attacker.cooldownMs, attacker.attackCooldownMs, JUST_ATTACKED_COOLDOWN_RATIO);
+  // 근접: 밀착해서 때린다. 날아가는 탄이 없고, 접촉 순간부터 피격이 뜬다.
+  if (!isRangedAttacker(unit)) return drawImpactSprite(ctx, rasters, ALLY_IMPACT, to.x, to.y);
+
+  const travel = projectileTravel(unit.cooldownMs, unit.attackCooldownMs, JUST_ATTACKED_COOLDOWN_RATIO);
   const x = from.x + (to.x - from.x) * travel;
   const y = from.y + (to.y - from.y) * travel;
 
-  if (!drawProjectileSprite(ctx, rasters, kind, x, y, to.x < from.x)) return false;
-  if (travel >= IMPACT_TRAVEL_AT) drawImpactSprite(ctx, rasters, impactKindForProjectile(kind), to.x, to.y);
+  if (!drawFlyingCan(ctx, rasters, x, y, travel, to.x < from.x)) return false;
+  if (travel >= IMPACT_TRAVEL_AT) drawImpactSprite(ctx, rasters, ALLY_IMPACT, to.x, to.y);
   return true;
 }
 
@@ -166,7 +204,7 @@ function drawUnitAttackTracers(
 
     const from: Point = { x: progressToX(unit.x, layout), y: allyUnitScreenY(unit, layout) };
     const to: Point = { x: progressToX(target.x, layout), y: laneY(target.lane, layout) };
-    if (drawAttackSprites(ctx, rasters, ALLY_PROJECTILE, unit, from, to)) continue;
+    if (drawUnitShot(ctx, rasters, unit, from, to)) continue;
     drawTracerLine(ctx, from, to, strokeStyle);
   }
 }
@@ -189,7 +227,8 @@ function drawEnemyAttackTracers(
 
     const from: Point = { x: progressToX(enemy.x, layout), y: laneY(enemy.lane, layout) };
     const to: Point = { x: progressToX(target.x, layout), y: allyUnitScreenY(target, layout) };
-    if (drawAttackSprites(ctx, rasters, ENEMY_PROJECTILE, enemy, from, to)) continue;
+    // 적 5종은 전부 근접이다 — 화살을 날리지 않고 접촉 타격만 그린다.
+    if (drawImpactSprite(ctx, rasters, ENEMY_IMPACT, to.x, to.y)) continue;
     drawTracerLine(ctx, from, to, strokeStyle);
   }
 }
@@ -214,7 +253,7 @@ function drawRangeHint(ctx: BattleCtx, palette: Palette, layout: BattleLayout, u
 
 function drawRangedUnitRangeHints(ctx: BattleCtx, palette: Palette, layout: BattleLayout, units: readonly Unit[]): void {
   for (const unit of units) {
-    if (unit.kind !== RANGED_UNIT_KIND || unit.hp <= 0) continue;
+    if (!isRangedAttacker(unit) || unit.hp <= 0) continue;
     drawRangeHint(ctx, palette, layout, unit);
   }
 }

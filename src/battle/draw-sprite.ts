@@ -18,7 +18,7 @@
 import { resolvePalette } from '../design/index.js';
 import type { Palette } from '../design/index.js';
 import { drawSprite, snapScale, spriteRasters } from '../sprites/render/index.js';
-import type { RenderableSpriteKey } from '../sprites/render/index.js';
+import type { RenderableSpriteKey, SpriteRaster } from '../sprites/render/index.js';
 import { spriteCtxOf } from './draw-background.js';
 import type { Rect } from './layout.js';
 import type { BattleCtx } from './surface.js';
@@ -67,6 +67,54 @@ export function drawSpriteCentered(
 
   const step = snapScale(scale);
   drawSprite(target, raster, cx - (raster.width * step) / 2, cy - (raster.height * step) / 2, step);
+}
+
+/**
+ * 유닛 한 체를 그린다. `frame` 이 있으면 그 공격 모션 프레임을, 없으면 정지 스프라이트를.
+ *
+ * ★ 원점은 **언제나 정지 스프라이트 기준**이다 ★
+ *   모션 프레임(`meleeFrame` 등)은 무기가 삐져나오는 만큼 캔버스가 4~6px 넓지만, 몸통
+ *   좌표는 정지 스프라이트와 동일하다(원본이 그렇게 짜여 있다 — `sprites/anim.ts`).
+ *   프레임 폭에 맞춰 가운데를 다시 잡으면 때릴 때마다 몸이 2~3px 좌우로 튄다. 그래서
+ *   프레임을 얹을 때도 정지 스프라이트의 좌상단을 그대로 쓴다 — 무기만 움직인다.
+ *
+ * 그릴 수 없는 컨텍스트에서는 조용히 넘어간다(`drawSpriteCentered` 와 같은 계약).
+ */
+export function drawUnitSprite(
+  ctx: BattleCtx,
+  key: RenderableSpriteKey,
+  frame: SpriteRaster | null,
+  cx: number,
+  cy: number,
+  scale: number,
+): void {
+  const idle = spriteRasters.ofKey(key);
+  if (idle === null) return;
+  const target = spriteCtxOf(ctx);
+  if (target === null) return;
+
+  const step = snapScale(scale);
+  drawSprite(target, frame ?? idle, cx - (idle.width * step) / 2, cy - (idle.height * step) / 2, step);
+}
+
+/**
+ * 이미 구워진 래스터를 `(cx, cy)` 중심에 그린다 — 파라메트릭 프레임(캔 회전 등)용.
+ * 키가 아니라 래스터를 받는다는 점만 `drawSpriteCentered` 와 다르다.
+ */
+export function drawRasterCentered(
+  ctx: BattleCtx,
+  raster: SpriteRaster,
+  cx: number,
+  cy: number,
+  scale: number,
+  flipX = false,
+): boolean {
+  const target = spriteCtxOf(ctx);
+  if (target === null) return false;
+
+  const step = snapScale(scale);
+  drawSprite(target, raster, cx - (raster.width * step) / 2, cy - (raster.height * step) / 2, step, flipX);
+  return true;
 }
 
 /**

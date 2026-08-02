@@ -11,15 +11,18 @@
  */
 
 import { allyAnchor, allyParts, allyRookie, allyScout } from './ally';
+import { ANIM_FRAMES, canFrame, canSpin, meleeFrame, shieldFrame, throwFrame } from './anim';
 import { baseAlly, baseEnemy, boss } from './base';
 import { bgFar, bgMid } from './bg';
 import { enemyBlocker, enemyKite, enemyRusher, enemySiren, enemyTank } from './enemy';
 import { fx } from './fx';
+import { fxScreen, fxSeq } from './fx-seq';
 import type { SpriteGrid } from './grid';
 import { ground, groundSlot } from './ground';
 import { proj } from './proj';
 import { scene } from './scene';
 import { scrimCompare, wideScene } from './scene-wide';
+import { SPRITE_STRIPS, strip } from './strip';
 import { towerAA, towerBasic, towerSplash } from './tower';
 import { uiButtons, uiChart, uiIcons, uiReveal } from './ui';
 import { weather } from './weather';
@@ -41,6 +44,12 @@ export { darkenGrid, scrimCompare, stampGrid, stampOnGrid, wideScene } from './s
 export { isSceneColor, MOOD, sceneColor } from './mood';
 export type { Mood, MoodKey } from './mood';
 export { weather } from './weather';
+export { canFrame, canSpin, meleeFrame, shieldFrame, throwFrame, ANIM_FRAMES, ANIM_FRAME_COUNT } from './anim';
+export type { AnimFrame } from './anim';
+export { fxBomb, fxHeal, fxScreen, fxSeq, fxShield, ringPx, FX_FRAMES } from './fx-seq';
+export type { FxFrame } from './fx-seq';
+export { strip, stripFrameGrid, stripFrameRect, SPRITE_STRIPS, STRIP_SPRITE_KEYS } from './strip';
+export type { FrameRect, StripMeta, StripSpriteKey } from './strip';
 
 // 고정 스프라이트
 export { allyAnchor, allyParts, allyRookie, allyScout } from './ally';
@@ -117,9 +126,24 @@ export const SPRITE_BUILDERS = {
   'tf-r3-noon': () => scene('noon', 108, 56, { region: 3 }),
   'tf-r3-dusk': () => scene('dusk', 108, 56, { region: 3 }),
   'tf-r3-dust': () => scene('dust', 108, 56, { region: 3, haze: true }),
+  // ── 공격 모션 · 스킬 시퀀스 (원본 갱신분 11키).
+  //    유닛 공격 3종은 `anim.ts` 의 프레임 생성기 위의 스트립이고, FX 3종은 5프레임 시퀀스다.
+  //    ⚠️ `tf-fx-screen` 은 게임 화면에 얹는 오버레이가 아니라 **3패널 비교 시트**다
+  //       (`fx-seq.ts` 머리말 참조 — 직접 blit 금지).
+  'tf-melee-loop': () => strip(ANIM_FRAMES.map((f) => meleeFrame(f)), SPRITE_STRIPS['tf-melee-loop'].gap),
+  'tf-melee-hold': () => meleeFrame(1),
+  'tf-can-idle': () => canFrame(0),
+  'tf-can-spin': canSpin,
+  'tf-throw-loop': () => strip(ANIM_FRAMES.map((f) => throwFrame(f)), SPRITE_STRIPS['tf-throw-loop'].gap),
+  'tf-shield-idle': () => shieldFrame(0),
+  'tf-shield-loop': () => strip(ANIM_FRAMES.map((f) => shieldFrame(f)), SPRITE_STRIPS['tf-shield-loop'].gap),
+  'tf-fx-seq-01': () => fxSeq(1),
+  'tf-fx-seq-02': () => fxSeq(2),
+  'tf-fx-seq-03': () => fxSeq(3),
+  'tf-fx-screen': fxScreen,
 } as const satisfies Record<string, () => SpriteGrid>;
 
-/** 원본 `sheets()` 의 61개 키(기존 43 + 시간대·하늘 18). */
+/** 원본 `sheets()` 의 72개 키(기존 43 + 시간대·하늘 18 + 공격 모션·스킬 시퀀스 11). */
 export type SpriteKey = keyof typeof SPRITE_BUILDERS;
 
 export const SPRITE_KEYS = Object.keys(SPRITE_BUILDERS) as readonly SpriteKey[];

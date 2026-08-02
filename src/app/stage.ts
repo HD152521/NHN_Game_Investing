@@ -17,26 +17,34 @@ import './start-gate.css';
 import './region-select.css';
 import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
+import '../ui/skill-tooltip.css';
 
-import { drawBattle, computeBattleLayout, slotAt } from '../battle';
+import { drawBattle, computeBattleLayout, progressToX, slotAt } from '../battle';
 import { drawChart } from '../chart';
 import { SKILL_SPECS, TOWER_IDENTITY, TOWER_UPGRADE_COST } from '../combat';
 import type { SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
-import type { SkillFxField } from '../fx';
+import type { SkillFxField, SkillFxViewport } from '../fx';
 import { changePercent } from '../market';
 import { applyPalette, createTheme } from '../design';
 import type { ColorTheme } from '../design';
 import type { Direction } from '../position';
 import {
   createGoldMeter,
+  createSkillTooltip,
   createTradePanel,
   mountHudIcons,
   prefersReducedMotion,
   resolveSkillButtonState,
   skillIdFor,
 } from '../ui';
-import type { GoldMeter, StakeRatio, TradePanel, TradePanelViewModel } from '../ui';
+import type {
+  GoldMeter,
+  SkillTooltip,
+  StakeRatio,
+  TradePanel,
+  TradePanelViewModel,
+} from '../ui';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, stageIdFor } from './region-select';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
@@ -98,6 +106,21 @@ export function mountStage(root: HTMLElement): () => void {
   const castCounts = new Map<SkillId, number>();
 
   /**
+   * 스킬 이펙트가 자기 **효과 범위**를 그리기 위해 필요한 전장 좌표.
+   *
+   * `S-01`(지상 적 전원)·`S-02`(아군 유닛 전원)는 맵 전체 스킬이라 연출도 화면 폭 전체를
+   * 덮어야 한다 — 그래서 `width`를 반드시 실제 캔버스 폭으로 준다. `groundY`·`baseX`는
+   * 전장 레이아웃에서 뽑아 오므로 사옥 크기나 레인 비율이 바뀌면 이펙트도 따라간다
+   * (`src/fx/skill-scope.ts` 참고). 레이아웃이 고정이라 프레임마다 다시 만들지 않는다.
+   */
+  const skillFxViewport: SkillFxViewport = {
+    width: BATTLE_WIDTH,
+    height: BATTLE_HEIGHT,
+    groundY: battleLayout.groundY,
+    baseX: progressToX(0, battleLayout),
+  };
+
+  /**
    * 골드 HUD 숫자의 소유자. 청산 골드는 차트에서 출발해 이 숫자로 날아와 꽂히고,
    * 도착 시점에 카운트업된다 (즉시 치환 금지).
    */
@@ -130,6 +153,15 @@ export function mountStage(root: HTMLElement): () => void {
     { mode: theme.mode },
   );
   refs.panelHost.appendChild(panel.element);
+
+  /**
+   * 스킬 상세 설명 툴팁 — hover **와** 키보드 포커스 양쪽에서 뜬다.
+   *
+   * 버튼에는 이름·비용·쿨다운밖에 없어서 "무엇을 하는 스킬인지" 화면에 없었다
+   * ("솔직히 잘 모르겠음" 피드백). 수치는 전부 `src/combat` 상수에서 파생되므로
+   * 밸런스를 고치면 설명도 같이 바뀐다 — 여기서 문구를 만들지 마라.
+   */
+  const skillTooltip: SkillTooltip = createSkillTooltip({ root, layer: refs.stage });
 
   function startSession(nowMs: number): void {
     session = new StageSession(seed, speed, nowMs, stageId);
@@ -301,7 +333,14 @@ export function mountStage(root: HTMLElement): () => void {
     });
 
     // 스킬 이펙트는 전장 위에 얹는다 — 가산 합성이라 반드시 전장을 다 그린 뒤여야 한다.
-    drawSkillFx(refs!.battleCtx, theme.palette, skillFx, nowMs, prefersReducedMotion());
+    drawSkillFx(
+      refs!.battleCtx,
+      theme.palette,
+      skillFx,
+      skillFxViewport,
+      nowMs,
+      prefersReducedMotion(),
+    );
 
     const delta = changePercent(session.set.bars, state.barIndex);
     refs!.change.textContent = formatSignedPercent(delta);
@@ -491,6 +530,7 @@ export function mountStage(root: HTMLElement): () => void {
   return () => {
     loop.stop();
     window.removeEventListener('keydown', onKeyDown);
+    skillTooltip.destroy();
     goldMeter.destroy();
     panel.destroy();
   };

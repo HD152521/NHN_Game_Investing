@@ -11,11 +11,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { createTheme } from '../design/index.js';
 import { spriteGrid } from '../sprites/index.js';
-import { spriteRasters } from '../sprites/render/index.js';
+import type { SpriteGrid } from '../sprites/index.js';
+import { spriteRasters, unitAnimFrameAt, unitAnimFrameGrid } from '../sprites/render/index.js';
 import type { RenderableSpriteKey } from '../sprites/render/index.js';
 import { createSoftwareSurface } from '../sprites/render/testing/software-canvas.js';
 import { makeEnemy as enemy, makeUnit as unit } from './combat-fixtures.js';
-import { allyUnitScreenY, drawAllies, drawEnemies } from './draw-units.js';
+import { allyUnitScreenY, attackAnimProgress, drawAllies, drawEnemies, UNIT_ATTACK_ANIM } from './draw-units.js';
 import { ALLY_SPRITES, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 import { cellRgb, createSpriteBattleSurface, hashRegion, pixelAt } from './sprite-fake-ctx.js';
@@ -57,7 +58,16 @@ function expectSpriteMatchesGrid(
   originY: number,
   scale: number,
 ): void {
-  const grid = spriteGrid(key);
+  expectGridMatches(target, spriteGrid(key), originX, originY, scale);
+}
+
+function expectGridMatches(
+  target: SpriteBattleSurface,
+  grid: SpriteGrid,
+  originX: number,
+  originY: number,
+  scale: number,
+): void {
   const half = Math.floor(scale / 2);
   let painted = 0;
 
@@ -163,6 +173,92 @@ describe('drawEnemies — 악당 스프라이트가 좌우 반전 없이 나온�
     drawEnemies(ctx, palette, layout, [enemy({ hp: 30, maxHp: 60 })]);
 
     expect(ctx.calls.some((call) => call.kind === 'fillRect' && call.fillStyle === palette.ENEMY_DOWN)).toBe(true);
+  });
+});
+
+/**
+ * 공격 모션 — 피드백 "그냥 제자리에서 이상한 화살표만 나간다" 의 회귀 방지.
+ *
+ * 쿨다운만으로 프레임을 역산하므로(`CombatState` 에 필드를 추가하지 않는다), 같은 유닛을
+ * **다른 쿨다운 값으로 그리면 다른 그림**이 나와야 한다. 아래가 그것을 픽셀로 고정한다.
+ */
+describe('drawAllies — 공격 모션', () => {
+  const COOLDOWN = 700;
+  /** 재생 창은 쿨다운의 70~100% 다. 네 값이 각각 프레임 0/1/2/3 에 떨어진다. */
+  const FRAME_RATIOS = [1, 0.9, 0.82, 0.72] as const;
+  const RELOADING_RATIO = 0.3;
+
+  function attacking(kind: 'intern' | 'analyst' | 'trader', ratio: number) {
+    return unit({ kind, id: 0, x: 0.5, attackCooldownMs: COOLDOWN, cooldownMs: COOLDOWN * ratio });
+  }
+
+  function drawnHash(kind: 'intern' | 'analyst' | 'trader', ratio: number): string {
+    const target = createSpriteBattleSurface(800, 300);
+    drawAllies(target.ctx, palette, layout, [attacking(kind, ratio)]);
+    return hashRegion(target.surface, 340, 180, 120, 100);
+  }
+
+  test('공격 중에는 쿨다운 값마다 다른 프레임이 나온다', () => {
+    const hashes = FRAME_RATIOS.map((ratio) => drawnHash('intern', ratio));
+    expect(new Set(hashes).size).toBe(FRAME_RATIOS.length);
+  });
+
+  test('재장전 중에는 정지 스프라이트로 돌아온다', () => {
+    expect(drawnHash('intern', RELOADING_RATIO)).toBe(drawnHash('intern', 0));
+  });
+
+  test('공격 프레임은 정지 스프라이트와 다른 그림이다', () => {
+    expect(drawnHash('intern', 1)).not.toBe(drawnHash('intern', 0));
+  });
+
+  test('세 종류가 서로 다른 공격 모션을 쓴다', () => {
+    const hashes = (['intern', 'analyst', 'trader'] as const).map((kind) => drawnHash(kind, 0.82));
+    expect(new Set(hashes).size).toBe(3);
+    expect(UNIT_ATTACK_ANIM).toEqual({ intern: 'melee', analyst: 'throw', trader: 'shield' });
+  });
+
+  /**
+   * ★ 원점 규약 ★ 모션 프레임은 무기가 삐져나온 만큼 캔버스가 넓지만(26→30, 28→34), 몸통
+   *   좌표는 정지 스프라이트와 같다. 그래서 **정지 스프라이트 기준 좌상단**에 그려야 몸이
+   *   좌우로 튀지 않는다. 아래는 프레임 픽셀이 그 원점에서 원본 그리드와 정확히 맞는지 본다.
+   */
+  test.each([
+    ['intern', 'melee'],
+    ['analyst', 'throw'],
+    ['trader', 'shield'],
+  ] as const)('%s 의 공격 프레임 픽셀이 %s 모션 그리드와 일치한다 (원점은 정지 스프라이트 기준)', (kind, anim) => {
+    const ratio = 0.82;
+    const target = createSpriteBattleSurface(800, 300);
+    const ally = attacking(kind, ratio);
+    drawAllies(target.ctx, palette, layout, [ally]);
+
+    const idleKey = ALLY_SPRITES[kind].key;
+    const idle = spriteGrid(idleKey);
+    const originX = Math.round(progressToX(ally.x, layout) - (idle[0]?.length ?? 0) / 2);
+    const originY = Math.round(allyUnitScreenY(ally, layout) - idle.length / 2);
+
+    const progress = attackAnimProgress(ally);
+    expect(progress).not.toBeNull();
+    const frame = unitAnimFrameGrid(anim, unitAnimFrameAt(anim, progress as number));
+    expectGridMatches(target, frame, originX, originY, 1);
+  });
+
+  test('attackAnimProgress — 재생 창(쿨다운 70~100%)에서만 값이 나온다', () => {
+    expect(attackAnimProgress(attacking('intern', 1))).toBeCloseTo(0, 6);
+    expect(attackAnimProgress(attacking('intern', 0.85))).toBeCloseTo(0.5, 6);
+    expect(attackAnimProgress(attacking('intern', 0.7))).toBeNull();
+    expect(attackAnimProgress(attacking('intern', 0))).toBeNull();
+    // 죽은 유닛은 때리지 않는다.
+    expect(attackAnimProgress({ ...attacking('intern', 1), hp: 0 })).toBeNull();
+  });
+
+  test('적은 공격 스트립이 원본에 없으므로 쿨다운이 달라도 그림이 그대로다', () => {
+    const hashOf = (cooldownMs: number): string => {
+      const target = createSpriteBattleSurface(800, 300);
+      drawEnemies(target.ctx, palette, layout, [enemy({ id: 0, lane: 'ground', x: 0.5, cooldownMs })]);
+      return hashRegion(target.surface, 340, 180, 120, 100);
+    };
+    expect(hashOf(900)).toBe(hashOf(0));
   });
 });
 

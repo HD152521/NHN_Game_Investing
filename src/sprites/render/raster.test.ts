@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { parseHex } from '../../design/color';
 import { resolvePalette } from '../../design/theme';
 import { spriteGrid } from '../index';
-import { SPRITE_PALETTE, TRANSPARENT, type SpriteCell } from '../palette';
+import { SPRITE_PALETTE, TRANSPARENT, type SpriteCell, type SpriteChar } from '../palette';
 import { ground } from '../ground';
 import {
   ADDITIVE_INK_FLOOR,
@@ -11,6 +11,7 @@ import {
   RENDERABLE_SPRITE_KEYS,
   SPRITE_COMPOSITE,
   COMPOSITE_SPECS,
+  type RenderableSpriteKey,
 } from './composite';
 import { createSpriteRasterCache, spriteRasters, type SpriteRaster } from './cache';
 import { drawSprite, drawSpriteBand, snapScale } from './draw';
@@ -49,28 +50,99 @@ function expectedChannels(cell: SpriteCell, mode: 'default' | 'colorblind' = 'de
 }
 
 describe('합성 분류표', () => {
-  test('61키에서 `tf-ally-parts` 만 빠진 60키를 전수 분류한다', () => {
-    expect(RENDERABLE_SPRITE_KEYS).toHaveLength(60);
+  test('72키에서 `tf-ally-parts` 만 빠진 71키를 전수 분류한다', () => {
+    expect(RENDERABLE_SPRITE_KEYS).toHaveLength(71);
     expect(RENDERABLE_SPRITE_KEYS).not.toContain('tf-ally-parts');
     expect(NON_RENDERABLE_SPRITE_KEYS).toEqual(['tf-ally-parts']);
   });
 
+  /**
+   * ⚠️ `tf-fx-screen` 은 이름이 `tf-fx-` 로 시작하지만 **발광 이펙트가 아니다.**
+   * 3패널 비교 시트(불투명 패널 3장 + 여백)라 가산으로 그리면 패널 배경이 통째로 사라진다.
+   * 이름 규칙의 유일한 예외이므로 여기서 명시적으로 못 박는다.
+   */
   test('날씨·스킬FX·발사체는 가산, 나머지는 source-over 다', () => {
     for (const key of RENDERABLE_SPRITE_KEYS) {
-      const additive = key.startsWith('tf-wx-') || key.startsWith('tf-fx-') || key.startsWith('tf-w-');
+      const byName = key.startsWith('tf-wx-') || key.startsWith('tf-fx-') || key.startsWith('tf-w-');
+      const additive = byName && key !== 'tf-fx-screen';
       if (additive) expect(SPRITE_COMPOSITE[key], key).toBe('additive');
       else expect(SPRITE_COMPOSITE[key], key).not.toBe('additive');
       expect(COMPOSITE_SPECS[SPRITE_COMPOSITE[key]].mode, key).toBe(additive ? 'lighter' : 'source-over');
     }
+    expect(SPRITE_COMPOSITE['tf-fx-screen']).toBe('opaque');
   });
 
-  test('유닛·타워·기지·하늘씬은 alpha, 배경밴드·발판·UI 는 opaque 다', () => {
+  test('유닛·타워·기지·하늘씬·공격모션은 alpha, 배경밴드·발판·UI 는 opaque 다', () => {
     const alphaKeys = RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'alpha');
     const opaqueKeys = RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'opaque');
-    // 유닛·타워·기지 14 + 시간대·하늘 씬 18 = 32
-    expect(alphaKeys).toHaveLength(32);
-    expect(opaqueKeys).toHaveLength(17);
-    expect(RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'additive')).toHaveLength(11);
+    // 유닛·타워·기지 14 + 시간대·하늘 씬 18 + 공격 모션 7 = 39
+    expect(alphaKeys).toHaveLength(39);
+    // 배경밴드·발판·UI 17 + `tf-fx-screen` 비교 시트 1 = 18
+    expect(opaqueKeys).toHaveLength(18);
+    // 날씨 4 + FX 3 + 발사체 4 + FX 5프레임 시퀀스 3 = 14
+    expect(RENDERABLE_SPRITE_KEYS.filter((key) => SPRITE_COMPOSITE[key] === 'additive')).toHaveLength(14);
+  });
+
+  /**
+   * 공격 모션 11키를 `alpha` / `additive` / `opaque` 로 가른 근거를 **그리드로** 고정한다.
+   * 유닛 모션은 투명이 실제로 많고(≥40%), FX 시퀀스는 프레임이 꽉 차 있어 어두운 배경이
+   * 대부분(≥90%)이라 가산으로 지워야 한다.
+   */
+  test('공격 모션 11키의 분류 근거 — 투명 비율과 어두운 잉크 비율', () => {
+    const floor = COMPOSITE_SPECS.additive.inkFloor as number;
+    const palette = resolvePalette('default');
+    const brightest = (hex: string) => {
+      const { r, g, b } = parseHex(hex);
+      return Math.max(r, g, b);
+    };
+    const stats = (key: RenderableSpriteKey) => {
+      const grid = spriteGrid(key);
+      let cells = 0;
+      let transparent = 0;
+      let ink = 0;
+      let dark = 0;
+      for (const row of grid)
+        for (const cell of row) {
+          cells += 1;
+          if (cell === TRANSPARENT) {
+            transparent += 1;
+            continue;
+          }
+          ink += 1;
+          const hex = cell.startsWith('#') ? cell : palette[SPRITE_PALETTE[cell as SpriteChar]];
+          if (brightest(hex) < floor) dark += 1;
+        }
+      return { transparency: transparent / cells, darkInk: dark / ink };
+    };
+
+    const motion: readonly RenderableSpriteKey[] = [
+      'tf-melee-loop',
+      'tf-melee-hold',
+      'tf-can-idle',
+      'tf-can-spin',
+      'tf-throw-loop',
+      'tf-shield-idle',
+      'tf-shield-loop',
+    ];
+    for (const key of motion) {
+      const { transparency, darkInk } = stats(key);
+      expect(transparency, `${key} 투명 비율`).toBeGreaterThan(0.4);
+      expect(darkInk, `${key} 어두운 잉크 비율`).toBeLessThan(0.3);
+      expect(SPRITE_COMPOSITE[key], key).toBe('alpha');
+    }
+
+    for (const key of ['tf-fx-seq-01', 'tf-fx-seq-02', 'tf-fx-seq-03'] as const) {
+      const { transparency, darkInk } = stats(key);
+      expect(transparency, `${key} 투명 비율`).toBeLessThan(0.2);
+      expect(darkInk, `${key} 어두운 잉크 비율`).toBeGreaterThan(0.9);
+      expect(SPRITE_COMPOSITE[key], key).toBe('additive');
+    }
+
+    const screen = stats('tf-fx-screen');
+    expect(screen.transparency).toBe(0);
+    // `tf-ui-btn`(불투명 패널)과 같은 대역이다 — 발광체가 아니다.
+    expect(screen.darkInk).toBeLessThan(0.5);
+    expect(screen.darkInk).toBeCloseTo(stats('tf-ui-btn').darkInk, 1);
   });
 
   /**

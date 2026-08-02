@@ -47,6 +47,24 @@ const SKY_KEYS_ADDED: readonly SpriteKey[] = [
   'tf-r3-dust',
 ];
 
+/**
+ * 원본 재갱신으로 추가된 공격 모션·스킬 시퀀스 11키. 앞선 61키는 한 픽셀도 바뀌지 않았다.
+ * 순서는 원본 `sheets()` 그대로다.
+ */
+const ANIM_KEYS_ADDED: readonly SpriteKey[] = [
+  'tf-melee-loop',
+  'tf-melee-hold',
+  'tf-can-idle',
+  'tf-can-spin',
+  'tf-throw-loop',
+  'tf-shield-idle',
+  'tf-shield-loop',
+  'tf-fx-seq-01',
+  'tf-fx-seq-02',
+  'tf-fx-seq-03',
+  'tf-fx-screen',
+];
+
 /** 셀이 팔레트 문자이거나 씬 전용 생 색(`#RRGGBB`)인지. */
 function isKnownCell(cell: string): boolean {
   return isSpriteCell(cell) || /^#[0-9a-f]{6}$/i.test(cell);
@@ -64,14 +82,21 @@ function charSet(grid: readonly (readonly string[])[]): readonly string[] {
 }
 
 describe('스프라이트 이식 — 원본 대조', () => {
-  test('키 61개가 원본 `sheets()` 와 이름·순서까지 같다', () => {
+  test('키 72개가 원본 `sheets()` 와 이름·순서까지 같다', () => {
     expect(SPRITE_KEYS).toEqual(Object.keys(reference));
-    expect(SPRITE_KEYS).toHaveLength(61);
+    expect(SPRITE_KEYS).toHaveLength(72);
   });
 
   test('시간대·하늘 18키가 전부 들어와 있다 (원본 갱신분)', () => {
     expect(SKY_KEYS_ADDED).toHaveLength(18);
     for (const key of SKY_KEYS_ADDED) expect(SPRITE_KEYS).toContain(key);
+  });
+
+  test('공격 모션·스킬 시퀀스 11키가 전부 들어와 있다 (원본 재갱신분)', () => {
+    expect(ANIM_KEYS_ADDED).toHaveLength(11);
+    for (const key of ANIM_KEYS_ADDED) expect(SPRITE_KEYS).toContain(key);
+    // 72 = 43(초기) + 18(하늘) + 11(모션)
+    expect(SPRITE_KEYS.length).toBe(43 + SKY_KEYS_ADDED.length + ANIM_KEYS_ADDED.length);
   });
 
   test.each(SPRITE_KEYS)('%s 그리드가 원본과 문자 단위로 일치한다', (key) => {
@@ -109,10 +134,35 @@ describe('스프라이트 그리드 불변식', () => {
     expect(unknown).toEqual([]);
   });
 
-  test('기존 43키는 PAL 문자만 쓴다 (생 색은 신규 18키에만 등장한다)', () => {
-    const legacy = SPRITE_KEYS.filter((key) => !SKY_KEYS_ADDED.includes(key));
+  test('기존 43키는 PAL 문자만 쓴다 (생 색은 신규 키에만 등장한다)', () => {
+    const legacy = SPRITE_KEYS.filter((key) => !SKY_KEYS_ADDED.includes(key) && !ANIM_KEYS_ADDED.includes(key));
     expect(legacy).toHaveLength(43);
     for (const key of legacy) {
+      expect(charSet(spriteGrid(key)).filter((char) => !isSpriteCell(char)), key).toEqual([]);
+    }
+  });
+
+  /**
+   * 모션 11키 중 **`stamp` 를 거치는 것만** 생 색이 된다 — 원본 `stamp` 가 팔레트 문자를
+   * 그 시점의 HEX 로 굽기 때문이다(`strip.ts` 머리말). 단일 프레임 4키는 문자 그대로다.
+   * 이 구분이 곧 "게임 화면에는 스트립이 아니라 프레임 생성기를 써라" 의 근거다.
+   */
+  test('스트립·회전 시트만 생 색을 갖고, 단일 프레임 4키는 PAL 문자만 쓴다', () => {
+    const baked: readonly SpriteKey[] = [
+      'tf-melee-loop',
+      'tf-throw-loop',
+      'tf-shield-loop',
+      'tf-can-spin',
+      'tf-fx-seq-01',
+      'tf-fx-seq-02',
+      'tf-fx-seq-03',
+    ];
+    const plain: readonly SpriteKey[] = ['tf-melee-hold', 'tf-can-idle', 'tf-shield-idle', 'tf-fx-screen'];
+
+    for (const key of baked) {
+      expect(charSet(spriteGrid(key)).some((char) => !isSpriteCell(char)), key).toBe(true);
+    }
+    for (const key of plain) {
       expect(charSet(spriteGrid(key)).filter((char) => !isSpriteCell(char)), key).toEqual([]);
     }
   });

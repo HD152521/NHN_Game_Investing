@@ -15,9 +15,11 @@
  *   한 화면에 지상 3종 · 공중 2종이 섞여 보인다.
  */
 
-import type { Enemy, Unit } from '../combat/types.js';
+import type { Combatant, Enemy, Unit, UnitKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
-import { drawSpriteCentered, syncSpriteColorMode } from './draw-sprite.js';
+import { spriteRasters, unitAnimFrameAt, unitAnimFrameRaster } from '../sprites/render/index.js';
+import type { SpriteRaster, UnitAnimId } from '../sprites/render/index.js';
+import { drawSpriteCentered, drawUnitSprite, syncSpriteColorMode } from './draw-sprite.js';
 import { drawHpBar } from './draw-hp-bar.js';
 import { ALLY_SPRITES, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
 import type { BattleLayout } from './layout.js';
@@ -39,6 +41,67 @@ const UNIT_Y_JITTER = 9;
  * 하나도 건드리지 않고 그림만 교체할 수 있다. 2× 로 키우면 지상 유닛이 공중 레인까지 닿는다.
  */
 const UNIT_SPRITE_SCALE = 1;
+
+/* ------------------------------------------------------------------ *
+ * 공격 모션 (원본 갱신분 `tf-melee-loop` / `tf-throw-loop` / `tf-shield-loop`)
+ *
+ * 피드백: "그냥 제자리에서 이상한 화살표만 나간다." 유닛이 정지 스프라이트로 서 있고
+ * 발사체만 날아가서 **때리는 동작이 없었다.**
+ *
+ * ★ 상태를 새로 만들지 않는다 ★ `CombatState` 에 "지금 몇 번째 프레임" 같은 필드를 넣지
+ *   않고, 예광선(`draw-tracers.ts` / `draw-unit-tracers.ts`)과 **같은 방식**으로 쿨다운에서
+ *   역산한다: `cooldownMs` 가 막 최댓값으로 리셋된 직후가 곧 공격 모션 재생 구간이다.
+ *   두 계층이 같은 창(70~100%)을 쓰므로 모션과 탄이 어긋나지 않는다.
+ * ------------------------------------------------------------------ */
+
+/** 쿨다운이 최댓값의 이 비율을 넘으면 "막 공격함" — 예광선과 같은 규칙이라야 그림이 맞는다. */
+const ATTACK_ANIM_COOLDOWN_RATIO = 0.7;
+
+/**
+ * 유닛 종류 → 공격 모션. **근거는 원본 프레임 그림이다**(이름이 아니다):
+ *
+ *  - `intern`(A-01 근거리, `tf-ally-01` = `allyRookie`) → `meleeFrame`.
+ *    원본 `meleeFrame` 의 몸통은 `allyRookie` 와 좌표까지 같고(`rect(8,26,4,6,'2')` …),
+ *    거기에 `lean` 과 칼 4프레임이 붙어 있다. 같은 유닛의 공격 자세다.
+ *  - `analyst`(A-02 원거리, `tf-ally-02` = `allyScout`) → `throwFrame`.
+ *    원본 `throwFrame` 의 몸통은 `allyScout` 과 좌표까지 같고(`disc(5,18,4,'m')` 어깨 원반,
+ *    `rect(8,13,11,13,'3')` 몸통), 팔이 캔을 던지는 4프레임이다.
+ *  - `trader`(A-03 탱커, `tf-ally-03` = `allyAnchor`) → `shieldFrame`.
+ *    원본 `shieldFrame` 의 몸통은 `allyAnchor` 와 좌표까지 같고(`disc(6,14,4,'3')` 어깨),
+ *    `allyAnchor` 의 세로 방패(`rect(21,10,6,19,'m')`)가 `push` 만큼 앞으로 나간다.
+ *
+ * ⚠️ 적 5종에는 대응하는 공격 스트립이 **원본에 없다.** 억지로 아군 모션을 붙이면 악당이
+ *    아군 몸통으로 변하므로, 적은 정지 스프라이트를 유지한다(피격 표현은 예광선 계층이 맡는다).
+ */
+export const UNIT_ATTACK_ANIM: Readonly<Record<UnitKind, UnitAnimId>> = {
+  intern: 'melee',
+  analyst: 'throw',
+  trader: 'shield',
+};
+
+/**
+ * 공격 모션 재생 진행도(0~1). 재생 구간이 아니면 `null`.
+ *
+ * `cooldownMs` 는 공격 직후 `attackCooldownMs` 로 리셋되고 0 을 향해 줄어든다. 그래서
+ * 경과 = `attackCooldownMs - cooldownMs` 이고, 재생 창은 그 경과가 창 길이
+ * (`attackCooldownMs × (1 - 비율)`) 미만인 동안이다.
+ */
+export function attackAnimProgress(entity: Combatant): number | null {
+  if (entity.hp <= 0) return null;
+  const window = entity.attackCooldownMs * (1 - ATTACK_ANIM_COOLDOWN_RATIO);
+  if (window <= 0) return null;
+  const elapsed = entity.attackCooldownMs - entity.cooldownMs;
+  if (elapsed < 0 || elapsed >= window) return null;
+  return elapsed / window;
+}
+
+/** 지금 이 유닛이 보여야 할 공격 프레임 래스터. 공격 중이 아니거나 못 구우면 `null`. */
+function attackFrameRaster(unit: Unit): SpriteRaster | null {
+  const progress = attackAnimProgress(unit);
+  if (progress === null) return null;
+  const anim = UNIT_ATTACK_ANIM[unit.kind];
+  return unitAnimFrameRaster(spriteRasters, anim, unitAnimFrameAt(anim, progress));
+}
 
 function hpBarRect(cx: number, cy: number): { x: number; y: number; w: number; h: number } {
   return { x: cx - HP_BAR_WIDTH / 2, y: cy - HP_BAR_OFFSET_Y, w: HP_BAR_WIDTH, h: HP_BAR_HEIGHT };
@@ -82,7 +145,7 @@ export function drawAllies(ctx: BattleCtx, palette: Palette, layout: BattleLayou
     const cx = progressToX(unit.x, layout);
     const cy = allyUnitScreenY(unit, layout);
 
-    drawSpriteCentered(ctx, ALLY_SPRITES[unit.kind].key, cx, cy, UNIT_SPRITE_SCALE);
+    drawUnitSprite(ctx, ALLY_SPRITES[unit.kind].key, attackFrameRaster(unit), cx, cy, UNIT_SPRITE_SCALE);
 
     const bar = hpBarRect(cx, cy);
     drawHpBar(ctx, { ...bar, hp: unit.hp, maxHp: unit.maxHp, color: palette.UP_ALLY, palette });

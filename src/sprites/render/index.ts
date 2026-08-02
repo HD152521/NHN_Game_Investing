@@ -28,6 +28,18 @@ export type {
   RenderableSpriteKey,
 } from './composite';
 
+export {
+  UNIT_ANIM_IDS,
+  unitAnimComposite,
+  unitAnimFrameAt,
+  unitAnimFrameCount,
+  unitAnimFrameGrid,
+  unitAnimFrameRaster,
+  unitAnimFrameSource,
+  unitAnimSheetKey,
+} from './anim';
+export type { UnitAnimId } from './anim';
+
 export { createSpriteRasterCache, spriteRasters, spriteSourceOfKey } from './cache';
 export type { SpriteRaster, SpriteRasterCache, SpriteRasterCacheOptions, SpriteSource } from './cache';
 

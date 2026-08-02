@@ -148,6 +148,41 @@ export const SPRITE_COMPOSITE = {
   'tf-r3-noon': 'alpha',
   'tf-r3-dusk': 'alpha',
   'tf-r3-dust': 'alpha',
+
+  /**
+   * ── 공격 모션 · 스킬 시퀀스 11키 — 이름이 아니라 **그리드를 실제로 세어서** 정했다.
+   *   (수치는 `docs/design-reference/grids.json` 실측. "잉크" = 투명이 아닌 셀,
+   *    "어두운 잉크" = 최대 채널이 `ADDITIVE_INK_FLOOR`(24) 미만인 셀.)
+   *
+   *  1. 유닛 모션 7키(`tf-melee-*` · `tf-throw-loop` · `tf-shield-*` · `tf-can-*`):
+   *     투명 43.8~65.6%, 어두운 잉크 19.1~25.9%. 기준점인 `tf-ally-01`(투명 46.8% /
+   *     어두운 잉크 20.4%)·`tf-ally-03`(31.7% / 19.1%) 과 **같은 분포**다 — 실루엣 주위가
+   *     진짜로 비어 있는 유닛 그림이므로 `alpha`.
+   *     `additive` 는 배제된다: 굽는 시점에 24 미만을 지우므로 외곽선(`'0'`, 최대 채널 12)이
+   *     통째로 날아가 유닛 테두리가 사라진다.
+   *  2. `tf-fx-seq-01~03`: 프레임이 `rect(0, 0, 44, 40, '1')` 로 꽉 차 있어 투명은 스트립
+   *     여백 14.1%(= 10248 − 5×1760)뿐이고, 어두운 잉크가 90.2 / 94.0 / 91.3% 다. 이 어두움이
+   *     바로 **버려야 할 검정 배경**이다 — `tf-fx-01~03`(투명 0% / 어두운 잉크 84.8 · 91.7 ·
+   *     96.1%) 과 같은 성질이고 시트도 FX 를 가산으로 지정했으므로 `additive`.
+   *  3. `tf-fx-screen`: 투명 0%, 어두운 잉크 36.6% — `tf-ui-btn`(0% / 36.5%) 과 판박이다.
+   *     발광체가 아니라 **불투명 패널 3장**이라 `opaque`.
+   *
+   * ★★ `tf-fx-screen` 은 `tf-sky-scrim` 과 같은 부류의 **비교 시트**다 — 직접 blit 금지 ★★
+   *   28px 패널 3개(기본 / 금색 틴트 + 방사선 / 스캔라인)를 나란히 놓고 여백으로 가른
+   *   견본이다. 전장에 통째로 그리면 화면에 작은 차트 패널 세 개가 떠 있는 그림이 된다.
+   *   화면 연출이 필요하면 이 시트를 **참고해** 효과를 따로 구현해라(`fx-seq.ts` 머리말).
+   */
+  'tf-melee-loop': 'alpha',
+  'tf-melee-hold': 'alpha',
+  'tf-can-idle': 'alpha',
+  'tf-can-spin': 'alpha',
+  'tf-throw-loop': 'alpha',
+  'tf-shield-idle': 'alpha',
+  'tf-shield-loop': 'alpha',
+  'tf-fx-seq-01': 'additive',
+  'tf-fx-seq-02': 'additive',
+  'tf-fx-seq-03': 'additive',
+  'tf-fx-screen': 'opaque',
 } as const satisfies Record<RenderableSpriteKey, CompositeClass>;
 
 export const RENDERABLE_SPRITE_KEYS = Object.keys(SPRITE_COMPOSITE) as readonly RenderableSpriteKey[];
