@@ -8,14 +8,18 @@
  * `createCombat`/`step`이 만든 상태만 서로 주고받는다는 전제 하에 안전한 캐스팅이다.
  */
 
+import { bossViewOf } from './boss';
 import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS, WAVE_PREP_MS } from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks, moveEnemies, moveUnits } from './mechanics';
 import { createSkillCooldowns, tickSkillCooldowns } from './skills';
 import type { CombatStateInternal } from './state';
-import type { CombatEvents, CombatParams, CombatState, Enemy } from './types';
+import type { CombatEvents, CombatParams, CombatState, DeathEvent, Enemy, Unit } from './types';
 import { advanceWaveClock, battleDurationMs, createWaveClock } from './wave-clock';
 import type { WaveClock, WaveClockParams } from './wave-clock';
 import { aumDropPerKill, spawnPlanFor, waveIncomeFor } from './waves';
+
+/** 사망이 없는 틱이 공유하는 빈 목록. 프레임당 할당 0(PRD §11)을 위해 참조를 재사용한다. */
+const NO_DEATHS: readonly DeathEvent[] = Object.freeze([]);
 
 const EMPTY_EVENTS: CombatEvents = {
   kills: 0,
@@ -23,7 +27,34 @@ const EMPTY_EVENTS: CombatEvents = {
   goldIncome: 0,
   baseDamage: 0,
   waveStarted: null,
+  deaths: NO_DEATHS,
 };
+
+/**
+ * 죽은 적·유닛을 사망 이벤트로 옮긴다. 둘 다 비어 있으면 `NO_DEATHS`(새 배열 없음).
+ *
+ * 적과 유닛을 한 함수에서 다루는 이유는 소비자가 하나이기 때문이다 — 렌더러는 "무엇이
+ * 어디서 죽었는가"만 알면 되고, 시트 선택(`tf-death-ally` / `tf-death-enemy`)은 `kind`로 갈린다.
+ */
+function deathEventsOf(deadEnemies: readonly Enemy[], deadUnits: readonly Unit[]): readonly DeathEvent[] {
+  if (deadEnemies.length === 0 && deadUnits.length === 0) {
+    return NO_DEATHS;
+  }
+  const deaths: DeathEvent[] = [];
+  for (const enemy of deadEnemies) {
+    deaths.push({
+      id: enemy.id,
+      kind: enemy.isBoss === true ? 'boss' : 'enemy',
+      lane: enemy.lane,
+      x: enemy.x,
+    });
+  }
+  for (const unit of deadUnits) {
+    // 유닛은 언제나 지상이다 — 공중 레인에 아군이 서는 경우가 없다(FR-6.2).
+    deaths.push({ id: unit.id, kind: 'unit', lane: 'ground', x: unit.x });
+  }
+  return deaths;
+}
 
 /** `CombatParams` → 웨이브 시계 파라미터. 준비 시간이 생략되면 `WAVE_PREP_MS`를 쓴다. */
 export function waveClockParams(params: CombatParams): WaveClockParams {
@@ -65,6 +96,7 @@ export function createCombat(params: CombatParams): CombatState {
     skillCooldownMs: 0,
     skillCooldowns: createSkillCooldowns(),
     shieldRemainingMs: 0,
+    boss: null,
     waveMode: clock.mode,
     spawnedInWave: 0,
     waveEnemyTotal: 0,
@@ -112,6 +144,12 @@ function spawnDue(
       // 유닛(summonUnit)은 소환 직후 워밍업 개념으로 cooldownMs를 attackCooldownMs로 채우지만,
       // 적은 이미 행군해 온 상태로 등장하므로 밀착하자마자 바로 반격할 수 있게 0으로 스폰한다.
       cooldownMs: 0,
+      // ⚠️ 이 두 줄이 없으면 보스가 **일반 적으로 스폰된다**(실제로 났던 버그다 —
+      // 스펙에는 `isBoss: true`가 있는데 여기서 필드를 하나씩 옮겨 적느라 누락됐고,
+      // 그 결과 보스 HP 바도 페이즈 연출도 전부 죽은 채로 마지막 웨이브가 지나갔다).
+      // 스펙에 필드를 추가하면 **여기도 같이 고쳐야 한다.**
+      isBoss: spec.isBoss,
+      leakDamage: spec.leakDamage,
     });
     nextEnemyId += 1;
   }
@@ -181,7 +219,20 @@ function substep(
   const leakResult = collectLeaks(movedEnemies);
   const aumPerKill = aumDropPerKill(clock.wave, params);
   const deathResult = collectDeaths(leakResult.survivors, aumPerKill);
-  const survivingUnits = movedUnits.filter((unit) => unit.hp > 0);
+
+  // 유닛도 적과 같은 규칙으로 죽는다 — 살아남은 쪽과 죽은 쪽을 한 번에 가른다.
+  const survivingUnits: Unit[] = [];
+  let deadUnits: Unit[] | null = null;
+  for (const unit of movedUnits) {
+    if (unit.hp > 0) {
+      survivingUnits.push(unit);
+    } else {
+      if (deadUnits === null) {
+        deadUnits = [];
+      }
+      deadUnits.push(unit);
+    }
+  }
 
   const skillCooldowns = tickSkillCooldowns(
     state.skillCooldowns ?? createSkillCooldowns(),
@@ -232,6 +283,9 @@ function substep(
     skillCooldownMs: skillCooldowns['S-01'],
     skillCooldowns,
     shieldRemainingMs,
+    // 보스 체력은 **저장하지 않고 매 틱 개체에서 파생**한다. 별도 필드로 들면 개체와
+    // 조용히 어긋날 수 있고, 보스가 죽은 프레임에 HP 바만 남는 사고가 난다.
+    boss: bossViewOf(deathResult.survivors),
     // spawnedInWave는 반드시 이번 틱에 실제로 스폰된 수(spawnResult)를 반영해야 한다 —
     // waveInfo.spawnedInWave는 "웨이브 전환 시 리셋된 값"일 뿐이라 그대로 쓰면 같은 웨이브
     // 안에서 스폰 진행도가 매 틱 0으로 되돌아가 적이 무한 중복 스폰되는 버그가 생긴다.
@@ -247,6 +301,7 @@ function substep(
     goldIncome: waveInfo.goldIncome,
     baseDamage,
     waveStarted: waveInfo.waveStarted,
+    deaths: deathEventsOf(deathResult.dead, deadUnits ?? []),
   };
 
   return { state: nextState, events };
@@ -275,6 +330,8 @@ export function step(
   let goldIncome = 0;
   let baseDamage = 0;
   let waveStarted: number | null = null;
+  // 서브스텝 여러 개에 걸친 사망을 모은다. 사망이 없는 호출에서는 배열을 만들지 않는다.
+  let deaths: DeathEvent[] | null = null;
 
   while (remaining > 0 && current.phase === 'running') {
     const chunk = Math.min(MAX_SUBSTEP_MS, remaining);
@@ -289,7 +346,16 @@ export function step(
     if (result.events.waveStarted !== null) {
       waveStarted = result.events.waveStarted;
     }
+    if (result.events.deaths.length > 0) {
+      if (deaths === null) {
+        deaths = [];
+      }
+      deaths.push(...result.events.deaths);
+    }
   }
 
-  return { state: current, events: { kills, aumDropped, goldIncome, baseDamage, waveStarted } };
+  return {
+    state: current,
+    events: { kills, aumDropped, goldIncome, baseDamage, waveStarted, deaths: deaths ?? NO_DEATHS },
+  };
 }

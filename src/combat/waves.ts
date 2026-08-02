@@ -6,8 +6,15 @@
  * 계산이 모두 이 값에 의존하므로 세 함수가 서로 다른 값을 쓰지 않도록 여기 한 곳에 모은다.
  */
 
+import { isBossWave } from './boss';
 import {
   AIR_ENEMY_SHARE,
+  BOSS_ATTACK_COOLDOWN_MS,
+  BOSS_BASE_DAMAGE,
+  BOSS_DAMAGE,
+  BOSS_HP_MULTIPLIER,
+  BOSS_RANGE,
+  BOSS_SPEED,
   DEFAULT_WAVE_TABLE,
   ENEMY_ATTACK_COOLDOWN_MS,
   ENEMY_DAMAGE,
@@ -34,6 +41,10 @@ export interface EnemySpec {
   readonly range: number;
   /** 공격 주기(ms). */
   readonly attackCooldownMs: number;
+  /** 보스(B-03)인가. `Enemy.isBoss`로 그대로 넘어간다. */
+  readonly isBoss?: boolean | undefined;
+  /** 본진 도달 시 피해. 생략하면 `BASE_DAMAGE_PER_LEAK`. */
+  readonly leakDamage?: number | undefined;
 }
 
 /**
@@ -58,6 +69,31 @@ export function spawnPlanFor(wave: number, params: CombatParams): EnemySpec[] {
   const groundCount = count - airCount;
 
   const specs: EnemySpec[] = [];
+
+  /**
+   * ★ 보스는 스폰 계획의 **맨 앞**이다 ★
+   * `spawnDue`(simulate.ts)는 계획 배열을 앞에서부터 교전 시간에 비례해 꺼내므로, 앞에 두면
+   * 보스가 교전 구간 시작과 동시에 출발한다. 뒤에 두면 25초짜리 교전 구간이 끝날 무렵에야
+   * 등장해 "보스가 나오자마자 웨이브가 끝난다"가 된다.
+   *
+   * 맨 앞이라는 사실은 **전투 규칙과도 맞물린다**: 보스가 선두이므로 언제나 x가 가장 작고,
+   * 타워는 x가 가장 작은 적을 쏘므로(`mechanics.ts pickPriorityTarget`) 보스가 자동으로
+   * 1순위 표적이 된다. 뒤에 두거나 속도를 늦추면 잡졸이 보스의 방패가 되어 **보스가 한 대도
+   * 안 맞고 지나간다**(`constants.ts BOSS_SPEED` 주석의 실측 기록).
+   */
+  if (isBossWave(wave)) {
+    specs.push({
+      lane: 'ground',
+      hp: hp * BOSS_HP_MULTIPLIER,
+      speed: BOSS_SPEED,
+      damage: BOSS_DAMAGE,
+      range: BOSS_RANGE,
+      attackCooldownMs: BOSS_ATTACK_COOLDOWN_MS,
+      isBoss: true,
+      leakDamage: BOSS_BASE_DAMAGE,
+    });
+  }
+
   for (let i = 0; i < groundCount; i += 1) {
     specs.push({
       lane: 'ground',

@@ -215,6 +215,13 @@ describe('step — 결정론 및 큰 dtMs 안전성', () => {
 
     const { state: after, events } = step(state, 1000, params);
     expect(after).toEqual(state);
-    expect(events).toEqual({ kills: 0, aumDropped: 0, goldIncome: 0, baseDamage: 0, waveStarted: null });
+    expect(events).toEqual({
+      kills: 0,
+      aumDropped: 0,
+      goldIncome: 0,
+      baseDamage: 0,
+      waveStarted: null,
+      deaths: [],
+    });
   });
 });

@@ -8,9 +8,20 @@ import {
   UNIT_MELEE_RANGE,
   UNIT_RANGE,
   UNIT_SPEED,
+  TOWER_DAMAGE,
   TOWER_RANGE,
   towerX,
 } from './constants';
+
+/**
+ * ★ 피해량은 **리터럴로 박지 않고 상수에서 읽는다** ★
+ * 이 테스트들이 고정하려는 명제는 "누가 누구를 때리는가 · 어느 사거리에서 때리는가"이지
+ * "한 방이 몇인가"가 아니다. 리터럴을 박아 두면 밸런스 조정(v1.5의 타워 하향 등)마다
+ * 레인 판정·슬롯 판정 테스트가 **거짓으로** 깨진다 — 실제로 그렇게 8개가 깨졌다.
+ */
+const BASIC_L1 = TOWER_DAMAGE.basic[1];
+const ANTIAIR_L1 = TOWER_DAMAGE.antiair[1];
+const SPLASH_L1 = TOWER_DAMAGE.splash[1];
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks } from './mechanics';
 import type { Enemy, Tower, Unit } from './types';
 
@@ -63,8 +74,8 @@ describe('applyTowerFire — FR-6.2 레인 표적 제한', () => {
     const air = result.enemies.find((e) => e.id === 2);
 
     // basic이 지상을 때렸으니 지상 hp만 깎이고, air는 antiair가 때려 air hp만 깎인다.
-    expect(ground?.hp).toBe(1000 - 20);
-    expect(air?.hp).toBe(1000 - 34);
+    expect(ground?.hp).toBe(1000 - BASIC_L1);
+    expect(air?.hp).toBe(1000 - ANTIAIR_L1);
   });
 
   test('splash는 사거리 내 지상 적 전원에게 피해를 주고, 사거리 밖은 건드리지 않는다', () => {
@@ -77,8 +88,8 @@ describe('applyTowerFire — FR-6.2 레인 표적 제한', () => {
 
     const result = applyTowerFire(towers, enemies, 1400);
 
-    expect(result.enemies.find((e) => e.id === 1)?.hp).toBe(90);
-    expect(result.enemies.find((e) => e.id === 2)?.hp).toBe(90);
+    expect(result.enemies.find((e) => e.id === 1)?.hp).toBe(100 - SPLASH_L1);
+    expect(result.enemies.find((e) => e.id === 2)?.hp).toBe(100 - SPLASH_L1);
     expect(result.enemies.find((e) => e.id === 3)?.hp).toBe(100);
   });
 
@@ -113,9 +124,9 @@ describe('applyEngagement — FR-6.5 유닛-적 교전', () => {
 
     expect(result.blockedEnemyIds.has(1)).toBe(true);
     expect(result.blockedUnitIds.has(1)).toBe(true);
-    // analyst 데미지 13(쿨다운 0이라 즉시 발사), 적 근접 dps 9 × 1초 = 9
-    expect(result.enemies[0]?.hp).toBe(87);
-    expect(result.units[0]?.hp).toBe(91);
+    // 유닛은 쿨다운 0이라 즉시 발사하고, 적도 1초에 한 번 반격한다.
+    expect(result.enemies[0]?.hp).toBe(100 - UNIT_DAMAGE.analyst);
+    expect(result.units[0]?.hp).toBe(100 - ENEMY_DAMAGE);
   });
 
   test('공중 적은 유닛과 교전하지 않는다', () => {
@@ -213,7 +224,7 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
 
       // 경계 바로 안쪽: 맞는다.
       const inside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary - 0.001 })], 1000);
-      expect(inside.enemies[0]?.hp).toBe(100 - 20);
+      expect(inside.enemies[0]?.hp).toBe(100 - BASIC_L1);
 
       // 경계 바로 바깥: 안 맞는다.
       const outside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary + 0.001 })], 1000);
@@ -233,7 +244,7 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
       const justInside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary - 0.001 })], 1000);
       const justOutside = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: boundary + 0.001 })], 1000);
 
-      expect(justInside.enemies[0]?.hp).toBe(80);
+      expect(justInside.enemies[0]?.hp).toBe(100 - BASIC_L1);
       expect(justOutside.enemies[0]?.hp).toBe(100);
     }
   });
@@ -248,7 +259,7 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
     const frontSlot = applyTowerFire([makeTower({ slot: 1, kind: 'basic' })], enemies, 1000);
 
     expect(backSlot.enemies[0]?.hp).toBe(100); // 슬롯 0: 사거리 밖
-    expect(frontSlot.enemies[0]?.hp).toBe(100 - 20); // 슬롯 1: 사거리 안
+    expect(frontSlot.enemies[0]?.hp).toBe(100 - BASIC_L1); // 슬롯 1: 사거리 안
   });
 
   test('타워를 지나쳐 본진 쪽으로 간 적도 계속 표적이 된다 (음수 거리)', () => {
@@ -256,7 +267,7 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
     const towers: Tower[] = [makeTower({ slot: 5, kind: 'basic' })];
     const result = applyTowerFire(towers, [makeEnemy({ id: 1, lane: 'ground', x: 0.01 })], 1000);
 
-    expect(result.enemies[0]?.hp).toBe(100 - 20);
+    expect(result.enemies[0]?.hp).toBe(100 - BASIC_L1);
   });
 
   test('splash의 범위 피해도 자기 위치 기준으로 판정한다', () => {
@@ -271,7 +282,7 @@ describe('applyTowerFire — 슬롯 위치가 사거리를 바꾼다 (상대좌�
 
     const result = applyTowerFire(towers, enemies, 1400);
 
-    expect(result.enemies.find((e) => e.id === 1)?.hp).toBe(90);
+    expect(result.enemies.find((e) => e.id === 1)?.hp).toBe(100 - SPLASH_L1);
     expect(result.enemies.find((e) => e.id === 2)?.hp).toBe(100);
   });
 });

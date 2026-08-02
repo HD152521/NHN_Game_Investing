@@ -20,6 +20,7 @@ import {
   DEPLOYMENT_ALLOWANCE,
   STAGES,
   WAVE_BASE_HP_R1,
+  bossHpOf,
   combatLoadPerGold,
   gateReturnRate,
   noTradeGold,
@@ -163,23 +164,38 @@ describe('웨이브 HP 곡선', () => {
     expect(STAGES.R1.waveTable.baseHp).toBe(WAVE_BASE_HP_R1);
   });
 
-  test('R2는 기준 × 1.62, R3는 기준 × 2.68을 반올림한 값이다 (v1.4: ×1.55 / ×2.40에서 상향)', () => {
-    expect(STAGES.R2.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.62));
-    expect(STAGES.R3.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 2.68));
+  /**
+   * ★ `[v1.5]` ×1.62 / ×2.68 → **×1.20 / ×1.30**. 비율 계산이 아니라 실측으로 정했다 ★
+   *
+   * v1.4의 계수는 `combatLoadPerGold`(골드당 적 HP)가 단조 증가하도록 **비율만 보고** 정한
+   * 값이었다. 그 지표는 골드가 방어로 **선형** 변환된다고 가정하는데, 실제로는 타워 슬롯이
+   * 6개로 고정이라 6기를 Lv2까지 채운 뒤의 골드는 효율이 훨씬 낮은 유닛으로만 갈 수 있다 —
+   * 즉 골드 → 방어는 **위로 꺾인 곡선**이다.
+   *
+   * 그 가정이 틀렸다는 것을 전투 시뮬레이터(`tools/combat-sim`)가 실측으로 보였다:
+   * ×2.68의 R3는 **모든 예산 · 모든 로드아웃에서 클리어율 0%**였다. 지역 계수는 이제
+   * `tools/combat-sim/sweep.ts`의 배율 스윕에서 읽은 값이다(라운드 기록은 작업 보고 참고).
+   */
+  test('R2는 기준 × 1.20, R3는 기준 × 1.30을 반올림한 값이다 (v1.5: 실측 스윕으로 재산출)', () => {
+    expect(STAGES.R2.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.2));
+    expect(STAGES.R3.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.3));
 
     // 반올림 규칙(Math.round) 고정 — 내림/올림으로 바꾸면 지역 간 실효 난이도 비율이 흔들린다.
     expect(STAGES.R2.waveTable.baseHp).toEqual([
-      113, 138, 162, 186, 203, 219, 243, 267, 300, 332, 373, 421, 486,
+      84, 102, 120, 138, 150, 162, 180, 198, 222, 246, 276, 312, 360,
     ]);
     expect(STAGES.R3.waveTable.baseHp).toEqual([
-      188, 228, 268, 308, 335, 362, 402, 442, 496, 549, 616, 697, 804,
+      91, 111, 130, 150, 163, 176, 195, 215, 241, 267, 299, 338, 390,
     ]);
   });
 
-  test('R1 기준 곡선은 앵커라 v1.4에서도 손대지 않았다', () => {
-    // R1의 난이도 상승분은 웨이브 상수가 아니라 **경제 개편**에서 나온다 — 총골드가
-    // 2,685(ρ=+20%)에서 2,290(ρ=0)으로 내려가 골드당 적 HP가 7.17 → 8.41이 됐다.
-    expect(totalEnemyHp(STAGES.R1)).toBe(19_255);
+  test('R1 기준 곡선은 앵커라 v1.5에서도 손대지 않았다 (총량은 보스만큼 늘었다)', () => {
+    // 곡선 13개 값은 그대로다 — R1 난이도 조정은 웨이브 상수가 아니라 경제(v1.4)와
+    // 타워/유닛 스탯(v1.5)이 진다.
+    expect(STAGES.R1.waveTable.baseHp).toBe(WAVE_BASE_HP_R1);
+    // 19,255(웨이브 합) + 900(보스 = 마지막 웨이브 HP 300 × 3) = 20,155.
+    expect(totalEnemyHp(STAGES.R1)).toBe(20_155);
+    expect(bossHpOf(STAGES.R1)).toBe(900);
   });
 
   for (const id of STAGE_IDS) {
@@ -294,30 +310,63 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
     expect(STAGES.R2.targetReturnRate).toBe(STAGES.R3.targetReturnRate);
   });
 
-  test('총 적 HP는 R1 19,255 / R2 31,198 / R3 51,600이다', () => {
-    expect(totalEnemyHp(STAGES.R1)).toBe(19_255);
-    expect(totalEnemyHp(STAGES.R2)).toBe(31_198);
-    expect(totalEnemyHp(STAGES.R3)).toBe(51_600);
+  test('총 적 HP는 R1 20,155 / R2 24,186 / R3 26,226이다 (보스 포함)', () => {
+    expect(totalEnemyHp(STAGES.R1)).toBe(20_155);
+    expect(totalEnemyHp(STAGES.R2)).toBe(24_186);
+    expect(totalEnemyHp(STAGES.R3)).toBe(26_226);
   });
 
-  test('골드당 처리해야 할 적 HP가 R1 → R3로 단조 증가한다 (8.4 / 9.5 / 11.0)', () => {
-    const load = STAGE_IDS.map((id) => combatLoadPerGold(STAGES[id]));
-    expect(load[0]).toBeCloseTo(8.41, 2);
-    expect(load[1]).toBeCloseTo(9.48, 2);
-    expect(load[2]).toBeCloseTo(11.0, 2);
+  test('보스 HP는 그 지역 마지막 웨이브 HP의 3배다 — 지역 계수를 자동으로 탄다', () => {
+    // 절대값이 아니라 배수라서, 지역 HP 곡선을 조정하면 보스도 같이 따라간다.
+    for (const id of STAGE_IDS) {
+      const baseHp = STAGES[id].waveTable.baseHp;
+      expect(bossHpOf(STAGES[id])).toBe((baseHp[baseHp.length - 1] as number) * 3);
+    }
+    expect([bossHpOf(STAGES.R1), bossHpOf(STAGES.R2), bossHpOf(STAGES.R3)]).toEqual([900, 1080, 1170]);
+  });
 
+  test('총 적 HP는 R1 < R2 < R3로 단조 증가한다 — 이것이 남은 램프의 정의다', () => {
+    expect(totalEnemyHp(STAGES.R1)).toBeLessThan(totalEnemyHp(STAGES.R2));
+    expect(totalEnemyHp(STAGES.R2)).toBeLessThan(totalEnemyHp(STAGES.R3));
+  });
+
+  /**
+   * ★★ `[v1.5]` 이 지표는 **난이도 램프의 정의에서 물러났다** ★★
+   *
+   * v1.4는 `combatLoadPerGold`가 R1 → R3로 단조 증가하는 것을 "전투가 지역 난이도를 진다"의
+   * 정의로 삼았다(8.41 / 9.48 / 11.00). 그 정의는 **골드가 방어로 선형 변환된다**는 가정 위에
+   * 서 있었는데, 전투 시뮬레이터가 그 가정을 반증했다:
+   *
+   *   타워 슬롯은 6개로 고정이다. 6기를 Lv2까지 채우는 데 드는 돈은 R1이든 R3든 같고
+   *   (약 1,800 G), **그 지점을 넘어선 골드는 효율이 낮은 유닛으로만 흘러간다.** 따라서
+   *   "예산이 2.05배니 적 HP도 2.68배여야 공평하다"는 계산은 성립하지 않는다 —
+   *   지역이 올라갈수록 **여분 골드의 한계 효용이 급격히 떨어지기** 때문이다.
+   *
+   * 실측이 그것을 그대로 보여줬다. 램프를 지표대로 맞춘 v1.4 계수(×2.68)의 R3는
+   * **모든 예산 · 모든 로드아웃에서 클리어율 0%**였다.
+   *
+   * 그래서 지금 램프의 정의는 두 가지다:
+   *   ① **총 적 HP 단조 증가** (위 테스트) — 지역이 올라가면 깎아야 할 총량이 실제로 는다.
+   *   ② **실측 클리어율 단조 감소** (`npx tsx tools/combat-sim/bin.ts`)
+   *      — R1 0.368 · R2 0.211 · R3 0.158 (예산 100%, 로드아웃 19종).
+   *
+   * 이 테스트는 그 결과로 `combatLoadPerGold`가 **감소**한다는 사실을 회귀 방어선으로 남긴다.
+   * 다시 증가하도록 계수를 올리면 R3가 클리어 불가로 되돌아간다.
+   */
+  test('골드당 적 HP는 이제 R1 → R3로 감소한다 — 슬롯 상한 때문에 이 지표가 난이도가 아니다', () => {
+    const load = STAGE_IDS.map((id) => combatLoadPerGold(STAGES[id]));
+    expect(load[0]).toBeCloseTo(8.8, 1);
+    expect(load[1]).toBeCloseTo(7.35, 1);
+    expect(load[2]).toBeCloseTo(5.59, 1);
+
+    // ⚠️ 이 방향을 "고치지" 마라 — 증가로 되돌리면 R3 클리어율이 0%가 된다(위 주석).
     for (let i = 1; i < load.length; i += 1) {
-      expect(load[i]).toBeGreaterThan(load[i - 1] as number);
+      expect(load[i]).toBeLessThan(load[i - 1] as number);
     }
   });
 
-  test('v1.3에서는 이 램프가 평평했다 — 그래서 전투가 지역 난이도를 표현하지 못했다', () => {
-    // v1.3 실적: R1 19,255/2,685 = 7.17 · R2 29,845/4,190 = 7.12 · R3 46,212/6,681 = 6.92.
-    // R3가 R1보다 **낮았다**(전투는 오히려 헐거웠고 난이도를 전부 ρ가 졌다).
-    // 이 테스트는 그 시절 비율을 다시 계산해 두어, 램프가 왜 필요했는지를 남긴다.
-    const legacy = [19_255 / 2685, 29_845 / 4190, 46_212 / 6681];
-    expect(legacy[2]).toBeLessThan(legacy[0] as number);
-    // 지금은 정확히 반대다.
-    expect(combatLoadPerGold(STAGES.R3)).toBeGreaterThan(combatLoadPerGold(STAGES.R1));
+  test('그래도 지역이 올라갈수록 예산 대비 적 수·HP 총량은 늘어난다', () => {
+    // 램프가 살아 있다는 것은 총량으로 확인한다 — 골드당 지표가 아니라.
+    expect(totalEnemyHp(STAGES.R3) / totalEnemyHp(STAGES.R1)).toBeGreaterThan(1.2);
   });
 });

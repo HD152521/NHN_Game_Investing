@@ -12,6 +12,7 @@
 import type {
   CombatParams,
   CombatState,
+  DeathEvent,
   SkillId,
   StageConfig,
   StageId,
@@ -19,6 +20,9 @@ import type {
   UnitKind,
 } from '../combat';
 import { STAGES, totalBaseIncome } from '../combat';
+
+/** 사망이 없는 프레임이 공유하는 빈 목록. 프레임당 할당 0(PRD §11). */
+const NO_DEATHS: readonly DeathEvent[] = Object.freeze([]);
 import {
   AUM_DROP_PER_WAVE,
   BASE_HP,
@@ -111,6 +115,11 @@ export class StageSession {
   private seq = 0;
   private pendingNotice: CloseNotice | null = null;
   private combat: CombatState;
+  /**
+   * 직전 프레임의 사망 이벤트. **상태가 아니라 프레임 버퍼**다 — 매 `stepCombatFrame`에서
+   * 통째로 교체되고, 전투가 끝나면 빈 목록으로 되돌아간다.
+   */
+  private lastDeaths: readonly DeathEvent[] = NO_DEATHS;
 
   /**
    * FR-8.1 정산 분모 — **총 획득 골드**.
@@ -157,6 +166,16 @@ export class StageSession {
   }
 
   /**
+   * 직전 `stepCombatFrame`에서 죽은 개체들 (사망 연출용, FR-6 연출).
+   *
+   * 전투 상태가 아니라 **이벤트**라서 `CombatState`에 담기지 않는다(`combat/types.ts`
+   * `DeathEvent` 주석). 셸이 한 프레임 동안만 들고 있다가 렌더러에 넘긴다.
+   */
+  get lastCombatDeaths(): readonly DeathEvent[] {
+    return this.lastDeaths;
+  }
+
+  /**
    * 전투를 한 프레임 진행하고 벌어들인 재화를 지갑에 반영한다.
    *
    * ★ AUM이 늘어나는 **유일한** 경로가 여기다 ★ 청산(`settle`)은 AUM을 되돌리지 않으므로
@@ -165,11 +184,15 @@ export class StageSession {
    */
   stepCombatFrame(dtMs: number): void {
     if (this.combat.phase !== 'running') {
+      this.lastDeaths = NO_DEATHS;
       return;
     }
 
     const result = stepCombat(this.combat, dtMs, this.combatParams);
     this.combat = result.state;
+    // 사망 연출은 **이번 프레임에만** 유효한 신호다. 다음 프레임에 같은 배열을 다시
+    // 넘기면 같은 시체가 계속 다시 태어난다 — 그래서 매 호출 통째로 교체한다.
+    this.lastDeaths = result.events.deaths;
 
     const { aumDropped, goldIncome } = result.events;
     if (aumDropped > 0 || goldIncome > 0) {

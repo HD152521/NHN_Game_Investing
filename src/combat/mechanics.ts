@@ -5,7 +5,14 @@
  * DOM·타이머·전역 상태는 참조하지 않으며, 경과 시간(dtMs)은 전부 호출자가 주입한다.
  */
 
-import { BASE_DAMAGE_PER_LEAK, TOWER_COOLDOWN_MS, TOWER_DAMAGE, TOWER_RANGE, towerX } from './constants';
+import {
+  BASE_DAMAGE_PER_LEAK,
+  TOWER_COOLDOWN_MS,
+  TOWER_DAMAGE,
+  TOWER_RANGE,
+  UNIT_HOLD_LINE,
+  towerX,
+} from './constants';
 import type { Enemy, Tower, Unit } from './types';
 
 /** 남은 쿨다운(ms)을 dtMs만큼 줄인다. 0 아래로는 내려가지 않는다. */
@@ -228,13 +235,26 @@ export function moveEnemies(enemies: readonly Enemy[], blockedEnemyIds: Readonly
   });
 }
 
-/** 교전 중이 아닌 유닛을 전진(x 증가)시킨다. x는 1 위로 올라가지 않는다. */
+/**
+ * 교전 중이 아닌 유닛을 전진(x 증가)시킨다.
+ *
+ * ★ 전진 한계선(`UNIT_HOLD_LINE`) ★ 유닛은 표적이 없어도 이 선을 넘지 않는다 — 아군은
+ * 사옥을 지키는 쪽이지 적 본진을 치는 쪽이 아니고(§04), 무엇보다 한계선이 없으면 유닛이
+ * 적 본진 앞에서 적을 전부 요격해 **타워가 한 발도 못 쏘는** 상태가 된다(근거와 실측은
+ * `constants.ts UNIT_HOLD_LINE` 주석).
+ *
+ * 이미 한계선 너머에 있는 유닛(한계선을 내리는 밸런스 조정 직후 등)은 **뒤로 끌려오지
+ * 않는다** — `Math.min`이 현재 위치보다 큰 값만 자르기 때문이다. 후퇴는 이동 규칙이
+ * 아니므로 여기서 만들어내지 않는다.
+ */
 export function moveUnits(units: readonly Unit[], blockedUnitIds: ReadonlySet<number>, dtSec: number): Unit[] {
   return units.map((unit) => {
     if (blockedUnitIds.has(unit.id)) {
       return unit;
     }
-    return { ...unit, x: Math.min(1, unit.x + unit.speed * dtSec) };
+    const advanced = unit.x + unit.speed * dtSec;
+    const limit = Math.max(unit.x, UNIT_HOLD_LINE);
+    return { ...unit, x: Math.min(1, limit, advanced) };
   });
 }
 
@@ -244,25 +264,44 @@ export interface LeakResult {
   readonly leakCount: number;
 }
 
-/** 본진(x<=0)에 도달한 적을 걸러내고 본진 피해를 집계한다. */
+/**
+ * 본진(x<=0)에 도달한 적을 걸러내고 본진 피해를 집계한다.
+ *
+ * 피해량은 **개체가 들고 있는 값**(`enemy.leakDamage`)이다 — 종류로 상수 테이블을 조회하지
+ * 않는다(`types.ts` Combatant 주석의 원칙). 보스만 다른 값(3배)을 실어 오고, 나머지는
+ * 생략된 채로 와서 `BASE_DAMAGE_PER_LEAK`로 떨어진다.
+ */
 export function collectLeaks(enemies: readonly Enemy[]): LeakResult {
   const survivors: Enemy[] = [];
   let leakCount = 0;
+  let baseDamage = 0;
   for (const enemy of enemies) {
     if (enemy.x <= 0) {
       leakCount += 1;
+      baseDamage += enemy.leakDamage ?? BASE_DAMAGE_PER_LEAK;
     } else {
       survivors.push(enemy);
     }
   }
-  return { survivors, baseDamage: leakCount * BASE_DAMAGE_PER_LEAK, leakCount };
+  return { survivors, baseDamage, leakCount };
 }
 
 export interface DeathResult {
   readonly survivors: readonly Enemy[];
   readonly kills: number;
   readonly aumDropped: number;
+  /**
+   * 이번 틱에 죽은 개체들. 사망 연출(`CombatEvents.deaths`)의 원본이다.
+   *
+   * 아무도 안 죽었으면 **항상 같은 빈 배열 참조**를 돌려준다 — 이 함수는 매 서브스텝
+   * 호출되고 대부분의 틱에는 사망이 없으므로, 여기서 배열을 새로 만들면 그것만으로
+   * 프레임당 할당이 생긴다(PRD §11).
+   */
+  readonly dead: readonly Enemy[];
 }
+
+/** 사망이 없는 틱이 공유하는 빈 목록. 새 배열을 만들지 않기 위한 상수다. */
+const NO_DEAD: readonly Enemy[] = Object.freeze([]);
 
 /**
  * hp<=0인 적을 처치 처리한다 (FR-6.8-a). `aumPerKill`은 그 웨이브의 개체당 고정 드롭량이며,
@@ -270,13 +309,17 @@ export interface DeathResult {
  */
 export function collectDeaths(enemies: readonly Enemy[], aumPerKill: number): DeathResult {
   const survivors: Enemy[] = [];
-  let kills = 0;
+  let dead: Enemy[] | null = null;
   for (const enemy of enemies) {
     if (enemy.hp <= 0) {
-      kills += 1;
+      if (dead === null) {
+        dead = [];
+      }
+      dead.push(enemy);
     } else {
       survivors.push(enemy);
     }
   }
-  return { survivors, kills, aumDropped: kills * aumPerKill };
+  const kills = dead === null ? 0 : dead.length;
+  return { survivors, kills, aumDropped: kills * aumPerKill, dead: dead ?? NO_DEAD };
 }

@@ -13,3 +13,6 @@ export type { BattleLayout, Rect } from './layout.js';
 export { slotAt } from './hit-test.js';
 
 export type { BattleCtx } from './surface.js';
+
+export { createDeathField, drawDeaths, pushDeaths, DEATH_DURATION_MS } from './death-fx.js';
+export type { DeathField } from './death-fx.js';

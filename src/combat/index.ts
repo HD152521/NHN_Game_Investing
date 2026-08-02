@@ -5,10 +5,13 @@
  */
 
 export type {
+  BossState,
   CombatEvents,
   CombatParams,
   CombatPhase,
   CombatState,
+  DeathEvent,
+  DeathKind,
   Enemy,
   Lane,
   SkillCurrency,
@@ -43,11 +46,15 @@ export {
   identityForCode,
 } from './identity';
 
+export type { BossPhase } from './boss';
+export { bossPhaseOf, bossViewOf, isBossWave } from './boss';
+
 export type { StageConfig, StageId } from './stages';
 export {
   DEPLOYMENT_ALLOWANCE,
   STAGES,
   WAVE_BASE_HP_R1,
+  bossHpOf,
   combatLoadPerGold,
   gateReturnRate,
   noTradeGold,

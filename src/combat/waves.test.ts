@@ -83,14 +83,36 @@ describe('aumDropPerKill — FR-6.8-a AUM 드롭', () => {
     expect(perKill * plan.length).toBeLessThan(params.aumDropPerWave);
   });
 
-  test('웨이브 13(적 14체, heat=1): 개체당 floor(150/14)=10, 전멸해도 합계 140', () => {
+  /**
+   * ★ 마지막 웨이브는 **잡졸 14체 + 보스 1체 = 15체**다 (B-03 마진콜 심판관, 시트 §07).
+   *
+   * 개체당 드롭이 `floor(150/14) = 10`에서 `floor(150/15) = 10`으로 **바뀌지 않은 것이
+   * 중요하다** — 보스를 실제 적으로 만들면서 AUM 경제(세션 총 투입액 S)가 흔들리지 않았다는
+   * 뜻이다. 전멸 시 합계만 140 → 150으로 올라 나눗셈 나머지 버림이 사라진다.
+   */
+  test('웨이브 13(잡졸 14체 + 보스 1체 = 15체): 개체당 floor(150/15)=10, 전멸 시 합계 150', () => {
     const params = fixtureParams();
     const plan = spawnPlanFor(13, params);
-    expect(plan).toHaveLength(14);
+    expect(plan).toHaveLength(15);
 
     const perKill = aumDropPerKill(13, params);
     expect(perKill).toBe(10);
-    expect(perKill * plan.length).toBe(140);
+    expect(perKill * plan.length).toBe(150);
+  });
+
+  test('보스는 마지막 웨이브 스폰 계획의 맨 앞이다 — 선두여야 타워 우선순위 1위가 된다', () => {
+    const params = fixtureParams();
+    const plan = spawnPlanFor(13, params);
+    expect(plan[0]?.isBoss).toBe(true);
+    // 나머지 14체에는 보스가 없다.
+    expect(plan.slice(1).some((spec) => spec.isBoss === true)).toBe(false);
+  });
+
+  test('보스가 아닌 웨이브에는 보스가 없다', () => {
+    const params = fixtureParams();
+    for (const wave of [1, 5, 12]) {
+      expect(spawnPlanFor(wave, params).some((spec) => spec.isBoss === true)).toBe(false);
+    }
   });
 });
 

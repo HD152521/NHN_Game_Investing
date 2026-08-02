@@ -16,6 +16,8 @@
  */
 
 import type { EnemyKind } from '../combat/identity.js';
+import { bossPhaseOf } from '../combat/boss.js';
+import type { BossPhase } from '../combat/boss.js';
 import type { Combatant, Enemy, Unit, UnitKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import {
@@ -28,9 +30,9 @@ import {
   walkAnimId,
 } from '../sprites/render/index.js';
 import type { EntityAnimId, RenderableSpriteKey, SpriteRaster, UnitAnimId } from '../sprites/render/index.js';
-import { drawUnitSprite, syncSpriteColorMode } from './draw-sprite.js';
+import { drawRasterStanding, drawSpriteStanding, drawUnitSprite, syncSpriteColorMode } from './draw-sprite.js';
 import { drawHpBar } from './draw-hp-bar.js';
-import { ALLY_SPRITES, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
+import { ALLY_SPRITES, BOSS_SPRITE, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
 import type { BattleLayout } from './layout.js';
 import { laneY, progressToX } from './layout.js';
 import type { BattleCtx } from './surface.js';
@@ -188,10 +190,78 @@ function hpBarRect(cx: number, cy: number): { x: number; y: number; w: number; h
   return { x: cx - HP_BAR_WIDTH / 2, y: cy - HP_BAR_OFFSET_Y, w: HP_BAR_WIDTH, h: HP_BAR_HEIGHT };
 }
 
+/* ------------------------------------------------------------------ *
+ * 보스 B-03 마진콜 심판관
+ *
+ * ★ 보스는 이제 **여기서** 그린다 ★ 예전에는 `draw-structures.ts`가 요새 위에 정지 그림을
+ *   얹었다 — 그래서 "등장했는데 안 걸어오고 기지에 서 있기만" 했다. 지금 보스는 `Enemy`
+ *   (`isBoss: true`)로 스폰되어 자기 `x`를 가지므로, 다른 적과 **같은 좌표계에서** 그려진다.
+ * ------------------------------------------------------------------ */
+
+/**
+ * 보스 스프라이트 배율. 원본 `boss`는 34×46이고 일반 유닛은 26~30×34다.
+ * 2배로 그리면 92 px 높이가 되어 유닛(34 px)의 **약 2.7배** — 시트 §07의 "일반 유닛 3배 높이"에
+ * 가장 가까운 정수 배율이다(3배는 공중 레인을 뚫는다).
+ */
+const BOSS_SPRITE_SCALE = 2;
+
+/** 래스터를 못 구웠을 때 쓸 원본 `boss` 그리드 크기(34×46). 배치가 0으로 무너지지 않게 한다. */
+const BOSS_FALLBACK_WIDTH = 34;
+const BOSS_FALLBACK_HEIGHT = 46;
+
+/** 보스 HP 바는 일반 적보다 넓게 — 화면에서 위협의 크기를 읽는 첫 신호다. */
+const BOSS_HP_BAR_WIDTH = 56;
+const BOSS_HP_BAR_HEIGHT = 5;
+
+/**
+ * 페이즈 → 모션 id. **비율 판정은 하지 않는다** — `bossPhaseOf`(`src/combat/boss.ts`)가
+ * 단일 출처다. 렌더러가 0.5를 따로 들면 상수를 바꿔도 그림만 안 바뀐다.
+ */
+const BOSS_ANIM: Readonly<Record<BossPhase, EntityAnimId>> = {
+  1: 'boss-p1',
+  2: 'boss-p2',
+};
+
+/**
+ * 보스 한 체를 **지면선 위에 세워** 그린다(다른 적처럼 레인 중심에 놓으면 92 px짜리 몸이
+ * 절반쯤 땅에 묻힌다). 프레임은 걷기와 같은 방식으로 `x`에서 뽑으므로, 보스가 막혀 서 있으면
+ * 모션도 멈춘다 — `CombatState`에 새 필드를 만들지 않는다(이 파일 머리말의 원칙).
+ */
+function drawBoss(ctx: BattleCtx, palette: Palette, layout: BattleLayout, boss: Enemy): void {
+  const cx = progressToX(boss.x, layout);
+  // 크기는 스프라이트 자신에게 묻는다 — 그림이 바뀌어도 배치 코드를 고칠 필요가 없다.
+  const idle = spriteRasters.ofKey(BOSS_SPRITE.key);
+  const width = (idle?.width ?? BOSS_FALLBACK_WIDTH) * BOSS_SPRITE_SCALE;
+  const height = (idle?.height ?? BOSS_FALLBACK_HEIGHT) * BOSS_SPRITE_SCALE;
+  const rect = { x: cx - width / 2, y: layout.groundY - height, w: width, h: height };
+
+  const anim = BOSS_ANIM[bossPhaseOf({ hp: boss.hp, maxHp: boss.maxHp })];
+  const frame = entityAnimFrameRaster(spriteRasters, anim, walkFrameAt(boss.x, entityAnimFrameCount(anim)));
+  if (frame === null || !drawRasterStanding(ctx, frame, rect, layout.groundY)) {
+    drawSpriteStanding(ctx, BOSS_SPRITE.key, rect, layout.groundY);
+  }
+
+  drawHpBar(ctx, {
+    x: cx - BOSS_HP_BAR_WIDTH / 2,
+    y: layout.groundY - height - BOSS_HP_BAR_HEIGHT - 4,
+    w: BOSS_HP_BAR_WIDTH,
+    h: BOSS_HP_BAR_HEIGHT,
+    hp: boss.hp,
+    maxHp: boss.maxHp,
+    color: palette.ENEMY_DOWN,
+    palette,
+  });
+}
+
 export function drawEnemies(ctx: BattleCtx, palette: Palette, layout: BattleLayout, enemies: readonly Enemy[]): void {
   syncSpriteColorMode(palette);
 
   for (const enemyUnit of enemies) {
+    if (enemyUnit.isBoss === true) {
+      drawBoss(ctx, palette, layout, enemyUnit);
+      continue;
+    }
+
     const cx = progressToX(enemyUnit.x, layout);
     const cy = laneY(enemyUnit.lane, layout);
 

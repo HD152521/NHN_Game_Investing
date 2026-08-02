@@ -78,6 +78,54 @@ export interface Enemy extends Combatant {
   readonly lane: Lane;
   /** 1(적 본진)에서 0(아군 사옥) 쪽으로 감소한다. */
   readonly x: number;
+  /**
+   * 보스(B-03 마진콜 심판관)인가.
+   *
+   * ★ 왜 `Enemy`를 재사용하는가 ★ 보스는 걷고·교전하고·죽는다 — `mechanics.ts`의 이동·
+   * 교전·처치 판정이 전부 그대로 맞는다. 별도 타입을 만들면 그 세 함수를 보스용으로 한 번
+   * 더 써야 하고, 두 구현이 조용히 갈라진다. 스탯은 이미 개체에 실려 있으므로(위 `Combatant`
+   * 주석) 보스는 "스탯이 큰 적"으로 완전히 표현된다. 이 플래그가 하는 일은 **정체 표시**뿐이다:
+   * 렌더러가 보스 스프라이트를 고르고, HUD가 HP 바를 띄우고, 사망 연출이 종류를 가른다.
+   */
+  readonly isBoss?: boolean | undefined;
+  /**
+   * 본진(x<=0)에 도달했을 때 입히는 피해. 생략하면 `BASE_DAMAGE_PER_LEAK`.
+   *
+   * 종류로 상수 테이블을 조회하지 않기 위해(위 `Combatant` 주석의 원칙) 누출 피해도 개체에
+   * 싣는다. 보스만 다른 값을 갖는다 — `mechanics.ts collectLeaks`가 이 필드만 읽는다.
+   */
+  readonly leakDamage?: number | undefined;
+}
+
+/** 사망 연출이 구분해야 하는 개체 종류. 아군/악당은 시트가 다르고(`tf-death-*`) 보스는 크기가 다르다. */
+export type DeathKind = 'unit' | 'enemy' | 'boss';
+
+/**
+ * 이번 틱에 **죽은** 개체 하나. 누출(본진 도달)은 여기 포함되지 않는다 — 그건 죽은 게 아니라
+ * 통과한 것이다.
+ *
+ * ★ 왜 이벤트인가 (개체에 `dyingMs`를 넣지 않은 이유) ★
+ * `dyingMs`를 개체에 넣으면 죽은 개체가 배열에 계속 남아 `applyTowerFire`/`applyEngagement`의
+ * 표적 후보에 섞인다 — "시체를 때린다"를 막으려고 모든 판정에 `hp > 0` 가드를 흩뿌려야 하고,
+ * 하나라도 빠지면 조용히 밸런스가 틀어진다. 사망은 **한 프레임짜리 사실**이므로 이벤트로
+ * 내보내고, "죽는 중"이라는 시간 축은 그것을 소비하는 렌더러가 소유한다(`src/battle`).
+ */
+export interface DeathEvent {
+  readonly id: number;
+  readonly kind: DeathKind;
+  /** 유닛은 항상 `'ground'`. */
+  readonly lane: Lane;
+  /** 죽은 자리(진행도). 연출은 여기에 그린다. */
+  readonly x: number;
+}
+
+/**
+ * 화면에 노출되는 보스 체력. `enemies` 안의 보스 개체에서 매 틱 파생된다 — 보스가 없거나
+ * 죽었으면 `null`이다. 별도 저장소가 아니라 **투영(projection)**이므로 개체와 어긋날 수 없다.
+ */
+export interface BossState {
+  readonly hp: number;
+  readonly maxHp: number;
 }
 
 export interface Tower {
@@ -109,6 +157,11 @@ export interface CombatEvents {
   readonly baseDamage: number;
   /** 새 웨이브가 시작되었다면 그 번호(1-based), 아니면 null. */
   readonly waveStarted: number | null;
+  /**
+   * 이번 틱에 죽은 개체 목록(유닛 + 적 + 보스). 아무도 안 죽었으면 **항상 같은 빈 배열
+   * 참조**다 — 프레임당 할당 0(PRD §11)을 지키기 위해 시뮬레이션이 상수를 돌려준다.
+   */
+  readonly deaths: readonly DeathEvent[];
 }
 
 export type CombatPhase = 'running' | 'cleared' | 'defeated';
@@ -157,6 +210,17 @@ export interface CombatState {
    * 활성 동안 본진에 도달한 적은 **피해를 주지 못하고 소멸한다**(FR-6.6).
    */
   readonly shieldRemainingMs?: number;
+  /**
+   * 살아 있는 보스의 체력. 없으면 `null`/생략.
+   *
+   * `enemies` 안의 보스 개체에서 매 틱 파생되는 **투영값**이다(단일 출처는 개체). 렌더러가
+   * 이 값 하나로 ① 보스 HP 바(HUD) ② 페이즈 전환(`tf-boss-p1` → `tf-boss-p2`)을 모두
+   * 결정한다 — `draw-structures.ts`가 요구했던 필드가 정확히 이것이다.
+   *
+   * 선택 필드인 이유는 `skillCooldowns`와 같다(위 주석): 시뮬레이션 밖에서 `CombatState`
+   * 리터럴을 만드는 곳이 있다. 읽는 쪽은 `?? null`로 받아라.
+   */
+  readonly boss?: BossState | null;
 }
 
 /**

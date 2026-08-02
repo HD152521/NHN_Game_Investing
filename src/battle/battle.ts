@@ -6,7 +6,7 @@
  * 안다. 좌표 계산(`layout.ts`)과 개별 그리기(`draw-*.ts`)는 전부 위임한다.
  */
 
-import type { CombatState, TowerKind } from '../combat/types.js';
+import type { CombatState, DeathEvent, TowerKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
 import type { WeatherField, WeatherView } from '../weather/index.js';
 import { classifyGroundState, maxEnemyAdvance } from '../ground/index.js';
@@ -16,6 +16,8 @@ import { drawSlotDecals } from './draw-slot-decal.js';
 import { drawWeather, weatherViewport } from './draw-weather.js';
 import { drawLaneGuides } from './draw-lane-guides.js';
 import { drawAirLaneWarning } from './draw-lane-warning.js';
+import { drawDeaths, pushDeaths } from './death-fx.js';
+import type { DeathField } from './death-fx.js';
 import { drawHud } from './draw-hud.js';
 import { drawEnemyBase, drawHq } from './draw-structures.js';
 import { drawTowerRangePreview } from './draw-tower-range.js';
@@ -58,6 +60,25 @@ export interface DrawBattleOptions {
   readonly timeMs?: number;
   /** `prefers-reduced-motion`. 맥동만 멈추고 발판 상태 정보는 그대로 유지한다. */
   readonly reducedMotion?: boolean;
+  /**
+   * 사망 연출 — 재사용 버퍼 + 이번 프레임의 사망 이벤트.
+   *
+   * ★ 왜 `CombatState`가 아니라 옵션으로 받는가 ★ 사망은 **한 프레임짜리 사실**이라
+   *   상태가 아니라 이벤트로 온다(`CombatEvents.deaths`). "죽는 중"이라는 시간 축은
+   *   렌더 계층이 소유하며(`death-fx.ts` 머리말), 그 버퍼를 셸이 들고 있다가 여기 넘긴다.
+   *   날씨(`weather.field`)와 정확히 같은 패턴이다.
+   *
+   * 없으면 사망 연출을 그리지 않는다 — 전투 자체는 아무 영향도 받지 않는다.
+   */
+  readonly deaths?: BattleDeaths | null;
+}
+
+/** `drawBattle`이 사망 연출을 그리는 데 필요한 최소 입력. */
+export interface BattleDeaths {
+  /** 앱 수명 동안 하나만 만들어 재사용하는 슬롯 버퍼. */
+  readonly field: DeathField;
+  /** 이번 프레임에 새로 죽은 개체들. 없으면 빈 배열. */
+  readonly events: readonly DeathEvent[];
 }
 
 /** `drawBattle`이 날씨를 그리는 데 필요한 최소 입력. */
@@ -98,6 +119,13 @@ export function drawBattle(ctx: BattleCtx, opts: DrawBattleOptions): void {
   drawTowerRangePreview(ctx, palette, layout, state, selectedSlot, selectedTowerKind);
   drawEnemies(ctx, palette, layout, state.enemies);
   drawAllies(ctx, palette, layout, state.units);
+  // 사망 연출은 살아 있는 개체 **위**에 그린다 — 무너지는 몸이 뒤에 가리면 안 보인다.
+  const deaths = opts.deaths ?? null;
+  if (deaths) {
+    const nowMs = opts.timeMs ?? 0;
+    pushDeaths(deaths.field, deaths.events, layout, nowMs);
+    drawDeaths(ctx, palette, deaths.field, nowMs);
+  }
   // 예광선은 타워·유닛·적을 전부 그린 뒤 마지막에 그려 발사 연출이 항상 위에 보이게 한다.
   drawTracers(ctx, palette, layout, state);
   drawUnitTracers(ctx, palette, layout, state);

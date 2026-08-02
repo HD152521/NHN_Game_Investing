@@ -147,6 +147,24 @@ const STARTING_GOLD_ALL = 120;
  */
 export const AUM_DROP_PER_WAVE = 150;
 
+/**
+ * 보스(B-03 마진콜 심판관) HP = **그 지역 마지막 웨이브 기본 HP × 이 배수**.
+ *
+ * ★ 3의 근거 — 시트에 있는 유일한 정량 서술이다 ★
+ * 아트 프로덕션 시트 §07은 보스를 "일반 유닛 **3배 높이**"로만 규정한다. 밸런스 수치는
+ * 어디에도 없으므로, 화면에서 3배로 보이는 것을 스탯에서도 3배로 읽는다 — 플레이어가
+ * 그림을 보고 추정한 위협과 실제 위협이 어긋나지 않는 것이 밸런스 문서보다 중요하다.
+ * 같은 3배 규칙이 피해량·본진 피해에도 적용된다(`constants.ts` BOSS_*).
+ *
+ * ★ 왜 절대값이 아니라 "마지막 웨이브 HP의 배수"인가 ★
+ * 지역 난이도는 `waveTable.baseHp` 계수(R2 ×1.62 / R3 ×2.68)가 전부 지고 있다. 보스 HP를
+ * 절대값으로 박으면 R3에서만 보스가 상대적으로 물러진다. 배수로 두면 보스가 지역 계수를
+ * 자동으로 타므로, **`combatLoadPerGold` 램프의 비율이 정확히 보존된다** — 보스를 넣기 전후
+ * R2/R1 = 1.1278, R3/R1 = 1.3085로 소수 넷째 자리까지 같다(`stages.test.ts`가 고정한다).
+ * 보스가 더한 것은 램프의 기울기가 아니라 **전 지역 공통 +4.67%의 절대 부하**뿐이다.
+ */
+export const BOSS_HP_MULTIPLIER = 3;
+
 export const STAGES: Readonly<Record<StageId, StageConfig>> = {
   R1: {
     id: 'R1',
@@ -206,7 +224,7 @@ export const STAGES: Readonly<Record<StageId, StageConfig>> = {
        * 총 적 HP 29,845 → 31,198, ρ=0 총골드 3,290 기준 골드당 적 HP가 **9.48**이 된다
        * (R1 8.41 대비 +12.7%).
        */
-      baseHp: scaleWaveHp(WAVE_BASE_HP_R1, 1.62),
+      baseHp: scaleWaveHp(WAVE_BASE_HP_R1, 1.20),
       airWaves: AIR_WAVES_ALL,
     },
     /** 4,200 → 3,050 `[v1.4]`. `290 + 6,000 × 0.92 × 0.50 = 3,050`. */
@@ -239,7 +257,7 @@ export const STAGES: Readonly<Record<StageId, StageConfig>> = {
        * (R1 8.41 대비 +31%). 예전 경제에서는 이 값이 6.92로 **R1(7.17)보다도 낮았다** —
        * 난이도를 전부 ρ가 지고 있었기 때문이다. 그 축이 사라졌으므로 전투가 대신 진다.
        */
-      baseHp: scaleWaveHp(WAVE_BASE_HP_R1, 2.68),
+      baseHp: scaleWaveHp(WAVE_BASE_HP_R1, 1.30),
       airWaves: AIR_WAVES_ALL,
     },
     /** 6,700 → 4,340 `[v1.4]`. `265 + 8,850 × 0.92 × 0.50 = 4,336 → 4,340`. */
@@ -323,14 +341,29 @@ export function gateReturnRate(stage: StageConfig): number {
 /**
  * 스테이지 전체에서 처치해야 하는 적 HP 총합 (heat = 1 기준).
  *
- * `Σ baseCount[w] × baseHp[w]`. 지역 난이도를 **한 숫자로** 비교할 수 있게 하는 값이며,
- * `totalGoldFor(stage, 0) / 이 값`의 역수가 곧 "골드당 처리해야 할 적 HP"다.
+ * `Σ baseCount[w] × baseHp[w]` **+ 보스 HP**. 지역 난이도를 **한 숫자로** 비교할 수 있게
+ * 하는 값이며, `totalGoldFor(stage, 0) / 이 값`의 역수가 곧 "골드당 처리해야 할 적 HP"다.
  * v1.4에서 지역 난이도 차등이 ρ에서 전투로 넘어왔으므로, 이 지표가 단조 증가하는지가
  * 곧 "R1 → R3로 갈수록 전투가 어려워지는가"의 정의다(`stages.test.ts`가 고정한다).
+ *
+ * ★ 보스가 여기 들어가야 하는 이유 ★ 보스는 이제 연출이 아니라 **`enemies`로 스폰되는
+ * 실제 개체**다(`waves.ts`). 총 적 HP에서 빠지면 이 지표가 "실제로 깎아야 하는 HP"를
+ * 과소 보고하게 되고, 그러면 지역 난이도 램프가 근거를 잃는다.
  */
 export function totalEnemyHp(stage: StageConfig): number {
   const { baseCount, baseHp } = stage.waveTable;
-  return baseHp.reduce((sum, hp, index) => sum + hp * (baseCount[index] ?? 0), 0);
+  const waves = baseHp.reduce((sum, hp, index) => sum + hp * (baseCount[index] ?? 0), 0);
+  return waves + bossHpOf(stage);
+}
+
+/**
+ * 이 지역 보스의 HP (heat = 1 기준). 보스는 **마지막 웨이브**에 등장하므로
+ * (`identity.ts` BOSS_IDENTITY.appearWave = WAVE_COUNT) 그 웨이브의 기본 HP를 기준으로 잡는다 —
+ * 웨이브 번호를 여기에 다시 적지 않기 위해 배열의 마지막 원소를 쓴다.
+ */
+export function bossHpOf(stage: StageConfig): number {
+  const { baseHp } = stage.waveTable;
+  return (baseHp[baseHp.length - 1] ?? 0) * BOSS_HP_MULTIPLIER;
 }
 
 /**

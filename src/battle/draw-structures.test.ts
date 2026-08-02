@@ -13,7 +13,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
 import { BOSS_IDENTITY } from '../combat/identity.js';
 import { createTheme } from '../design/index.js';
-import { bossFrame } from '../sprites/boss-anim.js';
 import { baseAllyDamage } from '../sprites/base-anim.js';
 import { spriteGrid } from '../sprites/index.js';
 import type { SpriteGrid } from '../sprites/index.js';
@@ -291,54 +290,41 @@ describe('drawEnemyBase — 베어 요새(원본 baseEnemy)', () => {
   });
 });
 
-describe('보스 B-03 마진콜 심판관 — 마지막 웨이브에만 요새 앞에 선다', () => {
+/**
+ * ★★ 보스는 **더 이상 여기서 그리지 않는다** ★★
+ *
+ * 예전 명제는 "마지막 웨이브에 요새 앞에 보스가 선다"였다. 그 구현이 곧 사용자 피드백
+ * ("보스는 등장했는데 안 걸어오고 그냥 기지에 서 있기만 한데?")의 원인이었다 — 보스가
+ * `enemies` 로 스폰되지 않는 **정지 연출**이라 위치라고 부를 것이 요새 앞 한 점뿐이었다.
+ *
+ * 지금 보스는 `Enemy`(`isBoss: true`)로 스폰되어 `x` 를 갖고 걸어오며,
+ * `draw-units.ts drawEnemies` 가 자기 좌표에 그린다. 이 describe 가 지키는 명제는
+ * **"기지 렌더러가 보스를 그리면 안 된다"** 로 뒤집혔다 — 그리면 보스가 두 마리로 보인다.
+ */
+describe('보스 B-03 — 기지 렌더러는 보스를 그리지 않는다 (이중 렌더 방지)', () => {
   function baseRegion(state: Parameters<typeof drawEnemyBase>[3]): string {
     const target = createSpriteBattleSurface(800, 300);
     drawEnemyBase(target.ctx, palette, layout, state);
     return hashRegion(target.surface, 700, 30, 95, 265);
   }
 
-  test('등장 웨이브 전에는 요새만 보인다', () => {
-    expect(baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave - 1 }))).toBe(baseRegion(null));
+  test('등장 웨이브에도 요새 그림은 그대로다', () => {
+    expect(baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave }))).toBe(baseRegion(null));
   });
 
-  test('등장 웨이브부터 보스 스프라이트가 겹쳐 그려진다', () => {
-    expect(baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave }))).not.toBe(baseRegion(null));
+  test('보스 개체가 상태에 있어도 기지 렌더러는 반응하지 않는다', () => {
+    const withBoss = combatState({
+      wave: BOSS_IDENTITY.appearWave,
+      boss: { hp: 450, maxHp: 900 },
+    });
+    expect(baseRegion(withBoss)).toBe(baseRegion(null));
   });
 
-  /**
-   * 원본 갱신으로 `tf-boss-p1`(4프레임)이 들어와, 보스는 이제 정지 스프라이트가 아니라
-   * **모션 프레임**으로 그려진다. 프레임 번호는 새 상태가 아니라 이미 있는
-   * `waveElapsedMs` 로 돈다(`draw-structures.ts` 참조).
-   */
-  test('보스는 요새와 같은 지면선 위에 선다 (패턴 1 모션 프레임)', () => {
-    const target = createSpriteBattleSurface(800, 300);
-    drawEnemyBase(target.ctx, palette, layout, combatState({ wave: BOSS_IDENTITY.appearWave, waveElapsedMs: 0 }));
-
-    // 보스가 요새 위에 덮이므로, 보스 프레임 그리드의 불투명 픽셀만 검사한다.
-    expectGridMatchesAt(target, 'boss-p1#0', bossFrame(1, 0), enemyBaseSpriteRect(layout), layout.groundY);
-  });
-
-  test('교전 경과가 흐르면 보스 프레임이 실제로 바뀐다', () => {
+  test('교전 경과가 흘러도 기지 영역 픽셀은 변하지 않는다 (보스 모션이 여기 없다)', () => {
     const hashes = [0, 250, 500, 750].map((waveElapsedMs) =>
       baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave, waveElapsedMs })),
     );
-    expect(new Set(hashes).size).toBe(4);
-  });
-
-  /**
-   * ⚠️ `tf-boss-p2`(포신 패턴)는 **배선하지 않았다.**
-   *    페이즈를 가르려면 보스 HP 비율이 필요한데 `CombatState` 에 보스 개체가 없다
-   *    (보스는 `enemies` 로 스폰되지 않는 연출이다). 필요한 것은 `boss?: { hp, maxHp }`
-   *    하나뿐이며, 그 전까지 패턴 1 만 재생한다는 사실을 여기서 못 박는다.
-   */
-  test('보스 HP 를 알 수 없으므로 패턴 2 는 아직 배선하지 않는다', () => {
-    const state = combatState({ wave: BOSS_IDENTITY.appearWave });
-    expect(Object.keys(state)).not.toContain('boss');
-    const target = createSpriteBattleSurface(800, 300);
-    drawEnemyBase(target.ctx, palette, layout, state);
-    // 그려진 그림은 패턴 1 이다 — 패턴 2 였다면 픽셀이 어긋난다.
-    expectGridMatchesAt(target, 'boss-p1#0', bossFrame(1, 0), enemyBaseSpriteRect(layout), layout.groundY);
+    expect(new Set(hashes).size).toBe(1);
   });
 });
 

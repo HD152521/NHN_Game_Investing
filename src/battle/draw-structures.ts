@@ -1,5 +1,5 @@
 /**
- * 아군 사옥(좌) · 베어 요새(우) · 보스 그리기 — 디자인 원본의 `baseAlly` / `baseEnemy` /
+ * 아군 사옥(좌) · 베어 요새(우) 그리기 — 디자인 원본의 `baseAlly` / `baseEnemy` /
  * `boss` 스프라이트를 그대로 쓴다(`src/sprites/base.ts`, 매핑은 `entity-sprites.ts`).
  *
  * 예전에는 `src/battle/shapes/base-shapes.ts`에서 시트의 *글로 된 묘사*만 보고 도형을 새로
@@ -22,13 +22,12 @@
  */
 
 import type { CombatState } from '../combat/types.js';
-import { BOSS_IDENTITY } from '../combat/identity.js';
 import type { Palette } from '../design/index.js';
 import type { DamageStage } from '../sprites/base-anim';
-import { entityAnimFrameCount, entityAnimFrameRaster, spriteRasters } from '../sprites/render/index.js';
+import { entityAnimFrameRaster, spriteRasters } from '../sprites/render/index.js';
 import type { EntityAnimId } from '../sprites/render/index.js';
 import { drawRasterStanding, drawSpriteStanding, syncSpriteColorMode } from './draw-sprite.js';
-import { BOSS_SPRITE, ENEMY_BASE_SPRITE, HQ_SPRITE } from './entity-sprites.js';
+import { ENEMY_BASE_SPRITE, HQ_SPRITE } from './entity-sprites.js';
 import { drawHpBar } from './draw-hp-bar.js';
 import type { BattleLayout, Rect } from './layout.js';
 import { enemyBaseSpriteRect, hqSpriteRect } from './layout.js';
@@ -67,21 +66,6 @@ export function baseDamageStage(hp: number, maxHp: number): DamageStage {
  *    "언제나 손상 시트" 로 통일할지는 디자인 결정이 필요하다 — 임의로 정하지 않는다.
  */
 const HQ_DAMAGE_MIN_STAGE = 1;
-
-/**
- * 보스 모션의 한 프레임 길이(ms). 보스는 시뮬레이션 개체가 아니라 연출이므로
- * 쿨다운이 없다 — 대신 이미 있는 `waveElapsedMs` 로 루프를 돌린다(새 상태 없음).
- */
-const BOSS_FRAME_MS = 220;
-
-/**
- * ⚠️ 보스는 **패턴 1 만** 배선한다.
- *    `tf-boss-p2`(포신 패턴)는 "보스가 2페이즈에 들어갔다"는 신호가 있어야 하는데,
- *    `CombatState` 에 보스 개체가 없다 — `enemies` 로 스폰되지 않고 `wave` 로만 등장한다
- *    (`identity.ts`). 즉 보스 HP 비율을 역산할 근거가 0이다. 필요한 것은
- *    `CombatState.boss?: { hp, maxHp }` 하나이며, 그것이 생기면 여기서 패턴만 바꾸면 된다.
- */
-const BOSS_ANIM: EntityAnimId = 'boss-p1';
 
 /** HP 바 높이(px) — 가시성 수정으로 5→6. */
 const HP_BAR_HEIGHT = 6;
@@ -140,35 +124,26 @@ function drawHqHpBar(
 }
 
 /**
- * 베어 요새 — 원본 `baseEnemy` 스프라이트. 마지막 웨이브에는 그 앞에 보스(B-03 마진콜
- * 심판관, 원본 `boss`)가 선다.
+ * 베어 요새 — 원본 `baseEnemy` 스프라이트.
  *
- * ★ `state`가 선택 항목인 이유 ★ 보스는 시뮬레이션 개체가 아니다 — `Enemy`로 스폰되지
- *   않고 `identity.ts`에만 있는 **연출**이다(등장 웨이브 = `BOSS_IDENTITY.appearWave`).
- *   그래서 웨이브를 알아야 그릴 수 있는데, 기존 호출부(`battle.ts`)는 인자 셋만 넘긴다.
- *   필수 인자로 바꾸면 빌드가 깨지므로 **뒤에 선택 인자로 붙였다**: 호출부가 `state`를
- *   넘기기 시작하면 그때부터 보스가 화면에 선다.
+ * ★★ 보스는 **더 이상 여기서 그리지 않는다** ★★
+ * 예전에는 `state.wave >= BOSS_IDENTITY.appearWave`일 때 요새 위에 보스 그림을 얹었다.
+ * 그게 "보스가 등장했는데 안 걸어오고 그냥 기지에 서 있다"의 정체다 — 보스가 `enemies`로
+ * 스폰되지 않는 **정지 연출**이었기 때문에, 위치라고 부를 것이 요새 앞 한 점밖에 없었다.
+ *
+ * 지금 보스는 `Enemy`(`isBoss: true`)로 스폰되어 x를 갖고 걸어오므로, **자기 좌표에서**
+ * 그려져야 한다 — 그 일은 다른 적들과 같은 곳(`draw-units.ts drawEnemies`)이 한다.
+ * 여기서 같이 그리면 화면에 보스가 두 마리 보인다.
+ *
+ * `state`는 시그니처 호환을 위해 남긴 선택 인자다(호출부 `battle.ts`가 계속 넘긴다).
+ * 요새 자체는 상태와 무관하므로 읽지 않는다.
  */
 export function drawEnemyBase(
   ctx: BattleCtx,
   palette: Palette,
   layout: BattleLayout,
-  state?: CombatState | null,
+  _state?: CombatState | null,
 ): void {
   syncSpriteColorMode(palette);
-  const rect = enemyBaseSpriteRect(layout);
-  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, rect, layout.groundY);
-
-  if (state && state.wave >= BOSS_IDENTITY.appearWave) {
-    // 보스는 쿨다운이 없다(연출이라 시뮬레이션 개체가 아니다) — 이미 있는 교전 경과로 루프를 돈다.
-    const index = Math.floor(Math.max(0, state.waveElapsedMs) / BOSS_FRAME_MS);
-    const frame = entityAnimFrameRaster(
-      spriteRasters,
-      BOSS_ANIM,
-      index % entityAnimFrameCount(BOSS_ANIM),
-    );
-    if (frame === null || !drawRasterStanding(ctx, frame, rect, layout.groundY)) {
-      drawSpriteStanding(ctx, BOSS_SPRITE.key, rect, layout.groundY);
-    }
-  }
+  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, enemyBaseSpriteRect(layout), layout.groundY);
 }

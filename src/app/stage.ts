@@ -19,7 +19,13 @@ import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
 import '../ui/skill-tooltip.css';
 
-import { drawBattle, computeBattleLayout, progressToX, slotAt } from '../battle';
+import { createDeathField, drawBattle, computeBattleLayout, progressToX, slotAt } from '../battle';
+
+/**
+ * 사망 연출 슬롯 버퍼 — **앱 수명 동안 하나만** 만든다(날씨 `WeatherField`와 같은 규약).
+ * 프레임마다 새로 만들면 재생 중인 연출이 매 프레임 초기화되어 아무 것도 안 보인다.
+ */
+const deathField = createDeathField();
 import { drawChart } from '../chart';
 import {
   ALLY_IDENTITY,
@@ -425,6 +431,8 @@ export function mountStage(root: HTMLElement): () => void {
       gold: snap.wallet.gold,
       timeMs: state.elapsedMs,
       reducedMotion: prefersReducedMotion(),
+      // 사망 연출 — 버퍼는 앱 수명 동안 하나, 이벤트는 직전 틱의 것만 넘긴다.
+      deaths: { field: deathField, events: session.lastCombatDeaths },
     });
 
     // 스킬 이펙트는 전장 위에 얹는다 — 가산 합성이라 반드시 전장을 다 그린 뒤여야 한다.
