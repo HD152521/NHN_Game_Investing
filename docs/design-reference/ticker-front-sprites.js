@@ -555,6 +555,260 @@ class Component extends DCLogic {
     return c.g;
   }
 
+  /* --- 적 공격 모션 --- */
+  eAtk(kind, f) {
+    const lunge = [0, -1, 3, 1][f];
+    if (kind === 1) {
+      const c = this.mk(30, 34);
+      c.poly([[18 + lunge, 12], [23 + lunge, 17], [20 + lunge, 32], [7 + lunge, 32], [5 + lunge, 18], [10 + lunge, 12]], '2');
+      c.poly([[14 + lunge, 3], [22 + lunge, 10], [20 + lunge, 14], [12 + lunge, 15], [8 + lunge, 9]], '3');
+      c.rect(13 + lunge, 9, 5, 4, '1');
+      const sp = [[[6, 4], [2, 26]], [[8, 2], [4, 22]], [[2, 14], [22, 20]], [[3, 18], [18, 24]]][f];
+      c.line(sp[0][0] + lunge, sp[0][1], sp[1][0] + lunge, sp[1][1], 'm');
+      c.poly([[sp[1][0] + lunge - 2, sp[1][1] - 2], [sp[1][0] + lunge + 3, sp[1][1]], [sp[1][0] + lunge - 1, sp[1][1] + 3]], 'b');
+      if (f === 2) for (let k = 0; k < 6; k++) c.px(24 - k, 18 + (k % 2), 'n');
+      return c.outline('0').rim('w').g;
+    }
+    if (kind === 2) {
+      const c = this.mk(32, 34);
+      c.rect(8 + lunge, 26, 5, 6, '2').rect(16 + lunge, 26, 5, 6, '2');
+      c.rect(6, 32, 8, 2, '3').rect(15, 32, 8, 2, '3');
+      c.poly([[7 + lunge, 13], [21 + lunge, 13], [23 + lunge, 26], [5 + lunge, 26]], '3');
+      c.poly([[7 + lunge, 13], [21 + lunge, 13], [22 + lunge, 18], [6 + lunge, 18]], 'n');
+      c.rect(10 + lunge, 5, 9, 7, '3').rect(11 + lunge, 7, 7, 3, '1');
+      const sx = [1, 0, -3, -1][f] + lunge;
+      c.rect(sx, 14, 5, 15, 'm').rect(sx + 1, 15, 3, 13, '2').line(sx + 1, 20, sx + 3, 20, 'b');
+      const hm = [[24, 6], [26, 3], [22, 20], [24, 24]][f];
+      c.rect(hm[0] + lunge, hm[1], 5, 4, 'm').rect(hm[0] + lunge + 1, hm[1] + 4, 2, 7, '3');
+      if (f === 2) { for (let k = 0; k < 7; k++) c.px(20 + (k % 3), 24 + k, 'b'); c.rect(18, 30, 10, 1, 'n'); }
+      return c.outline('0').rim('w').g;
+    }
+    const c = this.mk(34, 34);
+    c.rect(9, 25, 5, 7, '2').rect(18, 25, 5, 7, '2');
+    c.rect(7, 32, 9, 2, '3').rect(17, 32, 9, 2, '3');
+    c.poly([[7, 11], [23, 11], [26, 26], [4, 26]], '3');
+    c.poly([[7, 11], [23, 11], [24, 17], [6, 17]], 'n');
+    c.rect(11, 4, 9, 8, '3').rect(12, 6, 7, 3, '1');
+    const ar = [[13, 6], [15, 2], [12, 16], [13, 20]][f];
+    c.rect(23, ar[1] + 5, 6, 4, 'm');
+    c.poly([[27, ar[1] + 7], [31, ar[1] + 13], [24, ar[1] + 15], [24, ar[1] + 9]], 'm');
+    if (f === 2) { c.rect(24, 30, 10, 2, 'b'); for (let k = 0; k < 5; k++) c.px(26 + k * 2, 28 - (k % 2) * 2, 'n'); }
+    return c.outline('0').rim('w').g;
+  }
+
+  eAirAtk(kind, f) {
+    if (kind === 1) {
+      const c = this.mk(38, 26);
+      const bob = [0, 1, 2, 1][f];
+      c.poly([[16, 1 + bob], [27, 10 + bob], [16, 19 + bob], [5, 10 + bob]], '2');
+      c.line(16, 1 + bob, 16, 19 + bob, 'm').line(5, 10 + bob, 27, 10 + bob, 'm');
+      c.poly([[16, 4 + bob], [23, 10 + bob], [16, 16 + bob], [9, 10 + bob]], '3');
+      c.rect(14, 8 + bob, 5, 4, 'w');
+      for (let i = 0; i < 4; i++) c.line(16 - i * 4, 19 + bob, 12 - i * 4, 15 + bob, i % 2 ? 'b' : 'n');
+      if (f >= 2) for (let k = 0; k < 4; k++) c.rect(20 + k * 3, 14 + bob + k * 2, 2, 2, k % 2 ? 'w' : 'b');
+      return c.outline('0').rim('w').g;
+    }
+    const c = this.mk(38, 30);
+    const bob = [0, 1, 0, 1][f];
+    c.rect(14, 6 + bob, 8, 7, '3').rect(14, 6 + bob, 8, 2, 'n');
+    [8, 18, 28].forEach((x, i) => {
+      c.poly([[x - 4, 14 + bob], [x + 4, 14 + bob], [x + 2, 21 + bob], [x - 2, 21 + bob]], '2');
+      c.rect(x - 1, 11 + bob, 3, 4, 'm');
+      c.line(x - 4, 21 + bob, x + 4, 21 + bob, 'b');
+    });
+    c.rect(12, 3 + bob, 12, 2, 'm').rect(17, 1 + bob, 3, 3, 'n');
+    if (f >= 2) [23, 26, 29].forEach((y, i) => { for (let x = 4 + i * 2; x < 34 - i * 2; x += 3) c.px(x, y, i % 2 ? 'b' : 'n'); });
+    return c.outline('0').rim('w').g;
+  }
+
+  /* --- 걷기 · 사망 --- */
+  walk(base, f) {
+    const src = base.call(this);
+    const h = src.length, w = src[0].length;
+    const c = this.mk(w, h);
+    const bob = [0, -1, 0, 1][f];
+    const legTop = h - 10;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const v = src[y][x];
+      if (!v || v === '.') continue;
+      if (y < legTop) c.px(x, y + bob, v);
+      else {
+        const sh = y >= legTop ? [0, 2, 0, -2][f] * (x < w / 2 ? 1 : -1) : 0;
+        c.px(x + sh, y, v);
+      }
+    }
+    return c.g;
+  }
+
+  death(base, f, tint) {
+    const src = base.call(this);
+    const h = src.length, w = src[0].length;
+    const c = this.mk(w + 8, h);
+    if (f === 0) { this.stamp(c.g, src, 4, 0); for (let x = 0; x < w; x += 2) c.px(x + 4, 2, 'w'); return c.g; }
+    if (f === 1) { this.stamp(c.g, src, 4, 2); for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) c.px(x + 4, y + 2, 'w'); return c.g; }
+    if (f === 2) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = src[y][x]; if (v && v !== '.' && (x + y) % 2 === 0) c.px(x + 4 + ((y % 3) - 1), y + 4, v); }
+      return c.g;
+    }
+    for (let i = 0; i < 14; i++) { const x = 3 + (i * 5) % (w + 4), y = h - 4 - (i % 4) * 3; c.rect(x, y, 2, 2, i % 3 ? tint : 'm'); }
+    return c.g;
+  }
+
+  /* --- 타워 발사 + T2 --- */
+  towerFire(kind, f, t2) {
+    const g = (kind === 1 ? this.towerBasic() : kind === 2 ? this.towerAA() : this.towerSplash());
+    const h = g.length, w = g[0].length;
+    const c = this.mk(w + 14, h + 4);
+    const kick = [0, 0, kind === 2 ? 0 : -2, -1][f];
+    this.stamp(c.g, g, 2 + kick, 4);
+    if (t2) {
+      for (let x = 2; x < w; x += 3) c.px(x + 2, h - 1, 'g');
+      c.rect(4, 5, w - 6, 1, 'g');
+      if (kind === 2) c.rect(10, 4, 3, 2, 'g'); else c.rect(w - 4, 8, 4, 2, 'g');
+    }
+    if (f === 1) {
+      if (kind === 2) c.rect(11, 2, 3, 3, 'r'); else c.rect(w - 2, 12, 3, 3, 'r');
+    }
+    if (f === 2) {
+      if (kind === 2) { c.poly([[9, 0], [15, 0], [12, 7]], 'w'); c.rect(11, 6, 3, 4, 'r'); }
+      else if (kind === 1) { c.poly([[w - 3, 10], [w + 8, 13], [w - 3, 17]], 'w'); c.rect(w + 6, 12, 4, 3, 'r'); }
+      else { for (let k = 0; k < 6; k++) c.rect(w - 6 + k * 3, 6 - k, 2, 2, k % 2 ? 'r' : 'w'); }
+    }
+    if (f === 3) {
+      if (kind === 2) for (let k = 0; k < 4; k++) c.px(11 + (k % 2), 2 + k, 'm');
+      else for (let k = 0; k < 5; k++) c.px(w + 1 + k, 13 + (k % 2), 'd');
+    }
+    return c.g;
+  }
+
+  /* --- 보스 패턴 --- */
+  bossFrame(pattern, f) {
+    const c = this.mk(42, 50);
+    const lean = pattern === 1 ? [0, -1, 3, 1][f] : [0, 0, 2, 1][f];
+    c.rect(12 + lean, 36, 6, 10, '2').rect(22 + lean, 36, 6, 10, '2');
+    c.rect(10, 46, 9, 3, '3').rect(21, 46, 9, 3, '3');
+    c.poly([[9 + lean, 15], [29 + lean, 15], [33 + lean, 42], [6 + lean, 42]], '3');
+    c.poly([[9 + lean, 15], [29 + lean, 15], [31 + lean, 26], [7 + lean, 26]], '2');
+    c.poly([[12 + lean, 6], [27 + lean, 6], [29 + lean, 15], [10 + lean, 15]], '3');
+    c.rect(13 + lean, 9, 13, 3, '1');
+    c.poly([[10 + lean, 10], [4 + lean, 3], [12 + lean, 2]], 'n');
+    c.poly([[28 + lean, 10], [35 + lean, 3], [27 + lean, 2]], 'n');
+    c.poly([[18 + lean, 28], [24 + lean, 28], [21 + lean, 36]], 'b');
+    if (pattern === 1) {
+      const sw = [[[33, 14], [40, 30]], [[30, 6], [40, 14]], [[28, 24], [8, 30]], [[24, 34], [6, 38]]][f];
+      c.line(sw[0][0] + lean, sw[0][1], sw[1][0] + lean, sw[1][1], 'm');
+      c.line(sw[0][0] + lean, sw[0][1] + 1, sw[1][0] + lean, sw[1][1] + 1, 'n');
+      c.poly([[sw[1][0] + lean - 3, sw[1][1] - 3], [sw[1][0] + lean + 3, sw[1][1] + 1], [sw[1][0] + lean - 2, sw[1][1] + 4]], 'b');
+      if (f === 2) for (let k = 0; k < 14; k++) { const t = 2.3 + k * 0.12; c.px(21 + lean + Math.cos(t) * 20, 26 + Math.sin(t) * 20, k % 2 ? 'b' : 'n'); }
+      if (f === 3) for (let k = 0; k < 8; k++) c.px(6 + k * 2, 40 + (k % 2), 'n');
+    } else {
+      const sy = [12, 4, 30, 34][f];
+      c.rect(30 + lean, sy, 9, 7, 'm');
+      c.rect(31 + lean, sy + 7, 7, 4, '3');
+      c.rect(32 + lean, sy + 2, 5, 3, 'n');
+      if (f === 2) { c.rect(24, 44, 18, 3, 'b'); for (let k = 0; k < 6; k++) c.px(28 + k * 3, 41 - (k % 3) * 2, 'n'); }
+      if (f === 3) { for (let k = 0; k < 5; k++) c.rect(26 + k * 4, 44, 2, 2, 'n'); c.rect(22, 47, 20, 1, 'b'); }
+    }
+    return c.outline('0').rim('w').g;
+  }
+
+  /* --- 기지 피격 · 파괴 --- */
+  baseAllyDamage(stage) {
+    const c = this.mk(30, 44);
+    const lit = [1, 0.7, 0.35, 0][stage];
+    const top = 6;
+    c.rect(4, top, 22, 44 - top, '3');
+    c.rect(4, top, 22, 3, '2');
+    let n = 0;
+    for (let y = top + 5; y < 38; y += 5) for (let x = 7; x < 24; x += 5) {
+      n++;
+      const on = ((n * 37) % 100) / 100 < lit;
+      c.rect(x, y, 3, 3, on ? 'w' : '1');
+    }
+    c.rect(4, 38, 22, 3, '2');
+    c.rect(5, 37, 20, 1, stage < 3 ? 'r' : 'n');
+    c.rect(13, top - 4, 2, 4, 'm');
+    if (stage >= 1) { c.rect(4, 12, 5, 1, '1'); c.rect(20, 22, 6, 1, '1'); }
+    if (stage >= 2) { c.poly([[4, top], [11, top], [8, top + 6]], '1'); c.rect(18, 30, 8, 2, '1'); c.rect(4, 26, 4, 3, '1'); }
+    if (stage === 3) {
+      c.poly([[4, top], [26, top], [22, top + 9], [14, top + 4], [8, top + 11]], '1');
+      for (let k = 0; k < 8; k++) c.rect(3 + k * 3, 20 + (k % 4) * 5, 2, 2, '1');
+      c.rect(6, 30, 3, 8, '1');
+    }
+    c.rect(0, 41, 30, 3, '2');
+    return c.outline('0').rim(stage === 3 ? 'm' : 'w').g;
+  }
+
+  baseEnemyCollapse(stage) {
+    const c = this.mk(32, 46);
+    const drop = [0, 1, 4, 9][stage];
+    c.poly([[3, 14 + drop], [9, 8 + drop], [14, 13 + drop], [20, 6 + drop], [28, 16 + drop], [28, 42], [3, 42]], '3');
+    c.poly([[3, 14 + drop], [9, 8 + drop], [14, 13 + drop], [20, 6 + drop], [28, 16 + drop], [28, 23 + drop], [3, 23 + drop]], '2');
+    c.rect(10, 30, 12, 12, 'n');
+    c.disc(16, 36, 4, '3').disc(16, 36, 2, stage === 3 ? 'r' : 'b');
+    for (let y = 20 + drop; y < 30; y += 4) for (let x = 5; x < 27; x += 5) c.rect(x, y, 2, 2, '1');
+    if (stage >= 1) { c.line(5, 26, 12, 34, '1'); c.rect(22, 28, 5, 1, '1'); }
+    if (stage >= 2) { c.poly([[20, 6 + drop], [28, 16 + drop], [22, 18 + drop]], '1'); c.line(8, 20 + drop, 16, 33, '1'); c.rect(3, 32, 6, 2, '1'); }
+    if (stage === 3) {
+      c.poly([[3, 14 + drop], [16, 20 + drop], [28, 15 + drop], [28, 26], [3, 26]], '1');
+      for (let k = 0; k < 10; k++) c.rect(2 + k * 3, 34 + (k % 3) * 3, 2, 2, k % 2 ? 'n' : '1');
+      for (let k = 0; k < 5; k++) c.px(6 + k * 5, 12 + (k % 3) * 3, 'm');
+    }
+    c.rect(0, 42, 32, 4, '2');
+    return c.outline('0').rim('w').g;
+  }
+
+  /* --- 타이틀 화면 --- */
+  titleScreen() {
+    const bg = this.scene('dusk', 168, 76, { region: 1 });
+    const g = this.darken(bg, 0.42);
+    const c = { g: g, w: 168, h: 76 };
+    const px = (x, y, col) => { x = Math.round(x); y = Math.round(y); if (y >= 0 && y < 76 && x >= 0 && x < 168) g[y][x] = col; };
+    const rect = (x, y, w, h, col) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) px(x + i, y + j, col); };
+    rect(30, 16, 108, 2, '#FF4D5A');
+    rect(30, 40, 108, 1, '#7C89A3');
+    rect(30, 20, 76, 16, '#05070C');
+    rect(31, 21, 74, 14, '#0F1524');
+    rect(108, 22, 30, 12, '#05070C');
+    rect(109, 23, 28, 10, '#B32330');
+    for (let i = 0; i < 22; i += 3) rect(112 + i, 26, 2, 4, '#FFC53D');
+    rect(58, 44, 24, 7, '#05070C');
+    rect(59, 45, 22, 5, '#1A2236');
+    rect(86, 44, 24, 7, '#05070C');
+    rect(87, 45, 22, 5, '#1A2236');
+    const laneY = 74;
+    this.stamp(g, this.allyAnchor(), 4, laneY - 34);
+    this.stamp(g, this.allyRookie(), 30, laneY - 32);
+    this.stamp(g, this.enemyRusher(), 118, laneY - 34, true);
+    this.stamp(g, this.enemyBlocker(), 138, laneY - 34, true);
+    for (let x = 0; x < 168; x += 5) px(x, laneY + 3, '#1B4A42');
+    return g;
+  }
+
+  revealScreen() {
+    const c = this.mk(168, 76);
+    c.rect(0, 0, 168, 76, '1');
+    for (let x = 6; x < 162; x += 5) {
+      const t = 30 + Math.round(Math.sin(x * 0.09) * 12 + Math.sin(x * 0.31) * 4);
+      const len = 5 + ((x * 7) % 10);
+      c.rect(x, t, 3, len, (x % 10 < 5) ? 'r' : 'b');
+      c.rect(x + 1, t - 3, 1, len + 6, (x % 10 < 5) ? 'd' : 'n');
+    }
+    for (let y = 20; y < 56; y++) for (let x = 34; x < 134; x++) if ((x + y) % 2 === 0) c.px(x, y, '1');
+    c.rect(34, 20, 100, 1, 'g').rect(34, 55, 100, 1, 'g');
+    c.rect(34, 20, 1, 36, 'g').rect(133, 20, 1, 36, 'g');
+    [[34, 20], [130, 20], [34, 52], [130, 52]].forEach(p => { c.rect(p[0], p[1], 4, 1, 'w'); c.rect(p[0] + (p[0] > 100 ? 3 : 0), p[1], 1, 4, 'w'); });
+    c.rect(44, 28, 34, 6, '2').rect(44, 28, 34, 1, 'm');
+    c.rect(44, 38, 22, 4, '2');
+    c.rect(90, 28, 34, 6, '2').rect(90, 28, 34, 1, 'm');
+    c.rect(90, 38, 28, 4, '2');
+    c.rect(44, 46, 80, 1, '3');
+    for (let i = 0; i < 5; i++) c.rect(46 + i * 17, 49, 12, 3, i < 3 ? 'r' : '3');
+    c.rect(0, 70, 168, 6, '2');
+    for (let x = 0; x < 168; x += 6) c.px(x, 70, '3');
+    return c.g;
+  }
+
   proj(kind) {
     const c = this.mk(28, 14);
     c.rect(0, 0, 28, 14, '1');
@@ -834,14 +1088,19 @@ class Component extends DCLogic {
   }
 
   darken(grid, amt) {
-    const hx = v => parseInt(v, 16);
-    return grid.map(row => row.map(v => {
-      if (!v || v === '.' || v[0] !== '#') return v;
-      const r = Math.round(hx(v.slice(1, 3)) * (1 - amt) + 7 * amt);
-      const g = Math.round(hx(v.slice(3, 5)) * (1 - amt) + 10 * amt);
-      const b = Math.round(hx(v.slice(5, 7)) * (1 - amt) + 18 * amt);
-      return '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('');
-    }));
+    const memo = {};
+    const conv = v => {
+      let out = memo[v];
+      if (out !== undefined) return out;
+      const n = parseInt(v.slice(1), 16);
+      const r = Math.round(((n >> 16) & 255) * (1 - amt) + 7 * amt);
+      const g = Math.round(((n >> 8) & 255) * (1 - amt) + 10 * amt);
+      const b = Math.round((n & 255) * (1 - amt) + 18 * amt);
+      out = '#' + (((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1));
+      memo[v] = out;
+      return out;
+    };
+    return grid.map(row => row.map(v => (!v || v === '.' || v[0] !== '#') ? v : conv(v)));
   }
 
   stamp(dst, src, ox, oy, flip, k) {
@@ -972,27 +1231,65 @@ class Component extends DCLogic {
       'tf-shield-idle': this.shieldFrame(0),
       'tf-shield-loop': this.strip([0, 1, 2, 3].map(i => this.shieldFrame(i)), 5),
       'tf-fx-seq-01': this.fxSeq(1), 'tf-fx-seq-02': this.fxSeq(2), 'tf-fx-seq-03': this.fxSeq(3),
-      'tf-fx-screen': this.fxScreen()
+      'tf-fx-screen': this.fxScreen(),
+      'tf-eatk-01': this.strip([0, 1, 2, 3].map(i => this.eAtk(1, i)), 5),
+      'tf-eatk-02': this.strip([0, 1, 2, 3].map(i => this.eAtk(2, i)), 5),
+      'tf-eatk-03': this.strip([0, 1, 2, 3].map(i => this.eAtk(3, i)), 5),
+      'tf-eatk-04': this.strip([0, 1, 2, 3].map(i => this.eAirAtk(1, i)), 5),
+      'tf-eatk-05': this.strip([0, 1, 2, 3].map(i => this.eAirAtk(2, i)), 5),
+      'tf-walk-ally': this.strip([0, 1, 2, 3].map(i => this.walk(this.allyRookie, i)), 5),
+      'tf-walk-tank': this.strip([0, 1, 2, 3].map(i => this.walk(this.allyAnchor, i)), 5),
+      'tf-walk-enemy': this.strip([0, 1, 2, 3].map(i => this.walk(this.enemyBlocker, i)), 5),
+      'tf-death-ally': this.strip([0, 1, 2, 3].map(i => this.death(this.allyRookie, i, 'r')), 4),
+      'tf-death-enemy': this.strip([0, 1, 2, 3].map(i => this.death(this.enemyRusher, i, 'b')), 4),
+      'tf-tfire-01': this.strip([0, 1, 2, 3].map(i => this.towerFire(1, i)), 4),
+      'tf-tfire-02': this.strip([0, 1, 2, 3].map(i => this.towerFire(2, i)), 4),
+      'tf-tfire-03': this.strip([0, 1, 2, 3].map(i => this.towerFire(3, i)), 4),
+      'tf-t2-01': this.towerFire(1, 0, true), 'tf-t2-02': this.towerFire(2, 0, true), 'tf-t2-03': this.towerFire(3, 0, true),
+      'tf-boss-p1': this.strip([0, 1, 2, 3].map(i => this.bossFrame(1, i)), 5),
+      'tf-boss-p2': this.strip([0, 1, 2, 3].map(i => this.bossFrame(2, i)), 5),
+      'tf-basedmg-ally': this.strip([0, 1, 2, 3].map(i => this.baseAllyDamage(i)), 5),
+      'tf-basedmg-enemy': this.strip([0, 1, 2, 3].map(i => this.baseEnemyCollapse(i)), 5),
+      'tf-title': this.titleScreen(), 'tf-reveal': this.revealScreen()
     };
     return this._s;
   }
 
-  paint(canvas, grid) {
+  rgba(col) {
+    this._rgba = this._rgba || {};
+    let v = this._rgba[col];
+    if (v === undefined) {
+      const n = parseInt(col.slice(1), 16);
+      v = (255 << 24) | ((n & 255) << 16) | (((n >> 8) & 255) << 8) | ((n >> 16) & 255);
+      this._rgba[col] = v;
+    }
+    return v;
+  }
+
+  paint(canvas, grid, forced) {
     const h = grid.length, w = grid[0].length;
     canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, w, h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const v = grid[y][x];
-      const col = (v && v[0] === '#') ? v : this.PAL[v];
-      if (!col) continue;
-      ctx.fillStyle = col;
-      ctx.fillRect(x, y, 1, 1);
+    const img = ctx.createImageData(w, h);
+    const buf = new Uint32Array(img.data.buffer);
+    for (let y = 0; y < h; y++) {
+      const row = grid[y], off = y * w;
+      for (let x = 0; x < w; x++) {
+        const v = row[x];
+        if (!v || v === '.') continue;
+        const col = v[0] === '#' ? v : this.PAL[v];
+        if (!col) continue;
+        buf[off + x] = this.rgba(col);
+      }
     }
-    const box = canvas.parentElement;
-    const cw = box.clientWidth || w, ch = box.clientHeight || h;
-    const fit = Math.min(cw / w, ch / h);
-    const s = fit >= 1 ? Math.floor(fit) : 1 / Math.ceil(1 / fit);
+    ctx.putImageData(img, 0, 0);
+    let s = forced;
+    if (!s) {
+      const box = canvas.parentElement;
+      const cw = box.clientWidth || w, ch = box.clientHeight || h;
+      const fit = Math.min(cw / w, ch / h);
+      s = fit >= 1 ? Math.floor(fit * 2) / 2 : 1 / Math.ceil(1 / fit);
+    }
     canvas.style.position = 'absolute';
     canvas.style.left = '50%'; canvas.style.top = '50%';
     canvas.style.transform = 'translate(-50%,-50%)';
@@ -1000,15 +1297,50 @@ class Component extends DCLogic {
     canvas.style.height = h * s + 'px';
   }
 
+  ROWS = [
+    ['tf-eatk-01', 'tf-eatk-02', 'tf-eatk-03', 'tf-eatk-04', 'tf-eatk-05'],
+    ['tf-t2-01', 'tf-t2-02', 'tf-t2-03'],
+    ['tf-tfire-01', 'tf-tfire-02', 'tf-tfire-03'],
+    ['tf-walk-ally', 'tf-walk-tank', 'tf-walk-enemy'],
+    ['tf-death-ally', 'tf-death-enemy'],
+    ['tf-fx-seq-01', 'tf-fx-seq-02', 'tf-fx-seq-03'],
+    ['tf-melee-loop', 'tf-throw-loop', 'tf-shield-loop'],
+    ['tf-boss-p1', 'tf-boss-p2'],
+    ['tf-basedmg-ally', 'tf-basedmg-enemy'],
+    ['tf-title', 'tf-reveal']
+  ];
+
   draw() {
     const S = this.sheets();
-    document.querySelectorAll('canvas[data-spr]').forEach(cv => {
+    const all = Array.from(document.querySelectorAll('canvas[data-spr]'));
+    /* phase 1: all layout reads together */
+    const dims = new Map();
+    all.forEach(cv => {
       const grid = S[cv.dataset.spr];
-      if (grid) this.paint(cv, grid);
+      if (!grid) return;
+      const box = cv.parentElement;
+      dims.set(cv.dataset.spr, [box.clientWidth || grid[0].length, box.clientHeight || grid.length]);
+    });
+    const fitOf = id => {
+      const grid = S[id], d = dims.get(id);
+      if (!grid || !d) return null;
+      const fit = Math.min(d[0] / grid[0].length, d[1] / grid.length);
+      return fit >= 1 ? Math.floor(fit * 2) / 2 : 1 / Math.ceil(1 / fit);
+    };
+    const locked = {};
+    this.ROWS.forEach(ids => {
+      let best = Infinity;
+      ids.forEach(id => { const s = fitOf(id); if (s !== null && s < best) best = s; });
+      if (best !== Infinity) ids.forEach(id => { locked[id] = best; });
+    });
+    /* phase 2: all writes together */
+    all.forEach(cv => {
+      const grid = S[cv.dataset.spr];
+      if (grid) this.paint(cv, grid, locked[cv.dataset.spr] || fitOf(cv.dataset.spr));
     });
   }
 
-  componentDidMount() { this.applyTint(); this.draw(); setTimeout(() => this.draw(), 150); }
+  componentDidMount() { this.applyTint(); requestAnimationFrame(() => this.draw()); }
   componentDidUpdate() { this.applyTint(); this.draw(); }
   renderVals() { return {}; }
 }
