@@ -181,6 +181,35 @@ export function currentStep(state: TutorialState): TutorialStep | null {
   return TUTORIAL_STEPS[state.stepIndex] ?? null;
 }
 
+/**
+ * 전투를 붙잡아 두는 마지막 단계.
+ *
+ * ①②③(차트 읽기 → 진입 → 청산)은 **돈의 흐름을 설명하는 구간**이라 전장에서 할 일이 없다.
+ * 그런데 웨이브 시계는 그동안에도 돌아서, 설명을 읽는 사이에 적이 밀려들고 본진이 깎인다.
+ * "튜토리얼 하는데 게임이 알아서 시작된다"는 실제 플레이 피드백이 이것이다.
+ *
+ * ④(타워 건설)부터는 전투가 있어야 배울 수 있으므로 거기서 푼다.
+ */
+const HOLD_UNTIL_STEP: TutorialStepId = 'build';
+
+/**
+ * 지금 전투를 멈춰야 하는가.
+ *
+ * ★ 왜 재생(차트)은 안 멈추는가 ★ ①은 "차트가 흐르는 것을 본다"이고 ②③은 실제로 매매를
+ * 해 봐야 하므로 리플레이는 계속 흘러야 한다. 멈출 것은 **웨이브 진행뿐**이다.
+ *
+ * ⚠️ 그래서 두 시계가 어긋난다. 셸은 붙잡아 둔 시간을 **연장 시간에 그대로 얹어**
+ * 전투 총시간을 보존해야 한다 — 그러지 않으면 튜토리얼을 천천히 읽은 사람이
+ * 마지막 웨이브를 못 끝내고 `unresolved`(자본금 0)로 떨어진다.
+ */
+export function shouldHoldCombat(state: TutorialState): boolean {
+  const holdIndex = TUTORIAL_STEPS.findIndex((step) => step.id === HOLD_UNTIL_STEP);
+  if (holdIndex < 0) {
+    return false;
+  }
+  return state.stepIndex < holdIndex;
+}
+
 /** 튜토리얼이 끝났는가. */
 export function isTutorialDone(state: TutorialState): boolean {
   return state.stepIndex >= TUTORIAL_STEPS.length;
@@ -259,7 +288,17 @@ export interface TutorialOverlay {
   readonly focus: TutorialStep['focus'] | null;
   readonly progress: number;
   readonly skippable: boolean;
+  /**
+   * 전투를 붙잡아 두고 있는가.
+   *
+   * 화면에 반드시 알려야 한다 — 적이 안 오는 것을 플레이어가 "고장"으로 읽으면
+   * 튜토리얼이 오히려 불신을 만든다.
+   */
+  readonly combatHeld: boolean;
 }
+
+/** 전투 대기 중임을 알리는 문구. */
+export const COMBAT_HELD_NOTICE = '설명이 끝날 때까지 웨이브는 멈춰 있다';
 
 /** 현재 상태 → 화면에 그릴 내용. */
 export function tutorialOverlay(state: TutorialState, firstRun: boolean): TutorialOverlay {
@@ -274,6 +313,7 @@ export function tutorialOverlay(state: TutorialState, firstRun: boolean): Tutori
     focus: step?.focus ?? null,
     progress: tutorialProgress(state),
     skippable: canSkipTutorial(firstRun),
+    combatHeld: shouldHoldCombat(state),
   };
 }
 

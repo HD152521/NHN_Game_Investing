@@ -15,6 +15,7 @@ import {
   airWaveCountOf,
   canSkipTutorial,
   currentStep,
+  shouldHoldCombat,
   initialTutorialState,
   isTutorialDone,
   skipTutorial,
@@ -207,6 +208,38 @@ describe('연속 전이 — 가이드 모드는 진행을 막지 않는다', () 
     const done: TutorialState = { stepIndex: TUTORIAL_STEPS.length, aumMark: 0 };
     expect(advanceTutorial(done, view({ aum: 9999 }))).toBe(done);
     expect(currentStep(done)).toBeNull();
+  });
+});
+
+/**
+ * ★ 실제 플레이 피드백에서 나온 버그 ★
+ * "튜토리얼 하는데 게임이 알아서 시작된다" — ①②③을 읽는 동안 웨이브 시계가 돌아
+ * 적이 밀려들고 본진이 깎였다. GAME.md §15-1이 경고한 바로 그 함정이다.
+ */
+describe('전투 보류 — 돈의 흐름을 설명하는 동안 웨이브를 멈춘다', () => {
+  test('①②③(차트·진입·청산)에서는 전투를 멈춘다', () => {
+    for (const id of ['chart', 'open', 'close']) {
+      expect(shouldHoldCombat(stateAt(id))).toBe(true);
+    }
+  });
+
+  test('④부터는 푼다 — 타워는 전투가 있어야 배운다', () => {
+    for (const id of ['build', 'antiair', 'aum']) {
+      expect(shouldHoldCombat(stateAt(id))).toBe(false);
+    }
+  });
+
+  test('튜토리얼이 끝나면 당연히 안 멈춘다', () => {
+    expect(shouldHoldCombat({ stepIndex: TUTORIAL_STEPS.length, aumMark: null })).toBe(false);
+  });
+
+  test('스킵하면 즉시 풀린다 — 스킵은 "설명 없이 바로 하겠다"는 뜻이다', () => {
+    expect(shouldHoldCombat(skipTutorial(stateAt('chart'), false))).toBe(false);
+  });
+
+  test('오버레이가 전투 보류를 화면에 알린다 — 안 알리면 "고장"으로 읽힌다', () => {
+    expect(tutorialOverlay(stateAt('open'), true).combatHeld).toBe(true);
+    expect(tutorialOverlay(stateAt('build'), true).combatHeld).toBe(false);
   });
 });
 

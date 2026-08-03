@@ -73,8 +73,10 @@ import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
 import { clearedCount, loadProgress, recordCleared } from './progress';
 import {
+  COMBAT_HELD_NOTICE,
   advanceTutorial,
   initialTutorialState,
+  shouldHoldCombat,
   skipTutorial,
   tutorialOverlay,
 } from './tutorial';
@@ -292,6 +294,16 @@ export function mountStage(root: HTMLElement): () => void {
   const isFirstRun = clearedCount(progress) === 0;
   let tutorialState: TutorialState = initialTutorialState();
 
+  /**
+   * 튜토리얼이 전투를 붙잡아 둔 누적 시간(ms).
+   *
+   * ★ 왜 세어 두는가 ★ 웨이브만 멈추고 차트는 계속 흐르므로 **두 시계가 어긋난다.**
+   * 이 값을 장 마감 때 연장 시간에 그대로 얹어 전투 총시간을 보존한다 — 그러지 않으면
+   * 튜토리얼을 천천히 읽은 사람이 마지막 웨이브를 못 끝내고 unresolved(자본금 0)가 된다.
+   * "설명을 꼼꼼히 읽으면 벌을 받는다"는 구조는 튜토리얼로서 자기모순이다.
+   */
+  let tutorialHoldMs = 0;
+
   /** 강조 클래스 전체 목록. 지울 때 하나라도 빠지면 강조가 남는다. */
   const TUTORIAL_FOCUS_CLASSES = [
     'stage--tut-chart',
@@ -308,6 +320,7 @@ export function mountStage(root: HTMLElement): () => void {
     lastFrameMs = nowMs;
     marketClosed = false;
     overtimeRemainingMs = 0;
+    tutorialHoldMs = 0;
     armedSpeed = null;
     refs!.volume.textContent = `거래량 ${session.set.volumeMultiple.toFixed(1)}×`;
     hideResult();
@@ -423,7 +436,11 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.tutorialStep.textContent = `STEP ${overlay.stepNumber} / ${overlay.stepTotal}`;
     refs!.tutorialTitle.textContent = overlay.title;
     refs!.tutorialInstruction.textContent = overlay.instruction;
-    refs!.tutorialWhy.textContent = overlay.why;
+    // 전투가 멈춰 있다는 사실을 '왜' 줄에 덧붙인다 — 적이 안 오는 것을 고장으로 읽지 않게.
+    refs!.tutorialWhy.textContent = overlay.combatHeld
+      ? `${overlay.why}
+⏸ ${COMBAT_HELD_NOTICE}`
+      : overlay.why;
     refs!.tutorialFill.style.width = `${Math.round(overlay.progress * 100)}%`;
     refs!.tutorialSkipButton.disabled = !overlay.skippable;
 
@@ -530,7 +547,19 @@ export function mountStage(root: HTMLElement): () => void {
 
     // 판정을 먼저 — 강제 청산이 걸린 프레임에서 정리된 상태를 그려야 한다.
     session.syncLiquidation(elapsedMs);
-    session.stepCombatFrame(dt);
+
+    /*
+     * ★ 튜토리얼 ①②③ 동안에는 웨이브를 멈춘다 ★
+     * 그 셋은 돈의 흐름(차트 → 진입 → 청산 → 골드)을 설명하는 구간이라 전장에서 할 일이
+     * 없는데, 웨이브 시계는 그동안에도 돌아 적이 밀려들고 본진이 깎였다.
+     * 차트는 계속 흘려야 한다 — ①이 "차트가 흐르는 것을 본다"이고 ②③은 실제 매매다.
+     * 멈춘 만큼은 아래 장 마감에서 연장 시간으로 되돌려준다.
+     */
+    if (shouldHoldCombat(tutorialState)) {
+      tutorialHoldMs += dt;
+    } else {
+      session.stepCombatFrame(dt);
+    }
     announceClose(session);
 
     const snap = session.snapshot(elapsedMs);
@@ -625,7 +654,8 @@ export function mountStage(root: HTMLElement): () => void {
       marketClosed = true;
       // 연장은 한 웨이브 주기만 준다. 13웨이브 교전창(25초)에 등장한 마지막 무리가 사옥까지
       // 걸어 들어오기에 충분한 길이이며, 배속이 바뀌면 같이 줄어드는 파생값이다.
-      overtimeRemainingMs = session.combatParams.waveDurationMs;
+      // 튜토리얼이 붙잡아 둔 만큼을 얹어 전투 총시간을 보존한다(위 `tutorialHoldMs` 주석).
+      overtimeRemainingMs = session.combatParams.waveDurationMs + tutorialHoldMs;
       // FR-8.1 — 열려 있던 포지션을 강제 청산하고, **그 연출을 반드시 소비한다.**
       // 예전 셸은 여기서 세션을 버려 정산 골드와 `pendingNotice`를 함께 폐기했다.
       session.closeAtStageEnd(elapsedMs);
