@@ -8,7 +8,7 @@
 > `docs/PRD_TICKER-FRONT_MVP.md`(v1.4까지 개정)는 여러 지점에서 코드보다 뒤처져 있으므로,
 > 값이 어긋날 때는 **코드가 진실이다**. 어긋난 지점은 §13에 모아 두었다.
 >
-> 기준 커밋: `22d4582` · 테스트 118파일 / **1,975개 통과** · TypeScript strict + `noUncheckedIndexedAccess`
+> 기준 커밋: `398dbd8` · 테스트 123파일 / **2,098개 통과** · TypeScript strict + `noUncheckedIndexedAccess`
 
 ---
 
@@ -1077,7 +1077,7 @@ src/
 ### 12-3. 테스트
 
 ```
-118 파일 / 1,975 테스트 통과 (npm test)
+123 파일 / 2,098 테스트 통과 (npm test)
 ```
 
 vitest는 **node 환경**으로 돌며 jsdom이 없다. 그래서 DOM 배선(`stage.ts`)은 얇게 두고,
@@ -1102,7 +1102,7 @@ vitest는 **node 환경**으로 돌며 jsdom이 없다. 그래서 DOM 배선(`st
 | 도구 | 질문 | 실행 |
 |---|---|---|
 | **`tools/bot-sim`** | "필요지출만큼 **벌 수 있는가**" (경제 게이트) | `npm run bot-sim` |
-| **`tools/combat-sim`** | "그 돈으로 산 방어가 **막는가**" (전투 게이트) | `npx tsx tools/combat-sim/bin.ts` |
+| **`tools/combat-sim`** | "그 돈으로 산 방어가 **막는가**" (전투 게이트) | `npm run combat-sim` |
 
 **bot-sim** — 7개 전략(무작위 / 추세추종 / 거래량반응 × 손절규율 유무 + 종료보유) × 3지역 ×
 2 차트 공급원(`synth` / `martingale`) × 기본 200판. 시드 고정이라 같은 명령이 항상 같은 표를 낸다.
@@ -1130,7 +1130,7 @@ vitest는 **node 환경**으로 돌며 jsdom이 없다. 그래서 DOM 배선(`st
 | `npm run test:coverage` | 커버리지 리포트 |
 | `npm run typecheck` | 타입체크만 |
 | `npm run bot-sim` | 경제 게이트 시뮬레이터 |
-| `npx tsx tools/combat-sim/bin.ts` | 전투 게이트 시뮬레이터 (**npm 스크립트 없음**) |
+| `npm run combat-sim` | 전투 게이트 시뮬레이터 |
 | `npm run assets:build` | 에셋 후처리 파이프라인 |
 
 ---
@@ -1143,12 +1143,12 @@ vitest는 **node 환경**으로 돌며 jsdom이 없다. 그래서 DOM 배선(`st
 
 | 항목 | 상태 | 근거 |
 |---|---|---|
-| **공개 연출 (FR-9)** | **미구현.** 클리어 후 "그것이 어느 회사의 어느 날이었는지" 공개하는 화면이 없다. 스프라이트 `tf-reveal`·`tf-ui-reveal`은 존재하지만 **화면 목업일 뿐 배선되지 않았고, 전장 blit도 금지**돼 있다. 이 게임을 다른 디펜스 게임과 구분하는 유일한 훅(PRD H2)이 화면에 닿지 않는다 | `src/sprites/screens.ts`, `SCREEN_ONLY_SPRITE_KEYS` |
-| **진행도 저장** | **없음.** 어느 지역을 클리어했는지 기록하지 않는다 | `src/app/session.ts` `TERRITORIES = 0` |
-| **지역 잠금** | 미구현. PRD는 R1만 활성이고 R2·R3는 선행 클리어로 열리지만, 진행도가 없어 셋 다 열려 있다 | `region-select.ts` `locked: false` |
-| **경계도(heat)** | **런타임 효과 0.** `HEAT_PER_TERRITORY = 0.04`는 설계표 값이며, `TERRITORIES`가 0 고정이라 heat는 항상 1이다. 즉 현재 난이도는 **100% `waveTable.baseHp` 계수**가 지고 있다 | `constants.ts` `HEAT_PER_TERRITORY` 주석 |
+| **공개 연출 (FR-9)** | ⚠️ **부분 구현** (`398dbd8`). 6단계 골격을 다 잡고 **4·5단계(매매 되짚기 · OHLCV+적중률)만 재생**한다. ①②③⑥은 실데이터·도감 선행이라 `available: false`로 건너뛴다(시간도 소비하지 않음). 못 만드는 이유는 `blockedBy`에 적혀 있다 | `src/app/reveal.ts` |
+| ~~진행도 저장~~ | ✅ **해소됨** (`e328267`). `src/app/progress.ts` — localStorage, 버전 필드, 손상 입력 방어 | `src/app/progress.ts` |
+| ~~지역 잠금~~ | ✅ **해소됨** (`e328267`). 바로 앞 지역을 클리어해야 열린다. R1은 언제나 열림 | `region-select.ts` `isRegionLocked` |
+| ~~경계도(heat)~~ | ✅ **활성화됨** (`e328267`). 셸이 점령 수를 주입한다. ⚠️ **난이도가 실제로 올라간다** — 2지역 점령 후 적 HP +8%. 시뮬레이터 2종은 점령 0을 가정하므로, 밸런스를 잴 때 **어느 점령 수에서 잰 값인지** 함께 적어라 | `session.ts` 생성자 `territories` |
 | **적 본진** | `CombatState`에 적 본진 HP 개념이 없다. 정산의 `enemyBaseDestroyed`는 **항상 `false`** → FR-8.2 +1점을 아무도 받을 수 없어 **만점이 7점이 아니라 6점**이다(그래도 S는 나온다) | `stage.ts:516`, `settlement.ts` |
-| **날씨 배선** | `src/weather` 판정과 `src/battle/draw-weather-*` 렌더가 **양쪽 다 구현·테스트돼 있지만 셸이 연결하지 않았다.** `stage.ts`의 `drawBattle` 호출에 `weather` 인자가 없어 **게임 중 날씨가 한 번도 뜨지 않는다** | `stage.ts:422-436` vs `battle.ts:50` |
+| ~~날씨 배선~~ | ✅ **해소됨** (`300ad2f`). `session.stepWeather`가 판정을 `drawBattle`에 넘긴다. 거래 정지(WX-04)는 `src/market`에 정지 개념이 없어 **장 마감**을 신호로 쓴다 | `session.ts` `stepWeather` |
 | **부서 업그레이드 (FR-11)** | 미구현. 스탯을 개체에 싣는 구조만 준비돼 있다 | `types.ts` `Combatant` 주석 |
 | **예약 청산 (FR-5.12)** | 미구현 | — |
 | **부분 청산** | 미지원 (PRD도 MVP 제외) | — |
@@ -1231,10 +1231,10 @@ PRD §3.1의 In Scope 13개 항목을 **실제 코드로 확인한** 결과다.
 | 4 | 전투 13웨이브 / 타워3 / 유닛3 / 스킬 | ✅ **완료 + 초과** — PRD는 스킬 1종, 코드는 **3종** | `src/combat/` · 보스까지 실제 개체로 구현 |
 | 5 | 시장 이벤트 2종 | ✅ **완료 + 초과** — 이벤트 2종 위에 **날씨 4종** 판정까지 | `src/weather/` ⚠️ 단 셸 배선 누락(§13-1) |
 | 6 | 정산 & 클리어 등급 | ✅ **완료** | `src/app/settlement.ts` · 점수·등급·보너스·AUM 크레딧 |
-| 7 | **공개 연출 화면** | ❌ **미구현** — 스프라이트(`tf-reveal`)와 배경 API(`drawRevealBackdrop`)만 있고 **화면이 없다** | `src/ui/reveal-backdrop.ts` · `src/sprites/screens.ts` |
-| 8 | 미니 세계지도 (3지역, 인접 점령, 배타 보상) | ⚠️ **부분** — **지역 선택 카드 3장만.** 지도 없음 · 인접 점령 없음 · 배타적 보상 없음 · 진행도 저장 없음 | `src/app/region-select.ts` |
+| 7 | **공개 연출 화면** | ⚠️ **부분** (`398dbd8`) — 6단계 골격 + **4·5단계 재생**. ①②③은 실데이터, ⑥은 도감 선행 | `src/app/reveal.ts` |
+| 8 | 미니 세계지도 (3지역, 인접 점령, 배타 보상) | ⚠️ **부분** — 카드 3장 + **인접 점령 잠금·진행도 저장 완료**(`e328267`). 지도 화면과 배타적 보상은 아직 없다 | `src/app/region-select.ts` · `progress.ts` |
 | 9 | **부서 업그레이드 5종** | ❌ **미구현** — 스탯을 개체에 싣는 **구조만** 준비돼 있다 | `combat/types.ts` `Combatant` 주석 |
-| 11 | **튜토리얼** | ❌ **미구현** — 코드에 흔적 자체가 없다 (`grep -rn "튜토리얼\|tutorial" src` → 0건) | — |
+| 11 | **튜토리얼** | ✅ **완료** (`206e355`) — 코어 루프 6단계 가이드 모드. 전이 조건은 전부 게임 상태에서 파생 | `src/app/tutorial.ts` |
 
 ### P1 (3개)
 
@@ -1249,15 +1249,21 @@ PRD §3.1의 In Scope 13개 항목을 **실제 코드로 확인한** 결과다.
 | 항목 | 상태 |
 |---|---|
 | 서버 (Cloudflare Workers / WebSocket) | ❌ 없음 — 로컬 단독 실행 |
+| 진행도 저장 | ✅ localStorage (`progress.ts`, 버전 필드 있음) |
+| DOM 배선 테스트 | ✅ jsdom 도입 — 전역은 node 유지, 파일 단위 `// @vitest-environment jsdom` 옵트인 |
 | 실제 1분봉 데이터 (601조합) | ❌ 없음 — **합성 차트(`generateChartSet`) 사용 중** |
-| GitHub Pages 배포 | ❌ 없음 — `.github/` 디렉터리 자체가 없다 (워크플로 0개) |
+| GitHub Pages 배포 | ⚠️ **워크플로 작성 완료**(`300ad2f`) — `npm ci → test → tsc → build` 4중 게이트. **저장소 Settings > Pages > Source를 `GitHub Actions`로 바꿔야 동작한다**(사용자 조치) |
 | 이미지 에셋 | ❌ `assets/raw`·`cut`·`atlas` 전부 비어 있음 — 화면은 **코드 드로잉 스프라이트 94키**로 돌아간다 |
 
 ### 종합
 
 ```
-대략 55~60%
+대략 70~75%   (2026-08-03 기준. 이전 55~60%)
 ```
+
+이번 회차에 닫힌 것: 튜토리얼 · 공개 연출(4·5) · 진행도 저장 · 지역 잠금 · heat 활성화 ·
+날씨 배선 · click-path LOW · Pages 워크플로 · jsdom.
+남은 큰 덩어리: **부서 업그레이드 · 실데이터/서버 · 도감 · 사운드 · 지도 화면.**
 
 **다만 진행률 숫자보다 중요한 것은 분포다.** 완성된 부분은 밀도가 매우 높고
 (테스트 1,975개 · 스프라이트 94키가 디자인 원본과 문자 단위로 일치 · 밸런스 검증 도구 2종 ·
@@ -1423,7 +1429,7 @@ PRD가 **MVP의 존재 이유(가설 H2 검증 대상)**라고 못 박은 화면
 - ⚠️ **`npm run bot-sim`으로 법무팀 Lv3이 Lv1보다 실제로 유리한지 반드시 확인해라.**
   청산선 완화는 양날의 검이다 — 버티는 시간이 길어져 AUM 회전율이 떨어진다.
   불리하게 나오면 **돈 주고 사면 손해인 부서**가 된다(PRD O-11).
-- `npx tsx tools/combat-sim/bin.ts`로 R&D/인사팀 배수가 클리어율을 얼마나 밀어 올리는지 측정.
+- `npm run combat-sim`으로 R&D/인사팀 배수가 클리어율을 얼마나 밀어 올리는지 측정.
   현재 R3 클리어율이 15.8%라 **부서 배수가 붙으면 난이도 곡선이 통째로 이동한다.**
 
 ---
@@ -1494,14 +1500,18 @@ PRD가 **MVP의 존재 이유(가설 H2 검증 대상)**라고 못 박은 화면
 ### 15-8. 착수 순서 요약
 
 ```
-1. 튜토리얼            ← 지금 아무도 게임을 이해할 수 없다
-2. 공개 연출 (4·5단계)  ← MVP의 존재 이유. 실데이터 없이도 절반은 가능
-3. GitHub Pages 배포    ← 없으면 아무도 플레이할 수 없다
-4. 진행도 저장          ← 아래 항목들의 선행 조건
-5. 부서 업그레이드 5종   ← 자본금에 사용처를 준다
+1. 튜토리얼            ✅ 완료 (206e355)
+2. 공개 연출 (4·5단계)  ✅ 완료 (398dbd8) — ①②③⑥은 실데이터·도감 선행이라 골격만
+3. GitHub Pages 배포    ⚠️ 워크플로 완료 (300ad2f) — 저장소 Pages 설정은 사용자 조치
+4. 진행도 저장          ✅ 완료 (e328267)
+5. 부서 업그레이드 5종   ← 다음. 선행 조건(진행도)이 충족됐다. 자본금에 사용처를 준다
 6. 차트 도감 · 사운드 · 세계지도 완성
 7. 서버 · 실데이터      ← 밸런스가 통째로 흔들린다(15-5). 반드시 시뮬레이터 재측정과 함께
 ```
+
+**5번을 시작하기 전에 읽어라**: `progress.ts`의 `carriedCapital` 필드가 자리를 잡아 뒀지만
+**값은 아직 항상 0**이다. 부서 업그레이드가 이 필드에 값을 넣는 첫 소비자다.
+저장 포맷 버전을 올릴 필요는 없다 — 필드 추가는 하위 호환이다.
 
 ---
 
@@ -1510,13 +1520,28 @@ PRD가 **MVP의 존재 이유(가설 H2 검증 대상)**라고 못 박은 화면
 ### 16-1. click-path 감사 LOW 잔여 3건
 
 `docs/AUDIT-click-path-2026-08-01.md` — CRITICAL 1 · HIGH 1 · MEDIUM 3은 **전부 수정 완료**(커밋 `00831ba`).
-**LOW 3건은 미해결**이다.
+**LOW 3건도 전부 처리됐다**(커밋 `300ad2f`).
+
+| # | 결과 |
+|---|---|
+| 1 | 이미 해소돼 있었음을 확인 — `formatActionLog({ ok: build(...) })`가 실제 결과에서 문구를 가른다 |
+| 2 | 수정. 비율의 소유자를 하나로 못박아 낙관적 반영 구간을 1프레임으로 제한 |
+| 3 | 수정. `clampGoldDisplay`로 상한 — **표시 골드는 실제 골드를 넘지 않는다** |
+
+수정 중 **감사에도 GAME.md에도 없던 결함 1건**을 새로 찾았다: `'open'` 변형 비율 버튼은
+비활성화되지 않는데("항상 선택 가능") 두 선택기가 같은 `stakeRatio`를 공유한다 — 보유 중
+open 쪽을 누르면 추가 매수가 감당 못 하는 비율을 든 상태가 만들어진다. `[추가]` 핸들러에
+재검사를 넣었고 jsdom 테스트로 고정했다.
+
+<details><summary>원래 목록</summary>
 
 | # | 내용 | 위치 |
 |---|---|---|
 | 1 | 타워 건설 실패 시 무피드백 | ※ 이후 `formatActionLog`로 **해소된 것으로 보이나 재확인 필요** |
 | 2 | `[추가]` 버튼이 1프레임 이전 `stakeRatio`를 사용 | `src/ui/trade-panel.ts:265` |
 | 3 | 골드 연출 중 타워를 사면 HUD 골드가 최대 **750ms 과대 표시** (`sync`가 `pending`으로 보류) | `src/ui/gold-flight.ts:171` |
+
+</details>
 
 ### 16-2. PRD O-14 — 세탁 억제
 
@@ -1635,7 +1660,7 @@ src/
 ### 18-1. 기본 3종 (모든 작업 후 필수)
 
 ```bash
-npx vitest run          # 118 파일 / 1,975 테스트 · 약 11~15초
+npx vitest run          # 123 파일 / 2,098 테스트 · 약 120~220초
 npx tsc --noEmit        # strict + noUncheckedIndexedAccess
 npx vite build          # 프로덕션 빌드 (트리셰이킹 확인 겸)
 ```
@@ -1648,7 +1673,7 @@ npx vite build          # 프로덕션 빌드 (트리셰이킹 확인 겸)
 
 ```bash
 npm run bot-sim                          # 경제 게이트 — "필요지출만큼 벌 수 있는가"
-npx tsx tools/combat-sim/bin.ts          # 전투 게이트 — "그 돈으로 산 방어가 막는가"
+npm run combat-sim                       # 전투 게이트 — "그 돈으로 산 방어가 막는가"
 ```
 
 **bot-sim 옵션**
@@ -1666,7 +1691,7 @@ npm run bot-sim -- --runs=200 --seed=20260731 --stages=R1,R2 \
 **combat-sim 옵션**
 
 ```bash
-npx tsx tools/combat-sim/bin.ts --stages=R1 --ratios=1 --loadouts=t-mix-up
+npm run combat-sim -- --stages=R1 --ratios=1 --loadouts=t-mix-up
 ```
 
 - 19개 로드아웃 × 3지역 × 예산비 3단(50/75/100%)
@@ -1757,8 +1782,9 @@ npm run dev   # http://localhost:5173
 
 **확인법**: `npx vite build` 출력의 번들 크기를 작업 전후로 비교해라. 늘지 않았으면 배선이 없는 것이다.
 
-**현재도 이 상태인 것**: **날씨 시스템.** `src/weather` 판정과 `src/battle/draw-weather-*` 렌더가
-양쪽 다 구현·테스트돼 있는데 `stage.ts`의 `drawBattle` 호출에 `weather` 인자가 없다 → **게임 중 날씨가 한 번도 뜨지 않는다.**
+**이 절이 지목했던 날씨 시스템은 해소됐다** (커밋 `300ad2f`). `session.stepWeather`가 판정을
+`drawBattle`에 넘기면서 번들이 154.90 → 157.20 kB로 늘었고, 날씨 4종 문자열이 번들에서 검출된다.
+**그 확인 방법 자체는 그대로 유효하다** — 새 기능을 붙일 때마다 번들 크기를 전후로 비교해라.
 
 ### 19-6. 테스트 통과가 화면 동작을 뜻하지 않는다
 
