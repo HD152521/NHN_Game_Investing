@@ -15,12 +15,15 @@ import {
   hasCleared,
   loadProgress,
   parseProgress,
+  recordCard,
   recordCleared,
   saveProgress,
   serializeProgress,
+  withCard,
   withCleared,
 } from './progress';
 import type { GameProgress, ProgressStorage } from './progress';
+import type { CodexCard } from './codex';
 
 /** 메모리 저장소. `throwOn`으로 차단된 환경(프라이빗 모드·용량 초과)을 흉내 낸다. */
 function fakeStorage(
@@ -111,7 +114,7 @@ describe('parseProgress — 버전이 맞아도 필드를 다시 검사한다', 
 
 describe('직렬화 왕복', () => {
   test('저장했다 읽으면 같은 진행도가 나온다', () => {
-    const progress: GameProgress = { clearedStages: ['R1', 'R2'], carriedCapital: 1200, tutorialSeen: false };
+    const progress: GameProgress = { clearedStages: ['R1', 'R2'], carriedCapital: 1200, tutorialSeen: false, codexCards: [] };
     expect(parseProgress(serializeProgress(progress))).toEqual(progress);
   });
 
@@ -143,7 +146,7 @@ describe('withCleared — 불변', () => {
   });
 
   test('carriedCapital은 보존된다', () => {
-    const base: GameProgress = { clearedStages: [], carriedCapital: 500, tutorialSeen: false };
+    const base: GameProgress = { clearedStages: [], carriedCapital: 500, tutorialSeen: false, codexCards: [] };
     expect(withCleared(base, 'R1').carriedCapital).toBe(500);
   });
 });
@@ -181,7 +184,12 @@ describe('저장소 배선 — 어떤 실패에도 던지지 않는다', () => {
 
   test('정상 저장소에서는 읽고 쓴다', () => {
     const storage = fakeStorage();
-    expect(saveProgress({ clearedStages: ['R1'], carriedCapital: 0, tutorialSeen: false }, storage)).toBe(true);
+    expect(
+      saveProgress(
+        { clearedStages: ['R1'], carriedCapital: 0, tutorialSeen: false, codexCards: [] },
+        storage,
+      ),
+    ).toBe(true);
     expect(loadProgress(storage).clearedStages).toEqual(['R1']);
   });
 });
@@ -209,5 +217,153 @@ describe('recordCleared — 셸이 쓰는 진입점', () => {
     const storage = fakeStorage('{깨짐');
     expect(() => recordCleared('R1', storage)).not.toThrow();
     expect(loadProgress(storage).clearedStages).toEqual(['R1']);
+  });
+});
+
+// ── 도감 카드 저장 ────────────────────────────────────────────
+
+/** 카드 픽스처. 손상 입력 테스트가 필드를 하나씩 무너뜨리는 기준점이다. */
+function card(overrides: Partial<CodexCard> = {}): CodexCard {
+  return {
+    id: '7-R1',
+    stageId: 'R1',
+    seed: 7,
+    grade: 'S',
+    changeRate: 12.5,
+    hasEvent: false,
+    durationMs: 60_000,
+    baseHp: 100,
+    maxBaseHp: 100,
+    accuracy: 0.8,
+    bars: [{ o: 100, c: 110 }],
+    ...overrides,
+  };
+}
+
+describe('도감 카드 — 불변 추가', () => {
+  test('새 카드는 뒤에 붙는다', () => {
+    const next = withCard(emptyProgress(), card());
+    expect(next.codexCards).toHaveLength(1);
+  });
+
+  test('★ 같은 ID면 같은 참조를 돌려준다 — 같은 판을 다시 깨도 도감이 늘지 않는다', () => {
+    const first = withCard(emptyProgress(), card());
+    const second = withCard(first, card({ grade: 'C' }));
+    expect(second).toBe(first);
+  });
+
+  test('원본 진행도를 변형하지 않는다', () => {
+    const base = emptyProgress();
+    withCard(base, card());
+    expect(base.codexCards).toHaveLength(0);
+  });
+
+  test('다른 지역에서 같은 시드면 다른 카드다', () => {
+    const next = withCard(withCard(emptyProgress(), card()), card({ id: '7-R2', stageId: 'R2' }));
+    expect(next.codexCards).toHaveLength(2);
+  });
+});
+
+describe('도감 카드 — 직렬화 왕복', () => {
+  test('카드가 왕복해도 값이 보존된다', () => {
+    const progress = withCard(emptyProgress(), card());
+    expect(parseProgress(serializeProgress(progress))).toEqual(progress);
+  });
+
+  test('빈 도감도 왕복한다', () => {
+    expect(parseProgress(serializeProgress(emptyProgress())).codexCards).toEqual([]);
+  });
+});
+
+describe('도감 카드 — 손상 입력', () => {
+  function parseCards(cards: unknown): readonly CodexCard[] {
+    return parseProgress(
+      JSON.stringify({ version: PROGRESS_VERSION, clearedStages: [], codexCards: cards }),
+    ).codexCards;
+  }
+
+  test('배열이 아니면 빈 도감으로 떨어진다', () => {
+    expect(parseCards('not-an-array')).toEqual([]);
+    expect(parseCards(null)).toEqual([]);
+    expect(parseCards(42)).toEqual([]);
+  });
+
+  test('구 포맷(필드 없음)은 빈 도감이다 — 진행도 전체가 날아가지 않는다', () => {
+    const raw = JSON.stringify({
+      version: PROGRESS_VERSION,
+      clearedStages: ['R1'],
+      carriedCapital: 0,
+      tutorialSeen: true,
+    });
+    const progress = parseProgress(raw);
+    expect(progress.codexCards).toEqual([]);
+    expect(progress.clearedStages).toEqual(['R1']);
+    expect(progress.tutorialSeen).toBe(true);
+  });
+
+  test('ID·지역·등급이 없는 카드는 버린다 — 나머지는 살린다', () => {
+    const cards = parseCards([
+      card(),
+      { ...card({ id: 'x-R1' }), id: '' },
+      { ...card({ id: 'y-R1' }), stageId: 'ZZ' },
+      { ...card({ id: 'z-R1' }), grade: 'X' },
+      'garbage',
+      null,
+    ]);
+    expect(cards.map((entry) => entry.id)).toEqual(['7-R1']);
+  });
+
+  test('★ NaN·undefined 수치가 화면 계산식까지 흘러가지 않는다', () => {
+    const cards = parseCards([
+      { ...card(), durationMs: 'nope', baseHp: undefined, maxBaseHp: 0, accuracy: 99, seed: NaN },
+    ]);
+    const only = cards[0];
+    expect(only?.durationMs).toBe(0);
+    expect(only?.baseHp).toBe(0);
+    expect(only?.maxBaseHp).toBe(1); // 0으로 나누기를 막는 하한
+    expect(only?.accuracy).toBe(1);
+    expect(only?.seed).toBe(0);
+  });
+
+  test('손상된 봉은 개별로 걸러진다', () => {
+    const cards = parseCards([{ ...card(), bars: [{ o: 1, c: 2 }, { o: 'x', c: 2 }, null, 5] }]);
+    expect(cards[0]?.bars).toEqual([{ o: 1, c: 2 }]);
+  });
+
+  test('중복 ID는 먼저 온 것만 남는다', () => {
+    const cards = parseCards([card({ grade: 'S' }), card({ grade: 'C' })]);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]?.grade).toBe('S');
+  });
+});
+
+describe('도감 카드 — 저장 진입점', () => {
+  test('처음 얻으면 isNew가 참이고 저장된다', () => {
+    const storage = fakeStorage();
+    const result = recordCard(card(), storage);
+    expect(result.isNew).toBe(true);
+    expect(loadProgress(storage).codexCards).toHaveLength(1);
+  });
+
+  test('이미 가진 카드면 isNew가 거짓이다', () => {
+    const storage = fakeStorage();
+    recordCard(card(), storage);
+    expect(recordCard(card(), storage).isNew).toBe(false);
+  });
+
+  test('저장이 막힌 환경에서도 던지지 않고 그 판 안에서는 보인다', () => {
+    const storage = fakeStorage(null, 'set');
+    const result = recordCard(card(), storage);
+    expect(result.isNew).toBe(true);
+    expect(result.progress.codexCards).toHaveLength(1);
+  });
+
+  test('클리어 기록과 카드 획득이 서로를 지우지 않는다', () => {
+    const storage = fakeStorage();
+    recordCleared('R1', storage);
+    recordCard(card(), storage);
+    const progress = loadProgress(storage);
+    expect(progress.clearedStages).toEqual(['R1']);
+    expect(progress.codexCards).toHaveLength(1);
   });
 });

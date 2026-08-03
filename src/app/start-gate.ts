@@ -8,6 +8,8 @@
  * DOM 배선과 정지 상태 보장은 `stage.ts` + `frame-loop.ts`가 맡는다.
  */
 
+import { CODEX_OPEN_ACTION } from './codex';
+
 export const GAME_TITLE = 'TICKER FRONT';
 
 /** 장르를 한눈에 박아 두는 윗줄. 차트 게임인지 디펜스인지 헷갈리지 않게 둘 다 적는다. */
@@ -50,6 +52,14 @@ export const GATE_DAILY_ACTION = 'start-daily';
 export const GATE_SEED_INPUT = 'seed-input';
 export const GATE_SEED_ACTION = 'start-seed';
 
+/**
+ * 도감 진입 (PRD P1 #10).
+ *
+ * 타이틀에 두는 이유: 도감은 **판을 넘어 남는 것**이라 판 안에서 열 자리가 없다.
+ * 목업(`home`)도 [출전] 아래 [도감]·[설정]을 나란히 놓는다.
+ */
+export const CODEX_BUTTON_LABEL = '도감';
+
 export const DAILY_BUTTON_LABEL = '오늘의 챌린지';
 export const SEED_BUTTON_LABEL = '이 시드로';
 export const SEED_INPUT_PLACEHOLDER = '시드 또는 2026-08-03';
@@ -74,6 +84,9 @@ export function buildStartGateMarkup(): string {
         <ol class="gate__flow">${steps}</ol>
         <button class="gate__start" type="button" data-action="${GATE_START_ACTION}">
           ${START_BUTTON_LABEL}
+        </button>
+        <button class="btn gate__codex" type="button" data-action="${CODEX_OPEN_ACTION}">
+          ${CODEX_BUTTON_LABEL}
         </button>
         <p class="gate__hint">${GATE_HINT}</p>
 

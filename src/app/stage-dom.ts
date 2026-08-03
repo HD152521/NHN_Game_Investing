@@ -21,6 +21,7 @@ import {
   buildStartGateMarkup,
 } from './start-gate';
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
+import { CODEX_BACK_ACTION, CODEX_OPEN_ACTION, buildCodexMarkup } from './codex';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
 export const CHART_WIDTH = 1024;
@@ -161,6 +162,19 @@ export interface StageRefs {
   readonly regionButtons: readonly HTMLButtonElement[];
   /** 지역 선택 → 시작 게이트로 돌아가는 버튼. */
   readonly regionBackButton: HTMLButtonElement;
+  /** 도감 오버레이 (PRD P1 #10). 타이틀에서만 열린다. */
+  readonly codex: HTMLElement;
+  /**
+   * 도감 본문이 들어가는 칸. **열 때마다 통째로 다시 그린다.**
+   *
+   * 필터 버튼을 `StageRefs`에 담지 않은 이유가 이것이다 — 본문이 교체되면 담아 둔 참조가
+   * 화면에서 떨어져 나간 옛 노드를 가리키게 된다. 필터 클릭은 이 칸에 건 위임으로 받는다.
+   */
+  readonly codexBody: HTMLElement;
+  /** 타이틀의 [도감] 버튼. */
+  readonly codexOpenButton: HTMLButtonElement;
+  /** 도감 → 타이틀로 돌아가는 버튼. */
+  readonly codexBackButton: HTMLButtonElement;
   readonly panelHost: HTMLElement;
   /**
    * 사운드 설정 3종 (PRD §3.1 ⑬).
@@ -379,6 +393,7 @@ export function buildStageMarkup(): string {
 
       ${buildStartGateMarkup()}
       ${buildRegionSelectMarkup()}
+      ${buildCodexMarkup()}
     </div>
   `;
 }
@@ -455,6 +470,14 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const regionBackButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${REGION_BACK_ACTION}"]`,
   );
+  const codex = pick('codex');
+  const codexBody = pick('codex-body');
+  const codexOpenButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${CODEX_OPEN_ACTION}"]`,
+  );
+  const codexBackButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${CODEX_BACK_ACTION}"]`,
+  );
 
   if (
     !chart ||
@@ -504,7 +527,11 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !audioValue ||
     !startButton ||
     !regionSelect ||
-    !regionBackButton
+    !regionBackButton ||
+    !codex ||
+    !codexBody ||
+    !codexOpenButton ||
+    !codexBackButton
   ) {
     return null;
   }
@@ -564,6 +591,10 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     regionButtons: Array.from(
       root.querySelectorAll<HTMLButtonElement>(`[data-action="${REGION_SELECT_ACTION}"]`),
     ),
+    codex,
+    codexBody,
+    codexOpenButton,
+    codexBackButton,
     panelHost,
     audioMuteButton,
     audioSlider,

@@ -15,6 +15,7 @@
 import './shell.css';
 import './start-gate.css';
 import './region-select.css';
+import './codex.css';
 import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
 import '../ui/skill-tooltip.css';
@@ -73,7 +74,14 @@ import { audioControlView, createGameAudio, diffCombatEvents, percentToVolume, p
 import type { AudioSettings, CombatAudioFrame, GameAudio } from '../audio';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
-import { clearedCount, loadProgress, markTutorialSeen, recordCleared } from './progress';
+import { clearedCount, loadProgress, markTutorialSeen, recordCard, recordCleared } from './progress';
+import {
+  CODEX_FILTER_ACTION,
+  buildCodexBodyMarkup,
+  codexFilterFor,
+  mintCard,
+} from './codex';
+import type { CodexFilter } from './codex';
 import {
   COMBAT_HELD_NOTICE,
   TUTORIAL_STEPS,
@@ -1128,6 +1136,29 @@ export function mountStage(root: HTMLElement): () => void {
     // 결과 카드가 같은 수치를 다시 계산하지 않도록 물고 있는다(단일 출처).
     lastSettlement = settlement;
 
+    // ★ 도감 카드는 클리어에만 발행된다 ★ 정산과 같은 조건(`cleared`)을 쓰는 이유는
+    // 도감이 "막아낸 날의 기록"이기 때문이다 — 진 판은 기록이 아니다. 등급·적중률은
+    // 방금 계산한 `settlement`에서 가져와 두 화면이 다른 숫자를 말할 수 없게 한다.
+    if (outcome === 'cleared') {
+      const minted = recordCard(
+        mintCard({
+          stageId,
+          seed,
+          grade: settlement.grade,
+          chart: current.set,
+          durationMs: elapsedMs,
+          baseHp: combat.baseHp,
+          maxBaseHp: combat.maxBaseHp,
+          accuracy: settlement.accuracy,
+        }),
+      );
+      progress = minted.progress;
+      if (minted.isNew) {
+        // 처음 본 날에만 알린다. 같은 시드를 다시 깼을 때 "획득"이라고 말하면 거짓이다.
+        refs!.log.textContent = '도감 카드 획득 — 타이틀의 [도감]에서 볼 수 있습니다';
+      }
+    }
+
     refs!.resultTitle.textContent = settlementTitle(outcome);
     refs!.resultSubtitle.textContent = settlementSubtitle(outcome);
     refs!.resultBody.innerHTML = buildSettlementRowsMarkup(
@@ -1160,8 +1191,38 @@ export function mountStage(root: HTMLElement): () => void {
    */
   function showGate(): void {
     refs!.regionSelect.hidden = true;
+    refs!.codex.hidden = true;
     refs!.gate.hidden = false;
     refs!.startButton.focus();
+  }
+
+  // ── 도감 (PRD P1 #10) ──────────────────────────────────────
+  /**
+   * 현재 필터. **본문 밖에 둔다** — 본문은 열 때마다 통째로 다시 그려지므로,
+   * 상태를 DOM(선택된 탭의 class)에서 읽으면 다시 그리는 순간 잃는다.
+   */
+  let codexFilter: CodexFilter = 'all';
+
+  /**
+   * 도감 본문을 다시 그린다.
+   *
+   * 카드 수가 세 자리를 넘지 않으므로 부분 갱신 대신 전체 교체를 쓴다 — 필터 상태와
+   * 카드 목록이 어긋날 여지가 구조적으로 없어진다. 진행도(`progress`)가 단일 출처다.
+   */
+  function renderCodex(): void {
+    refs!.codexBody.innerHTML = buildCodexBodyMarkup(progress.codexCards, {
+      filter: codexFilter,
+    });
+  }
+
+  function showCodex(): void {
+    // 저장소를 다시 읽는다 — 다른 탭에서 판을 깼을 수도 있고, 무엇보다 도감은
+    // "지금까지 모은 전부"를 보여야 하는 화면이다.
+    progress = loadProgress();
+    renderCodex();
+    refs!.gate.hidden = true;
+    refs!.codex.hidden = false;
+    refs!.codexBackButton.focus();
   }
 
   function showRegionSelect(): void {
@@ -1263,6 +1324,24 @@ export function mountStage(root: HTMLElement): () => void {
     }
   });
   refs.regionBackButton.addEventListener('click', showGate);
+  refs.codexOpenButton.addEventListener('click', showCodex);
+  refs.codexBackButton.addEventListener('click', showGate);
+
+  /**
+   * 필터 클릭은 **본문에 건 위임으로 받는다.**
+   *
+   * 탭 버튼은 `renderCodex()`가 매번 새로 만들기 때문에, 버튼 각각에 리스너를 걸면
+   * 첫 렌더의 버튼에만 걸리고 그 다음부터는 죽은 화면이 된다. 위임하면 본문이 몇 번
+   * 교체되든 이 리스너 하나로 계속 받는다.
+   */
+  refs.codexBody.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest<HTMLElement>(`[data-action="${CODEX_FILTER_ACTION}"]`);
+    if (!button) return;
+    codexFilter = codexFilterFor(button.dataset['filter']);
+    renderCodex();
+  });
 
   for (const button of refs.regionButtons) {
     button.addEventListener('click', () => {
@@ -1520,8 +1599,8 @@ export function mountStage(root: HTMLElement): () => void {
    * Space 가 늘 삼켜졌다 — 화면은 계속 "Space로 바로 시작"이라고 말하면서.
    */
   function onKeyDown(event: KeyboardEvent): void {
-    // Esc — 지역 선택에서 타이틀로. 다이얼로그의 관습적인 탈출 키다.
-    if (event.code === 'Escape' && !refs!.regionSelect.hidden) {
+    // Esc — 지역 선택·도감에서 타이틀로. 다이얼로그의 관습적인 탈출 키다.
+    if (event.code === 'Escape' && (!refs!.regionSelect.hidden || !refs!.codex.hidden)) {
       event.preventDefault();
       showGate();
       return;

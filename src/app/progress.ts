@@ -25,6 +25,8 @@
 
 import type { StageId } from '../combat';
 import { STAGES } from '../combat';
+import type { CodexBar, CodexCard } from './codex';
+import type { SettlementGrade } from './settlement';
 
 /**
  * 저장 포맷 버전. **포맷의 의미가 바뀌면 반드시 올려라.**
@@ -64,6 +66,16 @@ export interface GameProgress {
    * 필드 추가는 하위 호환이라 포맷 버전을 올리지 않는다(없으면 false로 채운다).
    */
   readonly tutorialSeen: boolean;
+  /**
+   * 수집한 도감 카드 (PRD P1 #10).
+   *
+   * 카드는 **클리어 1회당 1장**이고 `시드-지역` ID로 중복이 제거된다. 여기에 두는 이유는
+   * 도감이 "판을 넘어 남는 것"이라는 성격 자체가 진행도이기 때문이다 — 별도 저장 키를
+   * 만들면 진행도 초기화와 도감 초기화가 어긋난다.
+   *
+   * 필드 추가는 하위 호환이라 포맷 버전을 올리지 않는다(없으면 빈 배열).
+   */
+  readonly codexCards: readonly CodexCard[];
 }
 
 /** 실제 존재하는 지역 ID. 손상 입력에서 지역 이름을 걸러내는 기준이다. */
@@ -71,7 +83,7 @@ const KNOWN_STAGE_IDS: readonly StageId[] = Object.keys(STAGES) as StageId[];
 
 /** 진행도 없음. **모든 실패 경로가 여기로 수렴한다.** */
 export function emptyProgress(): GameProgress {
-  return { clearedStages: [], carriedCapital: 0, tutorialSeen: false };
+  return { clearedStages: [], carriedCapital: 0, tutorialSeen: false, codexCards: [] };
 }
 
 function isStageId(value: unknown): value is StageId {
@@ -96,6 +108,79 @@ function normalizeCleared(values: readonly unknown[]): readonly StageId[] {
 function normalizeCapital(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
   return Math.floor(value);
+}
+
+/** 유한수만 통과시킨다. 실패하면 `fallback`. 도감 카드 필드 검증의 기본기다. */
+function finiteOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+const KNOWN_GRADES: readonly SettlementGrade[] = ['S', 'A', 'B', 'C'];
+
+function isGrade(value: unknown): value is SettlementGrade {
+  return typeof value === 'string' && (KNOWN_GRADES as readonly string[]).includes(value);
+}
+
+function normalizeBars(value: unknown): readonly CodexBar[] {
+  if (!Array.isArray(value)) return [];
+  const out: CodexBar[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const record = entry as Record<string, unknown>;
+    const o = finiteOr(record['o'], Number.NaN);
+    const c = finiteOr(record['c'], Number.NaN);
+    if (Number.isNaN(o) || Number.isNaN(c)) continue;
+    out.push({ o, c });
+  }
+  return out;
+}
+
+/**
+ * 손상 입력에서 도감 카드 하나를 복구한다. 복구 불가면 `null`.
+ *
+ * ⚠️ **여기가 이 파일에서 가장 느슨해지기 쉬운 자리다.** 카드는 필드가 10개라 "대충 있으면
+ * 통과"시키고 싶어지는데, 그러면 `undefined`가 화면 계산식(`baseHp / maxBaseHp`)까지 흘러가
+ * `NaN%`가 렌더된다. ID·지역·등급이 없으면 그 카드는 **버린다** — 카드 한 장을 잃는 것이
+ * 도감 전체가 깨지는 것보다 낫다.
+ */
+function normalizeCard(value: unknown): CodexCard | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+
+  const id = record['id'];
+  const stageId = record['stageId'];
+  const grade = record['grade'];
+  if (typeof id !== 'string' || id === '') return null;
+  if (!isStageId(stageId)) return null;
+  if (!isGrade(grade)) return null;
+
+  const maxBaseHp = Math.max(1, Math.floor(finiteOr(record['maxBaseHp'], 1)));
+  return {
+    id,
+    stageId,
+    grade,
+    seed: Math.floor(finiteOr(record['seed'], 0)),
+    changeRate: finiteOr(record['changeRate'], 0),
+    hasEvent: record['hasEvent'] === true,
+    durationMs: Math.max(0, Math.floor(finiteOr(record['durationMs'], 0))),
+    baseHp: Math.max(0, Math.floor(finiteOr(record['baseHp'], 0))),
+    maxBaseHp,
+    accuracy: Math.min(1, Math.max(0, finiteOr(record['accuracy'], 0))),
+    bars: normalizeBars(record['bars']),
+  };
+}
+
+/** 카드 목록 정규화: 손상 제거 → ID 중복 제거(먼저 온 것을 남긴다). */
+function normalizeCards(values: readonly unknown[]): readonly CodexCard[] {
+  const seen = new Set<string>();
+  const out: CodexCard[] = [];
+  for (const value of values) {
+    const card = normalizeCard(value);
+    if (card === null || seen.has(card.id)) continue;
+    seen.add(card.id);
+    out.push(card);
+  }
+  return out;
 }
 
 /**
@@ -125,11 +210,14 @@ export function parseProgress(raw: string | null | undefined): GameProgress {
   if (record['version'] !== PROGRESS_VERSION) return emptyProgress();
 
   const cleared = record['clearedStages'];
+  const cards = record['codexCards'];
   return {
     clearedStages: Array.isArray(cleared) ? normalizeCleared(cleared) : [],
     carriedCapital: normalizeCapital(record['carriedCapital']),
     // 구 포맷에는 없던 필드다. 없으면 false — 처음 보는 사람으로 취급한다.
     tutorialSeen: record['tutorialSeen'] === true,
+    // 마찬가지로 구 포맷에 없던 필드. 없으면 빈 도감.
+    codexCards: Array.isArray(cards) ? normalizeCards(cards) : [],
   };
 }
 
@@ -140,6 +228,7 @@ export function serializeProgress(progress: GameProgress): string {
     clearedStages: progress.clearedStages,
     carriedCapital: progress.carriedCapital,
     tutorialSeen: progress.tutorialSeen,
+    codexCards: progress.codexCards,
   });
 }
 
@@ -262,4 +351,32 @@ export function recordCleared(
   const next = withCleared(loadProgress(storage), id);
   saveProgress(next, storage);
   return next;
+}
+
+/**
+ * 도감 카드를 더한 **새 진행도**를 만든다 (불변).
+ *
+ * 이미 가진 카드(같은 ID = 같은 시드·같은 지역)면 **같은 참조를 돌려준다** — 같은 판을
+ * 다시 깨도 도감이 늘어나지 않게 하려는 것이다. `withCleared`와 같은 관습이라
+ * 호출부는 `!==`로 "새로 얻었는가"를 판단할 수 있다(획득 연출의 조건이 된다).
+ */
+export function withCard(progress: GameProgress, card: CodexCard): GameProgress {
+  if (progress.codexCards.some((existing) => existing.id === card.id)) {
+    return progress;
+  }
+  return { ...progress, codexCards: [...progress.codexCards, card] };
+}
+
+/** 카드 획득을 저장하고 갱신된 진행도를 돌려준다. @returns 새로 얻었는지까지 함께 준다. */
+export function recordCard(
+  card: CodexCard,
+  storage: ProgressStorage | null = defaultProgressStorage(),
+): { readonly progress: GameProgress; readonly isNew: boolean } {
+  const current = loadProgress(storage);
+  const next = withCard(current, card);
+  if (next === current) {
+    return { progress: current, isNew: false };
+  }
+  saveProgress(next, storage);
+  return { progress: next, isNew: true };
 }

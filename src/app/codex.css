@@ -1,0 +1,360 @@
+/**
+ * 도감 화면 스타일 — 목업 `tradebookzip`의 카드 보드.
+ *
+ * 지역 선택(`region-select.css`)이 "작전 브리핑 보드"라면 여기는 **수집 진열장**이다:
+ * 카드마다 희귀도 색이 테두리와 머리띠에 실리고, 전설 카드만 그리드에서 세로로 2칸을
+ * 차지해 시선을 먼저 가져간다. 화면의 정보 밀도가 높으므로 카드 안에서는 대비를
+ * 제목 > 등락률 > 수치 순으로 떨어뜨린다.
+ *
+ * 색은 전부 `--tf-*` 토큰만 참조한다 (`no-hardcoded-hex` 가드).
+ */
+
+.codex {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  display: grid;
+  place-items: start center;
+  padding: 24px;
+  overflow: auto;
+  background:
+    radial-gradient(
+      120% 80% at 50% 0%,
+      color-mix(in srgb, var(--tf-bg-2) 45%, transparent) 0%,
+      transparent 60%
+    ),
+    color-mix(in srgb, var(--tf-bg-0) 97%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.codex[hidden] {
+  display: none;
+}
+
+.codex__panel {
+  width: min(1180px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── 헤더 ─────────────────────────────────────────────── */
+
+.codex__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tf-muted) 34%, transparent);
+}
+
+.codex__title {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  color: var(--tf-text);
+}
+
+.codex__count {
+  margin: 6px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--tf-muted);
+}
+
+.codex__tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.codex__tab {
+  padding: 7px 16px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 40%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tf-bg-1) 80%, transparent);
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.codex__tab:hover {
+  color: var(--tf-text);
+  border-color: color-mix(in srgb, var(--tf-up-ally) 55%, transparent);
+}
+
+.codex__tab--on {
+  color: var(--tf-up-ally);
+  border-color: var(--tf-up-ally);
+  background: color-mix(in srgb, var(--tf-up-ally) 12%, transparent);
+}
+
+.codex__tab:focus-visible {
+  outline: 2px solid var(--tf-up-ally);
+  outline-offset: 2px;
+}
+
+/* ── 그리드 ───────────────────────────────────────────── */
+
+.codex__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-items: start;
+}
+
+/* ── 카드 ─────────────────────────────────────────────── */
+
+.codex-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 38%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tf-bg-1) 92%, transparent);
+  overflow: hidden;
+}
+
+.codex-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  background: color-mix(in srgb, var(--tf-bg-2) 70%, transparent);
+  color: var(--tf-muted);
+}
+
+.codex-card__date {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 희귀도 — 머리띠 색과 테두리만 바꾼다. 카드 구조는 전부 같다. */
+.codex-card--legendary {
+  border-color: var(--tf-gold);
+  grid-row: span 2;
+}
+
+.codex-card--legendary .codex-card__head {
+  background: var(--tf-gold);
+  color: var(--tf-bg-0);
+}
+
+.codex-card--epic {
+  border-color: var(--tf-aum);
+}
+
+.codex-card--epic .codex-card__head {
+  color: var(--tf-aum);
+}
+
+.codex-card--rare {
+  border-color: color-mix(in srgb, var(--tf-direction) 70%, transparent);
+}
+
+.codex-card--rare .codex-card__head {
+  color: var(--tf-direction);
+}
+
+/* 전설 카드는 세로 2칸이라 썸네일이 더 길게 늘어난다. */
+.codex-card--legendary .codex-card__figure {
+  min-height: 240px;
+}
+
+.codex-card__figure {
+  position: relative;
+  min-height: 140px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--tf-bg-0) 80%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--tf-muted) 26%, transparent);
+}
+
+/* 썸네일 — 봉 하나가 절대 배치, 바닥 오프셋과 높이를 인라인 스타일로 받는다. */
+.codex-card__chart {
+  position: absolute;
+  inset: 12px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.codex-bar {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--tf-enemy-down);
+  border-radius: 1px;
+}
+
+.codex-bar--up {
+  border-color: var(--tf-up-ally);
+  background: var(--tf-up-ally);
+}
+
+.codex-bar--down {
+  background: transparent;
+}
+
+.codex-card__change {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 8px;
+  border: 1px solid currentcolor;
+  border-radius: 2px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--tf-bg-0) 76%, transparent);
+}
+
+.codex-card__change--up {
+  color: var(--tf-up-ally);
+}
+
+.codex-card__change--down {
+  color: var(--tf-enemy-down);
+}
+
+.codex-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 14px 12px;
+}
+
+.codex-card__title {
+  margin: 0;
+  font-size: 17px;
+  color: var(--tf-text);
+}
+
+.codex-card__desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--tf-muted);
+}
+
+.codex-card__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.codex-card__stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.codex-card__stat-label {
+  letter-spacing: 0.1em;
+  color: color-mix(in srgb, var(--tf-muted) 78%, transparent);
+}
+
+.codex-card__stat-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--tf-text);
+}
+
+.codex-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--tf-muted) 22%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--tf-muted);
+}
+
+.codex-card--legendary .codex-card__rank {
+  color: var(--tf-gold);
+}
+
+.codex-card--epic .codex-card__rank {
+  color: var(--tf-aum);
+}
+
+.codex-card--rare .codex-card__rank {
+  color: var(--tf-direction);
+}
+
+/* ── 미획득 슬롯 ──────────────────────────────────────── */
+
+.codex-card--empty {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  min-height: 200px;
+  padding: 20px;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--tf-muted) 28%, transparent);
+  background: color-mix(in srgb, var(--tf-bg-1) 40%, transparent);
+}
+
+/* 자물쇠 — 픽셀 느낌을 유지하려 도형 두 개로 만든다(이미지 에셋 없음). */
+.codex-card__lock {
+  position: relative;
+  width: 22px;
+  height: 17px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tf-muted) 44%, transparent);
+}
+
+.codex-card__lock::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 13px;
+  height: 11px;
+  transform: translateX(-50%);
+  border: 3px solid color-mix(in srgb, var(--tf-muted) 44%, transparent);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+}
+
+.codex-card__empty-label {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--tf-muted) 80%, transparent);
+}
+
+/* ── 하단 ─────────────────────────────────────────────── */
+
+.codex__back {
+  align-self: flex-start;
+  padding: 9px 18px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 44%, transparent);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.codex__back:hover {
+  color: var(--tf-text);
+  border-color: var(--tf-text);
+}
+
+.codex__back:focus-visible {
+  outline: 2px solid var(--tf-up-ally);
+  outline-offset: 2px;
+}
