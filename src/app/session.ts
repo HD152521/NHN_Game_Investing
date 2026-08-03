@@ -100,13 +100,18 @@ export interface CloseNotice {
 }
 
 /**
- * 점령 지역 수. 0 고정 (FR-6.7 heat / FR-6.8 운영비).
+ * 점령 지역 수의 기본값 (FR-6.7 heat).
  *
- * 지역 선택이 생겨 R1~R3를 자유롭게 고를 수 있게 됐지만, **점령(진행도) 저장은 아직 없다** —
- * 어느 지역을 이미 클리어했는지 알 수 없으므로 heat는 항상 1이다.
- * TODO: 진행도 저장이 붙으면 클리어한 지역 수를 여기 주입한다.
+ * 예전에는 `const TERRITORIES = 0` 고정이었다 — 진행도 저장이 없어 어느 지역을 클리어했는지
+ * 알 수 없었고, 그래서 `HEAT_PER_TERRITORY`가 코드에만 있고 **런타임 효과가 0**이었다.
+ * 이제 셸이 `progress.ts`에서 읽은 점령 수를 생성자로 주입한다.
+ *
+ * ⚠️ **heat가 살아나면 난이도가 실제로 올라간다.** `heat = 1 + 점령 수 × 0.04`이므로
+ * 2지역 점령 후에는 적 HP가 8% 높아진 판을 만난다. 의도된 설계지만(뒤로 갈수록 압력이
+ * 커진다), 밸런스를 측정할 때는 **어느 점령 수에서 잰 값인지**를 함께 적어야 한다.
+ * 시뮬레이터 2종은 점령 0을 가정한다.
  */
-const TERRITORIES = 0;
+const DEFAULT_TERRITORIES = 0;
 
 export class StageSession {
   readonly set: ChartSet;
@@ -157,7 +162,14 @@ export class StageSession {
    * @param stageId 플레이할 지역. 생략하면 R1 — 지역 선택 화면이 붙기 전 호출부와
    *   테스트가 그대로 동작하도록 남긴 기본값이다.
    */
-  constructor(seed: number, speed: number, startAtMs: number, stageId: StageId = DEFAULT_STAGE_ID) {
+  constructor(
+    seed: number,
+    speed: number,
+    startAtMs: number,
+    stageId: StageId = DEFAULT_STAGE_ID,
+    /** 이미 점령한 지역 수 (FR-6.7 heat). 셸이 `clearedCount(progress)`를 넘긴다. */
+    territories: number = DEFAULT_TERRITORIES,
+  ) {
     const stage = STAGES[stageId];
     this.stage = stage;
     this.set = generateChartSet(seed);
@@ -175,7 +187,8 @@ export class StageSession {
       waveDurationMs: WAVE_DURATION_MS / speed,
       towerSlots: TOWER_SLOTS,
       maxBaseHp: BASE_HP,
-      heat: 1 + TERRITORIES * HEAT_PER_TERRITORY,
+      // 음수·NaN이 새면 heat가 1 미만이 되어 난이도가 조용히 내려간다 — 하한을 건다.
+      heat: 1 + Math.max(0, territories) * HEAT_PER_TERRITORY,
       aumDropPerWave: AUM_DROP_PER_WAVE,
       totalBaseIncome: totalBaseIncome(stage),
     };

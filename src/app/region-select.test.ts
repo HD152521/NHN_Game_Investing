@@ -16,10 +16,13 @@ import {
   REGION_SELECT_ACTION,
   buildRegionSelectMarkup,
   formatTargetReturn,
+  isRegionLocked,
+  lockedNoticeFor,
   regionCards,
   regionStats,
   stageIdFor,
 } from './region-select';
+import { emptyProgress, withCleared } from './progress';
 
 describe('regionCards — STAGES 단일 출처', () => {
   test('지역 3종을 R1 → R2 → R3 순서로 만든다', () => {
@@ -43,11 +46,43 @@ describe('regionCards — STAGES 단일 출처', () => {
   });
 
   /**
-   * PRD §4는 R1만 활성이고 R2·R3는 선행 클리어로 열리지만, 진행도 저장이 아직 없다.
-   * 지금 잠그면 R2·R3를 아예 볼 수 없으므로 셋 다 열어 둔다.
+   * PRD §4 인접 점령 — R1만 활성이고 R2·R3는 **선행 클리어로 열린다.**
+   *
+   * 예전에는 "진행도 저장이 없으니 셋 다 열어 둔다"였고 그 임시 상태를 이 테스트가
+   * 고정하고 있었다. `progress.ts`가 붙으면서 잠금이 실제로 걸린다.
    */
-  test('진행도 저장이 없는 동안 셋 다 선택 가능하다', () => {
-    expect(regionCards().every((card) => card.locked === false)).toBe(true);
+  test('진행도가 없으면 R1만 열려 있다', () => {
+    const locked = Object.fromEntries(regionCards().map((card) => [card.id, card.locked]));
+    expect(locked).toEqual({ R1: false, R2: true, R3: true });
+  });
+
+  test('R1을 클리어하면 R2가 열리고 R3는 아직 잠겨 있다 — 인접 점령', () => {
+    const progress = withCleared(emptyProgress(), 'R1');
+    const locked = Object.fromEntries(
+      regionCards(progress).map((card) => [card.id, card.locked]),
+    );
+    expect(locked).toEqual({ R1: false, R2: false, R3: true });
+  });
+
+  test('R2까지 클리어하면 셋 다 열린다', () => {
+    const progress = withCleared(withCleared(emptyProgress(), 'R1'), 'R2');
+    expect(regionCards(progress).every((card) => card.locked === false)).toBe(true);
+  });
+
+  test('R1은 어떤 진행도에서도 잠기지 않는다 — 잠그면 시작할 방법이 없다', () => {
+    expect(isRegionLocked('R1', emptyProgress())).toBe(false);
+  });
+
+  test('앞 지역을 건너뛰고 R3만 클리어한 진행도에서도 R3 잠금은 R2 기준이다', () => {
+    // 저장 파일을 손으로 고친 경우 등. 규칙은 "바로 앞 지역" 하나뿐이라 흔들리지 않는다.
+    const progress = withCleared(emptyProgress(), 'R3');
+    expect(isRegionLocked('R3', progress)).toBe(true);
+  });
+
+  test('잠금 문구는 어느 지역을 깨야 하는지 말한다', () => {
+    expect(lockedNoticeFor('R2')).toContain('R1');
+    expect(lockedNoticeFor('R3')).toContain('R2');
+    expect(lockedNoticeFor('R1')).toBe('');
   });
 
   test('카드 배경 씬은 원본이 실제로 구운 지역×시간대 조합만 쓴다', () => {

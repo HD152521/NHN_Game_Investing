@@ -70,7 +70,9 @@ import type {
   TradePanelViewModel,
 } from '../ui';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
-import { mountRegionArt, stageIdFor } from './region-select';
+import { mountRegionArt, stageIdFor, syncRegionLocks } from './region-select';
+import { clearedCount, loadProgress, recordCleared } from './progress';
+import type { GameProgress } from './progress';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
 import type { StageOutcome } from './settlement';
 import {
@@ -224,8 +226,18 @@ export function mountStage(root: HTMLElement): () => void {
    */
   const skillTooltip: SkillTooltip = createSkillTooltip({ root, layer: refs.stage });
 
+  /**
+   * 저장된 진행도. 앱 시작 시 1회 읽고, 클리어할 때마다 갱신한다.
+   *
+   * 셸이 들고 있는 이유는 두 곳이 이 값을 쓰기 때문이다: 지역 잠금(`syncRegionLocks`)과
+   * heat(`StageSession` 생성자). 매번 `localStorage`를 다시 읽으면 프레임 루프 안에서
+   * 동기 I/O가 도는 셈이라 여기 캐시한다.
+   */
+  let progress: GameProgress = loadProgress();
+
   function startSession(nowMs: number): void {
-    session = new StageSession(seed, speed, nowMs, stageId);
+    // 점령 수가 heat가 된다 — 지역을 깰수록 다음 판의 적 HP가 올라간다 (FR-6.7).
+    session = new StageSession(seed, speed, nowMs, stageId, clearedCount(progress));
     lastFrameMs = nowMs;
     marketClosed = false;
     overtimeRemainingMs = 0;
@@ -521,6 +533,13 @@ export function mountStage(root: HTMLElement): () => void {
 
   /** 정산을 계산해 결과 화면에 꽂는다. 스테이지가 끝나는 **유일한** 경로다. */
   function showResult(current: StageSession, outcome: StageOutcome): void {
+    // ★ 진행도 기록은 여기 한 곳뿐이다 ★ 정산 화면이 스테이지가 끝나는 유일한 경로이고
+    // (무음 리셋 경로는 타입 수준에서 제거됐다), `cleared`만 점령으로 친다.
+    // 저장에 실패해도 반환된 진행도는 갱신돼 있어 그 판 안에서는 잠금 해제가 보인다.
+    if (outcome === 'cleared') {
+      progress = recordCleared(stageId);
+    }
+
     // 전투가 먼저 끝난 경우(클리어·패배)에는 아직 포지션이 열려 있을 수 있다 (FR-8.1).
     current.closeAtStageEnd(elapsedMs);
     announceClose(current);
@@ -580,8 +599,11 @@ export function mountStage(root: HTMLElement): () => void {
   function showRegionSelect(): void {
     refs!.gate.hidden = true;
     refs!.regionSelect.hidden = false;
+    // 마크업은 앱 시작 시 1회만 지어지므로, 그 사이 클리어로 열린 지역을 여기서 되맞춘다.
+    syncRegionLocks(refs!.regionSelect, progress);
     // 키보드·스크린리더 사용자가 오버레이 안에서 바로 이어갈 수 있게 첫 카드로 포커스를 옮긴다.
-    refs!.regionButtons[0]?.focus();
+    // ⚠️ 잠긴 카드는 `disabled`라 포커스를 받지 못한다 — 열려 있는 첫 카드를 고른다.
+    (refs!.regionButtons.find((button) => !button.disabled) ?? refs!.regionButtons[0])?.focus();
   }
 
   /** 지역을 확정하고 스테이지를 시작한다. **여기서 처음으로 프레임 루프가 돈다.** */

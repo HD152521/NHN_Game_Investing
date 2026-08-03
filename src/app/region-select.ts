@@ -27,6 +27,8 @@ import { spriteRasters } from '../sprites/render';
 import type { SpriteRasterCache } from '../sprites/render';
 import type { ColorMode } from '../design';
 import { formatAmount, paintRasterToCanvas } from '../ui';
+import { emptyProgress, hasCleared } from './progress';
+import type { GameProgress } from './progress';
 
 /** `stage.ts`가 이 값으로 지역 카드를 찾는다. */
 export const REGION_SELECT_ACTION = 'select-region';
@@ -103,17 +105,29 @@ export interface RegionCard {
   readonly startingGold: number;
   readonly targetReturnRate: number;
   readonly requiredSpend: number;
-  /**
-   * 진행도 잠금 여부.
-   *
-   * ⚠️ 지금은 **항상 `false`**다. PRD §4는 R1만 활성이고 R2·R3는 선행 클리어로 열리지만,
-   * 진행도 저장이 아직 없어서 지금 잠그면 R2·R3를 아예 볼 수 없게 된다.
-   * TODO: 진행도 저장이 붙으면 `previousCleared(id)` 판정으로 바꿔 잠금을 건다.
-   */
+  /** 진행도 잠금 여부. `isRegionLocked`가 진행도에서 파생시킨다. */
   readonly locked: boolean;
 }
 
-function cardOf(id: StageId): RegionCard {
+/**
+ * 이 지역이 잠겨 있는가 — **진행도에서 파생한다**(PRD §4: 인접 점령).
+ *
+ * 규칙은 하나다: **바로 앞 지역을 클리어해야 열린다.** `REGION_ORDER`의 첫 지역(R1)은
+ * 언제나 열려 있다 — 그렇지 않으면 새 플레이어가 아무것도 시작할 수 없다.
+ *
+ * 예전에는 `locked: false` 고정이었다. 진행도 저장이 없어서 잠그면 R2·R3를 아예 볼 수
+ * 없게 되기 때문이었다. 이제 진행도가 생겼으므로 그 TODO가 여기서 닫힌다.
+ */
+export function isRegionLocked(id: StageId, progress: GameProgress): boolean {
+  const index = REGION_ORDER.indexOf(id);
+  if (index <= 0) {
+    return false;
+  }
+  const previous = REGION_ORDER[index - 1];
+  return previous === undefined ? false : !hasCleared(progress, previous);
+}
+
+function cardOf(id: StageId, progress: GameProgress): RegionCard {
   const stage: StageConfig = STAGES[id];
   const identity = REGION_IDENTITY[id];
   return {
@@ -127,13 +141,57 @@ function cardOf(id: StageId): RegionCard {
     startingGold: stage.startingGold,
     targetReturnRate: stage.targetReturnRate,
     requiredSpend: stage.requiredSpend,
-    locked: false, // 위 주석 참고 — 진행도 연동 전까지 셋 다 열어 둔다.
+    locked: isRegionLocked(id, progress),
   };
 }
 
-/** 화면 순서대로 만든 카드 3장. */
-export function regionCards(): readonly RegionCard[] {
-  return REGION_ORDER.map(cardOf);
+/**
+ * 화면 순서대로 만든 카드 3장.
+ *
+ * 진행도를 생략하면 **아무것도 클리어하지 않은 상태**로 본다(= R1만 열림). 마크업은
+ * 앱 시작 시 1회만 지어지므로, 플레이 중 잠금이 풀리는 것은 `syncRegionLocks`가 맡는다.
+ */
+export function regionCards(
+  progress: GameProgress = emptyProgress(),
+): readonly RegionCard[] {
+  return REGION_ORDER.map((id) => cardOf(id, progress));
+}
+
+/** 잠긴 카드에 붙는 문구. 왜 잠겼는지까지 말한다 — "눌리지 않는다"만으로는 이유를 모른다. */
+export function lockedNoticeFor(id: StageId): string {
+  const index = REGION_ORDER.indexOf(id);
+  const previous = index > 0 ? REGION_ORDER[index - 1] : undefined;
+  if (previous === undefined) {
+    return '';
+  }
+  return `${previous} ${REGION_IDENTITY[previous].name} 점령 후 열린다`;
+}
+
+/**
+ * 열려 있는 카드의 DOM을 진행도에 맞춘다.
+ *
+ * ★ 왜 별도 함수인가 ★ 지역 선택 마크업은 앱 시작 시 1회만 지어지는데(`buildStageMarkup`),
+ * 진행도는 **플레이 중에 바뀐다**(R1을 깨면 R2가 열려야 한다). 매번 마크업을 다시 짓는 대신
+ * 화면을 열 때 이 함수로 잠금 상태만 되맞춘다 — 단일 출처는 그대로 진행도다.
+ */
+export function syncRegionLocks(root: ParentNode, progress: GameProgress): void {
+  for (const id of REGION_ORDER) {
+    const button = root.querySelector<HTMLButtonElement>(
+      `[data-action="${REGION_SELECT_ACTION}"][data-region="${id}"]`,
+    );
+    if (!button) {
+      continue;
+    }
+    const locked = isRegionLocked(id, progress);
+    button.disabled = locked;
+    button.classList.toggle('rcard--locked', locked);
+    // 스크린리더에도 상태를 알린다 — 시각적 흐림만으로는 전달되지 않는다.
+    button.setAttribute('aria-disabled', String(locked));
+    const notice = button.querySelector<HTMLElement>('.rcard__lock');
+    if (notice) {
+      notice.hidden = !locked;
+    }
+  }
 }
 
 /** 문자열이 실제 지역 ID인지 (버튼 `dataset` 값 검증용). */
@@ -187,6 +245,7 @@ function cardMarkup(card: RegionCard): string {
           <span class="rcard__sector">${card.sector}</span>
           <span class="rcard__flavor" id="${describedBy}">${card.flavor}</span>
           <span class="rcard__stats">${statMarkup(card)}</span>
+          <span class="rcard__lock"${card.locked ? '' : ' hidden'}>${lockedNoticeFor(card.id)}</span>
         </button>
       </li>`;
 }
