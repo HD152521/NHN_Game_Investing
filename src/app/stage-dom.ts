@@ -27,6 +27,10 @@ export const SPEEDS = [1, 2, 4] as const;
 
 /** 준비 카운트다운의 클릭 가능한 즉시 시작 버튼 (CLICK-PATH-005 대비책). */
 export const SKIP_PREP_ACTION = 'skip-prep';
+
+/** 튜토리얼 건너뛰기 버튼. 첫 회차에는 `tutorial.ts`가 스킵을 거부한다. */
+export const TUTORIAL_SKIP_ACTION = 'tutorial-skip';
+
 /** 결과 화면의 두 출구. 여기서만 스테이지가 다시 시작된다. */
 export const RESULT_RETRY_ACTION = 'result-retry';
 export const RESULT_REGION_ACTION = 'result-region';
@@ -69,6 +73,19 @@ export interface StageRefs {
   readonly prepText: HTMLElement;
   /** 카운트다운의 [바로 시작] 버튼 — Space 가 안 먹히는 상황의 대비책. */
   readonly prepSkipButton: HTMLButtonElement;
+  /**
+   * 튜토리얼 오버레이 (가이드 모드, §15-1).
+   *
+   * 판정은 전부 `tutorial.ts`가 소유한다 — 여기 있는 것은 문구가 들어갈 빈 칸뿐이다.
+   * 별도 씬이 아니라 실제 세션 위에 얹히므로 게임은 뒤에서 계속 굴러간다.
+   */
+  readonly tutorial: HTMLElement;
+  readonly tutorialStep: HTMLElement;
+  readonly tutorialTitle: HTMLElement;
+  readonly tutorialInstruction: HTMLElement;
+  readonly tutorialWhy: HTMLElement;
+  readonly tutorialFill: HTMLElement;
+  readonly tutorialSkipButton: HTMLButtonElement;
   /**
    * 스테이지 결과 화면 (FR-8 정산).
    *
@@ -204,6 +221,24 @@ export function buildStageMarkup(): string {
         </div>
 
         <!-- 결과 화면. 전투가 끝나거나 장이 마감되면 여기로 끝난다 — 무음 리셋은 없다. -->
+        <!--
+          튜토리얼 오버레이 — 실제 세션 위에 얹는 가이드 모드다(별도 씬이 아니다).
+          문구와 강조 대상은 전부 tutorial.ts 가 판정해 넘긴다. 여기서 문구를 만들지 마라.
+          ⚠️ 이 블록은 템플릿 리터럴 안이다 — 주석에도 백틱을 쓰면 문자열이 끊긴다.
+        -->
+        <aside class="stage__tutorial" data-ref="tutorial" role="region" aria-live="polite"
+               aria-labelledby="tf-tutorial-title" hidden>
+          <p class="stage__tutorial-step" data-ref="tutorial-step"></p>
+          <h3 class="stage__tutorial-title" id="tf-tutorial-title" data-ref="tutorial-title"></h3>
+          <p class="stage__tutorial-instruction" data-ref="tutorial-instruction"></p>
+          <p class="stage__tutorial-why" data-ref="tutorial-why"></p>
+          <div class="stage__tutorial-bar" role="presentation">
+            <span class="stage__tutorial-fill" data-ref="tutorial-fill"></span>
+          </div>
+          <button class="btn stage__tutorial-skip" type="button"
+                  data-action="${TUTORIAL_SKIP_ACTION}">튜토리얼 건너뛰기</button>
+        </aside>
+
         <div class="stage__result" data-ref="result" role="dialog" aria-live="polite"
              aria-labelledby="tf-result-title" hidden>
           <h2 class="stage__result-title" id="tf-result-title" data-ref="result-title"></h2>
@@ -258,6 +293,15 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const prepSkipButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${SKIP_PREP_ACTION}"]`,
   );
+  const tutorial = pick('tutorial');
+  const tutorialStep = pick('tutorial-step');
+  const tutorialTitle = pick('tutorial-title');
+  const tutorialInstruction = pick('tutorial-instruction');
+  const tutorialWhy = pick('tutorial-why');
+  const tutorialFill = pick('tutorial-fill');
+  const tutorialSkipButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${TUTORIAL_SKIP_ACTION}"]`,
+  );
   const result = pick('result');
   const resultTitle = pick('result-title');
   const resultSubtitle = pick('result-subtitle');
@@ -293,6 +337,13 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !prep ||
     !prepText ||
     !prepSkipButton ||
+    !tutorial ||
+    !tutorialStep ||
+    !tutorialTitle ||
+    !tutorialInstruction ||
+    !tutorialWhy ||
+    !tutorialFill ||
+    !tutorialSkipButton ||
     !result ||
     !resultTitle ||
     !resultSubtitle ||
@@ -332,6 +383,13 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     prep,
     prepText,
     prepSkipButton,
+    tutorial,
+    tutorialStep,
+    tutorialTitle,
+    tutorialInstruction,
+    tutorialWhy,
+    tutorialFill,
+    tutorialSkipButton,
     result,
     resultTitle,
     resultSubtitle,

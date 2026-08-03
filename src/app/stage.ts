@@ -72,6 +72,13 @@ import type {
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, stageIdFor, syncRegionLocks } from './region-select';
 import { clearedCount, loadProgress, recordCleared } from './progress';
+import {
+  advanceTutorial,
+  initialTutorialState,
+  skipTutorial,
+  tutorialOverlay,
+} from './tutorial';
+import type { TutorialState } from './tutorial';
 import type { GameProgress } from './progress';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
 import type { StageOutcome } from './settlement';
@@ -235,6 +242,24 @@ export function mountStage(root: HTMLElement): () => void {
    */
   let progress: GameProgress = loadProgress();
 
+  /**
+   * 튜토리얼 진행 상태. **첫 회차 판정은 진행도에서 파생한다** — 클리어한 지역이 하나도
+   * 없으면 처음 온 사람으로 본다. 별도 "튜토리얼 봤음" 플래그를 두지 않는 이유는 §19-4다.
+   *
+   * ⚠️ 앱 수명 동안 한 번만 읽는다. 판 중간에 클리어해도 그 판의 스킵 가능 여부는 바뀌지
+   * 않아야 한다 — 바뀌면 스킵 버튼이 판 도중에 갑자기 활성화된다.
+   */
+  const isFirstRun = clearedCount(progress) === 0;
+  let tutorialState: TutorialState = initialTutorialState();
+
+  /** 강조 클래스 전체 목록. 지울 때 하나라도 빠지면 강조가 남는다. */
+  const TUTORIAL_FOCUS_CLASSES = [
+    'stage--tut-chart',
+    'stage--tut-trade',
+    'stage--tut-buildbar',
+    'stage--tut-battle',
+  ] as const;
+
   function startSession(nowMs: number): void {
     // 점령 수가 heat가 된다 — 지역을 깰수록 다음 판의 적 HP가 올라간다 (FR-6.7).
     session = new StageSession(seed, speed, nowMs, stageId, clearedCount(progress));
@@ -323,6 +348,51 @@ export function mountStage(root: HTMLElement): () => void {
    * 없는 타워는 `btn--broke`로 표시해, 슬롯 데칼의 '배치 불가'와 같은 사실을 빌드바에서도
    * 미리 읽을 수 있게 한다.
    */
+  /**
+   * 튜토리얼 한 프레임 — 판정은 전부 `tutorial.ts`가 한다.
+   *
+   * 이 함수가 하는 일은 셋뿐이다: ① 세션 상태를 `TutorialView`로 **좁혀** 넘기고
+   * ② 돌아온 오버레이 데이터를 DOM에 옮기고 ③ 강조 클래스를 스테이지에 건다.
+   * 여기서 문구를 만들거나 완료 조건을 판단하지 마라 — 그 순간 §19-7의 사각으로 들어간다.
+   *
+   * ⚠️ 게임을 멈추지 않는다. 가이드 모드라 튜토리얼이 떠 있는 동안에도 재생·전투·강제
+   * 청산이 그대로 돈다. 단계를 붙잡아 두면 판이 끝나 버리므로, 완료된 단계는 즉시 넘긴다
+   * (`advanceTutorial`이 연속 전이를 처리한다).
+   */
+  function syncTutorial(current: StageSession, elapsed: number): void {
+    const snap = current.snapshot(elapsed);
+    const facts = current.settlementFacts;
+    const next = advanceTutorial(tutorialState, {
+      elapsedMs: elapsed,
+      holding: snap.position !== null,
+      closeCount: facts.closeCount,
+      aum: snap.wallet.aum,
+      towers: current.combatState.towers,
+    });
+    const changed = next !== tutorialState;
+    tutorialState = next;
+
+    const overlay = tutorialOverlay(tutorialState, isFirstRun);
+    refs!.tutorial.hidden = !overlay.visible;
+    // 강조는 매 프레임 건드리면 낭비다 — 단계가 바뀔 때만 갱신한다.
+    if (!changed && !overlay.visible) {
+      return;
+    }
+    refs!.tutorialStep.textContent = `STEP ${overlay.stepNumber} / ${overlay.stepTotal}`;
+    refs!.tutorialTitle.textContent = overlay.title;
+    refs!.tutorialInstruction.textContent = overlay.instruction;
+    refs!.tutorialWhy.textContent = overlay.why;
+    refs!.tutorialFill.style.width = `${Math.round(overlay.progress * 100)}%`;
+    refs!.tutorialSkipButton.disabled = !overlay.skippable;
+
+    for (const focus of TUTORIAL_FOCUS_CLASSES) {
+      refs!.stage.classList.remove(focus);
+    }
+    if (overlay.focus !== null) {
+      refs!.stage.classList.add(`stage--tut-${overlay.focus}`);
+    }
+  }
+
   function syncRosterButtons(current: StageSession | null): void {
     const gold = current?.walletSnapshot.gold ?? 0;
 
@@ -500,6 +570,7 @@ export function mountStage(root: HTMLElement): () => void {
     panel.update(toViewModel(session));
     syncSkillButtons(session);
     syncRosterButtons(session);
+    syncTutorial(session, state.elapsedMs);
 
     const decision = decideFrame({
       phase: combat.phase,
@@ -764,6 +835,14 @@ export function mountStage(root: HTMLElement): () => void {
   /** 카운트다운의 [바로 시작] — Space 가 막힌 상황의 대비책 (CLICK-PATH-005). */
   refs.prepSkipButton.addEventListener('click', () => {
     session?.skipPrep();
+  });
+
+  /**
+   * 튜토리얼 건너뛰기. **첫 회차에는 거부된다** — `skipTutorial`이 그 판정을 소유하므로
+   * 여기서 다시 검사하지 않는다(버튼 `disabled`는 표시일 뿐, 판정의 출처가 아니다).
+   */
+  refs.tutorialSkipButton.addEventListener('click', () => {
+    tutorialState = skipTutorial(tutorialState, isFirstRun);
   });
 
   /** Space 를 받은 시점의 포커스 대상 분류. 판정은 `shouldSkipPrep`이 한다. */

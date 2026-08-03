@@ -467,3 +467,101 @@ body {
   font-size: 11px;
   color: var(--tf-muted);
 }
+
+/*
+ * ── 튜토리얼 오버레이 (가이드 모드, GAME.md §15-1) ──────────────────
+ *
+ * 별도 씬이 아니라 실제 세션 위에 얹힌다. 그래서 규칙이 둘이다:
+ *   ① 전장을 가리지 않는다 — 우측 하단에 붙이고 폭을 제한한다.
+ *   ② 클릭을 삼키지 않는다 — 패널 자체는 pointer-events를 받지만
+ *      튜토리얼이 떠 있는 동안에도 전장·빌드바를 그대로 조작할 수 있어야 한다.
+ */
+.stage__tutorial {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 6;
+  width: min(22rem, 42vw);
+  padding: 0.85rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--tf-gold) 55%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--tf-bg-1) 94%, transparent);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--tf-line) 75%, transparent);
+  color: var(--tf-text);
+}
+
+.stage__tutorial[hidden] {
+  display: none;
+}
+
+.stage__tutorial-step {
+  margin: 0 0 0.15rem;
+  color: var(--tf-gold);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.stage__tutorial-title {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.stage__tutorial-instruction {
+  margin: 0 0 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+/* "왜"는 한 단계 낮은 톤으로 — 지시를 먼저 읽고 이유를 나중에 읽게 한다. */
+.stage__tutorial-why {
+  margin: 0 0 0.6rem;
+  padding-left: 0.55rem;
+  border-left: 2px solid color-mix(in srgb, var(--tf-gold) 45%, transparent);
+  color: var(--tf-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.stage__tutorial-bar {
+  height: 3px;
+  margin-bottom: 0.6rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tf-muted) 30%, transparent);
+  overflow: hidden;
+}
+
+.stage__tutorial-fill {
+  display: block;
+  height: 100%;
+  background: var(--tf-gold);
+  transition: width var(--tf-dur-normal, 300ms) ease-out;
+}
+
+.stage__tutorial-skip {
+  width: 100%;
+  font-size: 0.75rem;
+}
+
+/* 첫 회차에는 스킵이 막힌다 — 버튼을 지우지 않고 비활성으로 남겨 존재를 알린다. */
+.stage__tutorial-skip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/*
+ * 단계별 강조. 오버레이가 "여기를 보라"고 말한 곳에 실제로 테두리를 준다 —
+ * 문구만으로는 초심자가 어느 영역인지 못 찾는다.
+ */
+.stage--tut-chart .stage__chart,
+.stage--tut-battle .stage__battle {
+  outline: 2px solid var(--tf-gold);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage__tutorial-fill {
+    transition: none;
+  }
+}
