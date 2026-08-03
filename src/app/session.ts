@@ -39,6 +39,14 @@ import {
   summonUnit,
   upgradeTower,
 } from '../combat';
+import type { DepartmentLevels } from './departments';
+import {
+  baseDepartments,
+  liquidationLineFor,
+  startingAumFor,
+  towerDamageMultiplier,
+  unitHpMultiplier,
+} from './departments';
 import type { ChartSet, Replay, ReplayState } from '../market';
 import { createReplay, generateChartSet } from '../market';
 import type { MarketConditions, WeatherKind, WeatherView } from '../weather';
@@ -168,6 +176,9 @@ export class StageSession {
    */
   private readonly closes: ClosedPosition[] = [];
 
+  /** 진입 시점에 확정된 부서 레벨. 세션이 도는 동안 바뀌지 않는다 (FR-11 스냅샷 요구). */
+  private readonly departments: DepartmentLevels;
+
   /**
    * @param stageId 플레이할 지역. 생략하면 R1 — 지역 선택 화면이 붙기 전 호출부와
    *   테스트가 그대로 동작하도록 남긴 기본값이다.
@@ -179,13 +190,28 @@ export class StageSession {
     stageId: StageId = DEFAULT_STAGE_ID,
     /** 이미 점령한 지역 수 (FR-6.7 heat). 셸이 `clearedCount(progress)`를 넘긴다. */
     territories: number = DEFAULT_TERRITORIES,
+    /**
+     * 부서 레벨 (FR-11). 셸이 `progress.departments`를 넘긴다.
+     *
+     * ★ 진입 시점에 한 번 받아 세션이 물고 있는다 ★ PRD가 "진입 시점에 확정된 파라미터
+     * 스냅샷(중간에 부서 업글해도 영향 없게)"을 명시한다(§DB 스키마 주석). 세션이 매번
+     * 저장소를 다시 읽으면 그 보장이 깨진다.
+     */
+    departments: DepartmentLevels = baseDepartments(),
   ) {
     const stage = STAGES[stageId];
     this.stage = stage;
     this.set = generateChartSet(seed);
     this.replay = createReplay(this.set, { speed, startAtMs });
-    this.params = { ...DEFAULT_POSITION_PARAMS, sigma: this.set.sigma30 };
-    this.wallet = { gold: stage.startingGold, aum: stage.startingAum };
+    this.departments = departments;
+    // 법무팀이 강제 청산선을 완화한다 (FR-11.2 · O-8).
+    this.params = {
+      ...DEFAULT_POSITION_PARAMS,
+      sigma: this.set.sigma30,
+      liquidationLine: liquidationLineFor(departments),
+    };
+    // 트레이딩 데스크가 시작 AUM을 더한다 (지역 기본값 위에 얹힌다).
+    this.wallet = { gold: stage.startingGold, aum: startingAumFor(stageId, departments) };
     this.goldEarned = stage.startingGold;
 
     this.combatParams = {
@@ -333,7 +359,14 @@ export class StageSession {
    * 불리언을 돌려주고 셸이 그것만 믿는 구조였으니, 나머지 셋을 같은 계약으로 맞춘다.
    */
   build(slot: number, kind: TowerKind): boolean {
-    const result = buildTower(this.combat, slot, kind, this.wallet.gold, this.combatParams);
+    const result = buildTower(
+      this.combat,
+      slot,
+      kind,
+      this.wallet.gold,
+      this.combatParams,
+      towerDamageMultiplier(this.departments),
+    );
     if (!result.ok) {
       return false;
     }
@@ -353,7 +386,7 @@ export class StageSession {
   }
 
   summon(kind: UnitKind): boolean {
-    const result = summonUnit(this.combat, kind, this.wallet.gold);
+    const result = summonUnit(this.combat, kind, this.wallet.gold, unitHpMultiplier(this.departments));
     if (!result.ok) {
       return false;
     }

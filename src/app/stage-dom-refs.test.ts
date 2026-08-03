@@ -73,6 +73,9 @@ const REQUIRED_REFS: readonly string[] = [
   'world-brief',
   'world-foot',
   'world-canvas',
+  // 회사 · 부서 업그레이드 (FR-11.1).
+  'company',
+  'company-body',
 ];
 
 /** `collectStageRefs`가 `data-action`으로 찾는 것 전부. */
@@ -91,6 +94,8 @@ const REQUIRED_ACTIONS: readonly string[] = [
   'open-codex',
   'codex-back',
   'world-back',
+  'open-company',
+  'company-back',
 ];
 
 const MARKUP = buildStageMarkup();
@@ -136,6 +141,7 @@ describe('오버레이는 전부 hidden으로 태어난다', () => {
     ['준비 카운트다운', 'data-ref="prep"'],
     ['도감', 'data-ref="codex"'],
     ['세계지도', 'data-ref="world-map"'],
+    ['회사', 'data-ref="company"'],
   ])('%s 오버레이 태그에 hidden이 있다', (_label, marker) => {
     const at = MARKUP.indexOf(marker);
     expect(at).toBeGreaterThanOrEqual(0);

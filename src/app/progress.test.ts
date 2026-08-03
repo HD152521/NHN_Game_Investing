@@ -24,6 +24,7 @@ import {
 } from './progress';
 import type { GameProgress, ProgressStorage } from './progress';
 import type { CodexCard } from './codex';
+import { baseDepartments } from './departments';
 
 /** 메모리 저장소. `throwOn`으로 차단된 환경(프라이빗 모드·용량 초과)을 흉내 낸다. */
 function fakeStorage(
@@ -114,7 +115,7 @@ describe('parseProgress — 버전이 맞아도 필드를 다시 검사한다', 
 
 describe('직렬화 왕복', () => {
   test('저장했다 읽으면 같은 진행도가 나온다', () => {
-    const progress: GameProgress = { clearedStages: ['R1', 'R2'], carriedCapital: 1200, tutorialSeen: false, codexCards: [] };
+    const progress: GameProgress = { clearedStages: ['R1', 'R2'], carriedCapital: 1200, tutorialSeen: false, codexCards: [], departments: baseDepartments() };
     expect(parseProgress(serializeProgress(progress))).toEqual(progress);
   });
 
@@ -146,7 +147,7 @@ describe('withCleared — 불변', () => {
   });
 
   test('carriedCapital은 보존된다', () => {
-    const base: GameProgress = { clearedStages: [], carriedCapital: 500, tutorialSeen: false, codexCards: [] };
+    const base: GameProgress = { clearedStages: [], carriedCapital: 500, tutorialSeen: false, codexCards: [], departments: baseDepartments() };
     expect(withCleared(base, 'R1').carriedCapital).toBe(500);
   });
 });
@@ -186,7 +187,13 @@ describe('저장소 배선 — 어떤 실패에도 던지지 않는다', () => {
     const storage = fakeStorage();
     expect(
       saveProgress(
-        { clearedStages: ['R1'], carriedCapital: 0, tutorialSeen: false, codexCards: [] },
+        {
+          clearedStages: ['R1'],
+          carriedCapital: 0,
+          tutorialSeen: false,
+          codexCards: [],
+          departments: baseDepartments(),
+        },
         storage,
       ),
     ).toBe(true);

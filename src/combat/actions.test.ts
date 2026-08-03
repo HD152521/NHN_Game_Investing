@@ -67,7 +67,15 @@ describe('buildTower', () => {
     expect(result.ok).toBe(true);
     expect(result.gold).toBe(500 - TOWER_BUILD_COST.basic);
     expect(result.state.towers).toHaveLength(1);
-    expect(result.state.towers[0]).toEqual({ slot: 0, kind: 'basic', level: 1, cooldownMs: 0 });
+    // `damageMultiplier`는 건설 시점에 스냅샷되는 부서 효과다 (FR-11 R&D).
+    // 인자를 생략하면 1 — 부서를 모르는 호출부는 예전과 똑같이 동작한다.
+    expect(result.state.towers[0]).toEqual({
+      slot: 0,
+      kind: 'basic',
+      level: 1,
+      cooldownMs: 0,
+      damageMultiplier: 1,
+    });
   });
 
   test('골드가 부족하면 실패하고 상태·골드가 변하지 않는다', () => {
@@ -413,3 +421,47 @@ describe('skipPrep — Space로 준비 시간 즉시 종료', () => {
 function stepOnce(state: ReturnType<typeof createCombat>, params: CombatParams) {
   return step(state, 300, params);
 }
+
+
+// ── 부서 업그레이드 효과가 개체에 실린다 (FR-11) ──────────────
+
+describe('부서 배수는 개체에 스냅샷된다', () => {
+  test('R&D 배수가 건설된 타워에 실린다', () => {
+    const params = fixtureParams();
+    const state = createCombat(params);
+    const plain = buildTower(state, 0, 'basic', 500, params);
+    const boosted = buildTower(state, 1, 'basic', 500, params, 1.16);
+
+    expect(plain.state.towers[0]?.damageMultiplier).toBe(1);
+    expect(boosted.state.towers[0]?.damageMultiplier).toBeCloseTo(1.16);
+  });
+
+  test('★ 나중에 부서를 올려도 이미 지어진 타워는 그대로다', () => {
+    // 배수는 건설 시점에 복사되므로, 같은 상태에서 다른 배수로 지어도 서로 영향이 없다.
+    const params = fixtureParams();
+    const first = buildTower(createCombat(params), 0, 'basic', 500, params, 1.0);
+    const second = buildTower(first.state, 1, 'basic', 500, params, 1.16);
+    expect(second.state.towers.find((tower) => tower.slot === 0)?.damageMultiplier).toBe(1);
+  });
+
+  test('인사팀 배수가 소환된 유닛의 HP에 실린다', () => {
+    const params = fixtureParams();
+    const state = createCombat(params);
+    const plain = summonUnit(state, 'intern', 999);
+    const boosted = summonUnit(state, 'intern', 999, 1.2);
+
+    const plainHp = plain.state.units[0]!.maxHp;
+    const boostedHp = boosted.state.units[0]!.maxHp;
+    expect(boostedHp).toBe(Math.round(plainHp * 1.2));
+    // hp와 maxHp가 함께 올라야 한다 — 하나만 오르면 소환 즉시 손상된 유닛이 된다.
+    expect(boosted.state.units[0]!.hp).toBe(boostedHp);
+  });
+
+  test('배수를 생략하면 예전과 똑같다 (기존 호출부 호환)', () => {
+    const params = fixtureParams();
+    const state = createCombat(params);
+    expect(summonUnit(state, 'intern', 999).state.units[0]!.maxHp).toBe(
+      summonUnit(state, 'intern', 999, 1).state.units[0]!.maxHp,
+    );
+  });
+});

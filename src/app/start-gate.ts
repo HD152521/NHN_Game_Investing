@@ -9,6 +9,7 @@
  */
 
 import { CODEX_OPEN_ACTION } from './codex';
+import { COMPANY_BUTTON_LABEL, COMPANY_OPEN_ACTION } from './company';
 
 export const GAME_TITLE = 'TICKER FRONT';
 
@@ -85,9 +86,14 @@ export function buildStartGateMarkup(): string {
         <button class="gate__start" type="button" data-action="${GATE_START_ACTION}">
           ${START_BUTTON_LABEL}
         </button>
-        <button class="btn gate__codex" type="button" data-action="${CODEX_OPEN_ACTION}">
-          ${CODEX_BUTTON_LABEL}
-        </button>
+        <div class="gate__meta">
+          <button class="btn gate__codex" type="button" data-action="${CODEX_OPEN_ACTION}">
+            ${CODEX_BUTTON_LABEL}
+          </button>
+          <button class="btn gate__company" type="button" data-action="${COMPANY_OPEN_ACTION}">
+            ${COMPANY_BUTTON_LABEL}
+          </button>
+        </div>
         <p class="gate__hint">${GATE_HINT}</p>
 
         <div class="gate__challenge">

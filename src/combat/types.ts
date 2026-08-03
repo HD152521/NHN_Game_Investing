@@ -173,6 +173,14 @@ export interface Tower {
   readonly level: 1 | 2;
   /** 남은 재장전 시간(ms). */
   readonly cooldownMs: number;
+  /**
+   * 건설 시점에 스냅샷된 피해 배수 (FR-11 R&D). 생략하면 1.
+   *
+   * ★ 왜 개체 필드인가 ★ `kind`+`level`로 표를 조회하면 같은 종류의 타워가 전부 같은
+   * 값을 갖게 되어, "진행 중 부서 업그레이드가 이미 지어진 타워에 소급되지 않는다"는
+   * 요구(§FR-11 · types.ts 머리말)를 표현할 수 없다. 유닛의 `hp` 스냅샷과 같은 이유다.
+   */
+  readonly damageMultiplier?: number;
 }
 
 export interface Unit extends Combatant {

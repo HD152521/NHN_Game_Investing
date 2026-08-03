@@ -73,7 +73,8 @@ export function applyTowerFire(towers: readonly Tower[], enemies: readonly Enemy
       continue;
     }
 
-    const damage = TOWER_DAMAGE[tower.kind][tower.level];
+    // 배수는 건설 시점에 개체가 물고 있다(FR-11 R&D). 없으면 1 — 구 저장·기존 테스트 호환.
+    const damage = Math.round(TOWER_DAMAGE[tower.kind][tower.level] * (tower.damageMultiplier ?? 1));
 
     if (tower.kind === 'splash') {
       const hitIds = new Set(candidates.map((enemy) => enemy.id));

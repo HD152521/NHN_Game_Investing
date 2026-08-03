@@ -27,6 +27,8 @@ import type { StageId } from '../combat';
 import { STAGES } from '../combat';
 import type { CodexBar, CodexCard } from './codex';
 import type { SettlementGrade } from './settlement';
+import type { DepartmentLevels } from './departments';
+import { baseDepartments, normalizeDepartments } from './departments';
 
 /**
  * 저장 포맷 버전. **포맷의 의미가 바뀌면 반드시 올려라.**
@@ -49,13 +51,19 @@ export interface GameProgress {
   /** 클리어한 지역. `STAGES` 정의 순서로 정규화되며 중복이 없다. */
   readonly clearedStages: readonly StageId[];
   /**
-   * 다음 판으로 넘길 자본금 (FR-11 부서 업그레이드).
+   * 부서 업그레이드에 쓰는 자본금 (FR-11).
    *
-   * ⚠️ **지금은 항상 0이다.** 자리만 잡아 둔다 — 부서 업그레이드가 붙을 때 이 필드에
-   * 값이 들어가고, 그때 포맷 버전을 올릴 필요가 없어진다(필드 추가는 하위 호환).
-   * 지금 쓰지도 않을 증감 API를 만들지 마라(YAGNI).
+   * ★ 이 필드가 드디어 살아났다 ★ 오랫동안 "지금은 항상 0이다. 자리만 잡아 둔다"였다.
+   * 클리어 정산의 `capital`이 여기 쌓이고(`addCapital`), 부서 업그레이드가 여기서 깎는다.
+   * 예약해 둔 덕분에 포맷 버전을 올리지 않아도 됐다.
    */
   readonly carriedCapital: number;
+  /**
+   * 부서 5종의 레벨 (FR-11.2).
+   *
+   * 필드 추가는 하위 호환이라 포맷 버전을 올리지 않는다 — 없으면 전부 Lv1이다.
+   */
+  readonly departments: DepartmentLevels;
   /**
    * 튜토리얼을 한 번이라도 봤는가.
    *
@@ -83,7 +91,13 @@ const KNOWN_STAGE_IDS: readonly StageId[] = Object.keys(STAGES) as StageId[];
 
 /** 진행도 없음. **모든 실패 경로가 여기로 수렴한다.** */
 export function emptyProgress(): GameProgress {
-  return { clearedStages: [], carriedCapital: 0, tutorialSeen: false, codexCards: [] };
+  return {
+    clearedStages: [],
+    carriedCapital: 0,
+    tutorialSeen: false,
+    codexCards: [],
+    departments: baseDepartments(),
+  };
 }
 
 function isStageId(value: unknown): value is StageId {
@@ -218,6 +232,8 @@ export function parseProgress(raw: string | null | undefined): GameProgress {
     tutorialSeen: record['tutorialSeen'] === true,
     // 마찬가지로 구 포맷에 없던 필드. 없으면 빈 도감.
     codexCards: Array.isArray(cards) ? normalizeCards(cards) : [],
+    // 부서는 깨진 항목만 Lv1로 떨어진다 — 다섯이 서로 독립이라 전체를 버리지 않는다.
+    departments: normalizeDepartments(record['departments']),
   };
 }
 
@@ -229,6 +245,7 @@ export function serializeProgress(progress: GameProgress): string {
     carriedCapital: progress.carriedCapital,
     tutorialSeen: progress.tutorialSeen,
     codexCards: progress.codexCards,
+    departments: progress.departments,
   });
 }
 
@@ -365,6 +382,44 @@ export function withCard(progress: GameProgress, card: CodexCard): GameProgress 
     return progress;
   }
   return { ...progress, codexCards: [...progress.codexCards, card] };
+}
+
+/**
+ * 클리어 정산의 자본금을 적립하고 저장한다 (FR-11).
+ *
+ * 0 이하는 아무것도 하지 않는다 — 패배·미완료 정산의 `capital`이 0이라 매 판 저장이
+ * 일어나는 것을 막는다(`withCleared`와 같은 "변화 없으면 쓰지 않는다" 관습).
+ */
+export function addCapital(
+  amount: number,
+  storage: ProgressStorage | null = defaultProgressStorage(),
+): GameProgress {
+  const current = loadProgress(storage);
+  const gain = normalizeCapital(amount);
+  if (gain <= 0) return current;
+  const next: GameProgress = { ...current, carriedCapital: current.carriedCapital + gain };
+  saveProgress(next, storage);
+  return next;
+}
+
+/**
+ * 부서 업그레이드 결과를 저장한다.
+ *
+ * 레벨과 자본금을 **함께** 쓴다 — 따로 저장하면 그 사이에 저장이 실패했을 때
+ * "돈은 빠졌는데 레벨은 그대로"가 될 수 있다.
+ */
+export function saveDepartments(
+  levels: DepartmentLevels,
+  capital: number,
+  storage: ProgressStorage | null = defaultProgressStorage(),
+): GameProgress {
+  const next: GameProgress = {
+    ...loadProgress(storage),
+    departments: levels,
+    carriedCapital: normalizeCapital(capital),
+  };
+  saveProgress(next, storage);
+  return next;
 }
 
 /** 카드 획득을 저장하고 갱신된 진행도를 돌려준다. @returns 새로 얻었는지까지 함께 준다. */

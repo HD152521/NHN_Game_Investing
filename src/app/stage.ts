@@ -17,6 +17,7 @@ import './start-gate.css';
 import './region-select.css';
 import './codex.css';
 import './world-map.css';
+import './company.css';
 import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
 import '../ui/skill-tooltip.css';
@@ -75,7 +76,21 @@ import { audioControlView, createGameAudio, diffCombatEvents, percentToVolume, p
 import type { AudioSettings, CombatAudioFrame, GameAudio } from '../audio';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
-import { clearedCount, loadProgress, markTutorialSeen, recordCard, recordCleared } from './progress';
+import {
+  addCapital,
+  clearedCount,
+  loadProgress,
+  markTutorialSeen,
+  recordCard,
+  recordCleared,
+  saveDepartments,
+} from './progress';
+import {
+  COMPANY_UPGRADE_ACTION,
+  buildCompanyBodyMarkup,
+  departmentIdFor,
+} from './company';
+import { applyUpgrade, settlementBonusFor } from './departments';
 import {
   CODEX_FILTER_ACTION,
   buildCodexBodyMarkup,
@@ -413,7 +428,9 @@ export function mountStage(root: HTMLElement): () => void {
     // 점령 수가 heat가 된다 — 지역을 깰수록 다음 판의 적 HP가 올라간다 (FR-6.7).
     // ★ 단 챌린지는 0으로 못박는다 ★ 같은 시드로 성적을 비교하려면 난이도가 같아야 한다.
     const territories = challengeRun ? CHALLENGE_TERRITORIES : clearedCount(progress);
-    session = new StageSession(seed, speed, nowMs, stageId, territories);
+    // 부서는 **진입 시점에 고정된다** (FR-11 스냅샷). 세션이 도는 동안 회사 화면을
+    // 열 수 없으므로 실제로 바뀔 일은 없지만, 보장은 타입이 아니라 여기서 만들어진다.
+    session = new StageSession(seed, speed, nowMs, stageId, territories, progress.departments);
     lastFrameMs = nowMs;
     marketClosed = false;
     overtimeRemainingMs = 0;
@@ -1145,6 +1162,9 @@ export function mountStage(root: HTMLElement): () => void {
       maxBaseHp: combat.maxBaseHp,
       // 전투 시뮬레이션에 적 본진 개념이 아직 없다 (`CombatState` 참고).
       enemyBaseDestroyed: false,
+      // IR팀 (FR-11.2). 세션이 물고 있는 스냅샷이 아니라 진행도를 쓰는 이유: 정산은
+      // 판이 끝난 뒤의 계산이라 '진입 시점 고정'이 적용되는 대상이 아니다.
+      departmentBonus: settlementBonusFor(progress.departments),
     });
     // 결과 카드가 같은 수치를 다시 계산하지 않도록 물고 있는다(단일 출처).
     lastSettlement = settlement;
@@ -1153,6 +1173,8 @@ export function mountStage(root: HTMLElement): () => void {
     // 도감이 "막아낸 날의 기록"이기 때문이다 — 진 판은 기록이 아니다. 등급·적중률은
     // 방금 계산한 `settlement`에서 가져와 두 화면이 다른 숫자를 말할 수 없게 한다.
     if (outcome === 'cleared') {
+      // 자본금 적립 (FR-11). `capital`은 클리어가 아니면 0이므로 이 분기 안이 유일한 경로다.
+      progress = addCapital(settlement.capital);
       const minted = recordCard(
         mintCard({
           stageId,
@@ -1206,6 +1228,7 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.regionSelect.hidden = true;
     refs!.codex.hidden = true;
     refs!.worldMap.hidden = true;
+    refs!.company.hidden = true;
     refs!.gate.hidden = false;
     refs!.startButton.focus();
   }
@@ -1243,8 +1266,25 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.gate.hidden = true;
     refs!.regionSelect.hidden = true;
     refs!.codex.hidden = true;
+    refs!.company.hidden = true;
     refs!.worldMap.hidden = false;
     refs!.worldBackButton.focus();
+  }
+
+  // ── 회사 · 부서 업그레이드 (FR-11) ─────────────────────────
+  function renderCompany(): void {
+    refs!.companyBody.innerHTML = buildCompanyBodyMarkup(
+      progress.departments,
+      progress.carriedCapital,
+    );
+  }
+
+  function showCompany(): void {
+    progress = loadProgress();
+    renderCompany();
+    refs!.gate.hidden = true;
+    refs!.company.hidden = false;
+    refs!.companyBackButton.focus();
   }
 
   // ── 도감 (PRD P1 #10) ──────────────────────────────────────
@@ -1272,6 +1312,7 @@ export function mountStage(root: HTMLElement): () => void {
     progress = loadProgress();
     renderCodex();
     refs!.gate.hidden = true;
+    refs!.company.hidden = true;
     refs!.codex.hidden = false;
     refs!.codexBackButton.focus();
   }
@@ -1280,6 +1321,7 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.gate.hidden = true;
     refs!.worldMap.hidden = true;
     refs!.codex.hidden = true;
+    refs!.company.hidden = true;
     refs!.regionSelect.hidden = false;
     // 마크업은 앱 시작 시 1회만 지어지므로, 그 사이 클리어로 열린 지역을 여기서 되맞춘다.
     syncRegionLocks(refs!.regionSelect, progress);
@@ -1406,6 +1448,28 @@ export function mountStage(root: HTMLElement): () => void {
     if (region === null || !isPlayable(region)) return;
     audio.resume();
     showRegionSelect();
+  });
+
+  refs.companyOpenButton.addEventListener('click', showCompany);
+  refs.companyBackButton.addEventListener('click', showGate);
+
+  /**
+   * 부서 구매도 **위임으로 받는다** — 업그레이드 한 번에 본문이 통째로 다시 그려진다.
+   *
+   * 판정은 `applyUpgrade`가 전부 한다. 여기서 자본금을 비교하지 않는 이유는 그 비교가
+   * 두 곳에 생기는 순간 어긋나기 때문이다 (버튼 비활성 조건과 실제 차감 조건).
+   */
+  refs.companyBody.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest<HTMLElement>(`[data-action="${COMPANY_UPGRADE_ACTION}"]`);
+    const id = departmentIdFor(button?.dataset['dept']);
+    if (id === null) return;
+
+    const result = applyUpgrade(id, progress.departments, progress.carriedCapital);
+    if (!result.ok) return; // 조용히 실패하되 성공 로그를 찍지 않는다 (CLICK-PATH-003)
+    progress = saveDepartments(result.levels, result.capital);
+    renderCompany();
   });
 
   refs.codexOpenButton.addEventListener('click', showCodex);
@@ -1691,7 +1755,7 @@ export function mountStage(root: HTMLElement): () => void {
         showWorldMap();
         return;
       }
-      if (!refs!.worldMap.hidden || !refs!.codex.hidden) {
+      if (!refs!.worldMap.hidden || !refs!.codex.hidden || !refs!.company.hidden) {
         event.preventDefault();
         showGate();
         return;

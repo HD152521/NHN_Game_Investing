@@ -59,6 +59,7 @@ interface Screens {
   readonly world: HTMLElement;
   readonly region: HTMLElement;
   readonly codex: HTMLElement;
+  readonly company: HTMLElement;
 }
 
 function mount(): { root: HTMLElement; screens: Screens } {
@@ -76,6 +77,7 @@ function mount(): { root: HTMLElement; screens: Screens } {
       world: pick('world-map'),
       region: pick('region-select'),
       codex: pick('codex'),
+      company: pick('company'),
     },
   };
 }
@@ -235,6 +237,48 @@ describe('도감', () => {
   });
 });
 
+describe('회사 · 부서 업그레이드 (FR-11)', () => {
+  test('타이틀의 [회사]가 회사 화면을 연다', () => {
+    const { root, screens } = mount();
+    click(root, 'open-company');
+    expect(openScreens(screens)).toEqual(['company']);
+  });
+
+  test('부서 5종이 나온다', () => {
+    const { root } = mount();
+    click(root, 'open-company');
+    expect(
+      root.querySelectorAll('[data-action="company-upgrade"]'),
+    ).toHaveLength(5);
+  });
+
+  test('★ 자본금 0에서는 전부 잠기고 부족액을 말한다 (FR-11.4)', () => {
+    const { root } = mount();
+    click(root, 'open-company');
+    const buttons = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('[data-action="company-upgrade"]'),
+    );
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    // "부족"이라는 사실만이 아니라 얼마가 부족한지가 적혀 있어야 한다.
+    expect(buttons[0]!.textContent).toMatch(/[\d,]+ 부족/);
+  });
+
+  test('잠긴 버튼을 눌러도 레벨이 오르지 않는다 (조용한 성공 금지)', () => {
+    const { root } = mount();
+    click(root, 'open-company');
+    const before = root.querySelector('[data-ref="company-body"]')!.innerHTML;
+    click(root, 'company-upgrade');
+    expect(root.querySelector('[data-ref="company-body"]')!.innerHTML).toBe(before);
+  });
+
+  test('[← 타이틀로]가 타이틀로 돌아간다', () => {
+    const { root, screens } = mount();
+    click(root, 'open-company');
+    click(root, 'company-back');
+    expect(openScreens(screens)).toEqual(['gate']);
+  });
+});
+
 describe('Esc — 한 층씩 뒤로', () => {
   test('전선 선택 → 세계지도', () => {
     const { root, screens } = mount();
@@ -247,6 +291,13 @@ describe('Esc — 한 층씩 뒤로', () => {
   test('세계지도 → 타이틀', () => {
     const { root, screens } = mount();
     click(root, 'start-stage');
+    pressEscape();
+    expect(openScreens(screens)).toEqual(['gate']);
+  });
+
+  test('회사 → 타이틀', () => {
+    const { root, screens } = mount();
+    click(root, 'open-company');
     pressEscape();
     expect(openScreens(screens)).toEqual(['gate']);
   });
@@ -274,6 +325,7 @@ describe('★ 오버레이가 겹쳐 열리지 않는다', () => {
     ['세계지도', ['start-stage']],
     ['전선 선택', ['start-stage', 'world-enter']],
     ['도감', ['open-codex']],
+    ['회사', ['open-company']],
   ])('%s 에서 열린 오버레이는 정확히 하나다', (_label, actions) => {
     const { root, screens } = mount();
     for (const action of actions) click(root, action);

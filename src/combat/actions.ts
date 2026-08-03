@@ -92,6 +92,8 @@ export function buildTower(
   kind: TowerKind,
   gold: number,
   params: CombatParams,
+  /** FR-11 R&D 피해 배수. 생략하면 1 — 부서를 모르는 호출부·테스트가 그대로 돈다. */
+  damageMultiplier: number = 1,
 ): ActionResult {
   const internal = state as CombatStateInternal;
 
@@ -107,7 +109,8 @@ export function buildTower(
     return { state: internal, gold, ok: false };
   }
 
-  const newTower: Tower = { slot, kind, level: 1, cooldownMs: 0 };
+  // 조회가 아니라 복사다 — 나중에 R&D를 올려도 이 타워의 피해는 그대로 남는다.
+  const newTower: Tower = { slot, kind, level: 1, cooldownMs: 0, damageMultiplier };
   const towers: Tower[] = [...internal.towers, newTower];
 
   return { state: { ...internal, towers }, gold: gold - cost, ok: true };
@@ -135,7 +138,13 @@ export function upgradeTower(state: CombatState, slot: number, gold: number): Ac
 }
 
 /** 골드가 부족하면 실패한다. 소환된 유닛은 x=0(아군 사옥)에서 시작해 자동 우측 전진한다. */
-export function summonUnit(state: CombatState, kind: UnitKind, gold: number): ActionResult {
+export function summonUnit(
+  state: CombatState,
+  kind: UnitKind,
+  gold: number,
+  /** FR-11 인사팀 HP 배수. 생략하면 1. */
+  hpMultiplier: number = 1,
+): ActionResult {
   const internal = state as CombatStateInternal;
   const cost = UNIT_COST[kind];
 
@@ -145,7 +154,7 @@ export function summonUnit(state: CombatState, kind: UnitKind, gold: number): Ac
 
   // 소환 시점의 상수 테이블 값을 개체에 그대로 실어 스냅샷한다 — 이후 부서 업그레이드(FR-11)로
   // 상수가 바뀌어도 이미 소환된 유닛의 스탯은 소급되지 않아야 하므로, 조회가 아니라 복사다.
-  const hp = UNIT_HP[kind];
+  const hp = Math.max(1, Math.round(UNIT_HP[kind] * hpMultiplier));
   const newUnit: Unit = {
     id: internal.nextUnitId,
     kind,

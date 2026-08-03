@@ -1,0 +1,231 @@
+/**
+ * 회사 화면 스타일 (FR-11.1).
+ *
+ * 도감이 진열장이라면 여기는 **편성표**다: 부서 다섯이 같은 폭으로 늘어서고, 각 칸에서
+ * 시선이 이름 → 레벨 핍 → 효과 값 → 구매 버튼 순으로 떨어진다. 지금 레벨의 효과 값만
+ * 밝게 남겨, 무엇이 켜져 있고 무엇을 살 수 있는지가 한 눈에 읽히게 한다.
+ *
+ * 색은 전부 `--tf-*` 토큰만 참조한다 (`no-hardcoded-hex` 가드).
+ */
+
+.company {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  display: grid;
+  place-items: start center;
+  padding: 24px;
+  overflow: auto;
+  background:
+    radial-gradient(
+      120% 80% at 50% 0%,
+      color-mix(in srgb, var(--tf-bg-2) 45%, transparent) 0%,
+      transparent 60%
+    ),
+    color-mix(in srgb, var(--tf-bg-0) 97%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.company[hidden] {
+  display: none;
+}
+
+.company__panel {
+  width: min(1080px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── 헤더 ─────────────────────────────────────────────── */
+
+.company__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tf-muted) 34%, transparent);
+}
+
+.company__title {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  color: var(--tf-text);
+}
+
+.company__eyebrow {
+  margin: 5px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--tf-muted);
+}
+
+.company__capital {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+}
+
+.company__capital-label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--tf-muted);
+}
+
+.company__capital-value {
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tf-gold);
+}
+
+.company__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--tf-muted);
+}
+
+.company__note strong {
+  color: var(--tf-text);
+  font-weight: inherit;
+}
+
+/* ── 부서 격자 ────────────────────────────────────────── */
+
+.company__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dept {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 38%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tf-bg-1) 92%, transparent);
+}
+
+.dept__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dept__name {
+  font-size: 15px;
+  color: var(--tf-text);
+}
+
+.dept__level {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--tf-aum);
+}
+
+.dept__effect {
+  margin: 0;
+  font-size: 11px;
+  color: var(--tf-muted);
+}
+
+/* 레벨 핍 — 숫자만으로는 "얼마나 남았는지"가 안 읽힌다. */
+.dept__pips {
+  display: flex;
+  gap: 4px;
+}
+
+.dept__pip {
+  flex: 1;
+  height: 4px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--tf-muted) 26%, transparent);
+}
+
+.dept__pip--on {
+  background: var(--tf-up-ally);
+}
+
+.dept__values {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--tf-muted) 72%, transparent);
+}
+
+/* 지금 레벨의 값만 밝다 — 무엇이 켜져 있는지가 이 한 줄에서 읽혀야 한다. */
+.dept__value--on {
+  color: var(--tf-text);
+}
+
+.dept__arrow {
+  color: color-mix(in srgb, var(--tf-muted) 50%, transparent);
+}
+
+.dept__buy {
+  margin-top: auto;
+  padding: 9px;
+  border: 1px solid var(--tf-up-ally);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tf-up-ally) 14%, transparent);
+  color: var(--tf-up-ally);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.dept__buy:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tf-up-ally) 26%, transparent);
+}
+
+/* 비활성 버튼은 **부족액을 말하고 있다** — 흐리게만 하고 문구는 읽히게 남긴다. */
+.dept__buy:disabled {
+  border-color: color-mix(in srgb, var(--tf-muted) 34%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--tf-muted) 88%, transparent);
+  cursor: not-allowed;
+}
+
+.dept__buy:focus-visible {
+  outline: 2px solid var(--tf-text);
+  outline-offset: 2px;
+}
+
+/* ── 하단 ─────────────────────────────────────────────── */
+
+.company__back {
+  align-self: flex-start;
+  padding: 9px 18px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 44%, transparent);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.company__back:hover {
+  color: var(--tf-text);
+  border-color: var(--tf-text);
+}
+
+.company__back:focus-visible {
+  outline: 2px solid var(--tf-up-ally);
+  outline-offset: 2px;
+}

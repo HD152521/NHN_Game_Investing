@@ -71,6 +71,14 @@ export interface SettlementInput {
    * 개념을 갖는 날 정산식을 고칠 필요가 없게 하기 위함이다.
    */
   readonly enemyBaseDestroyed: boolean;
+  /**
+   * IR팀 부서의 정산 보너스 **가산분** (FR-11.2). 생략하면 0.
+   *
+   * 배수가 아니라 가산분을 받는 이유는 FR-11.3(곱연산 금지)이다 — `bonusMultiplier`는
+   * 이미 `1 + 무피해 + 적중률`이라는 합이고, 여기에 한 항이 더 붙을 뿐이다.
+   * 배수를 받으면 이 함수 안에서 곱셈이 생겨 레벨이 오를수록 실효 증가폭이 커진다.
+   */
+  readonly departmentBonus?: number;
 }
 
 export interface Settlement {
@@ -160,7 +168,11 @@ export function computeSettlement(input: SettlementInput): Settlement {
         ? BONUS_ACCURACY_MID
         : 0;
   const bonusMultiplier =
-    1 + (input.baseHp >= input.maxBaseHp ? BONUS_FULL_HP : 0) + accuracyBonus;
+    1 +
+    (input.baseHp >= input.maxBaseHp ? BONUS_FULL_HP : 0) +
+    accuracyBonus +
+    // 음수가 새면 정산이 줄어든다 — 부서는 늘리기만 한다.
+    Math.max(0, input.departmentBonus ?? 0);
   const gradeMultiplier = GRADE_MULTIPLIER[grade];
 
   const capital =

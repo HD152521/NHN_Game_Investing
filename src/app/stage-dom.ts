@@ -23,6 +23,7 @@ import {
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
 import { CODEX_BACK_ACTION, CODEX_OPEN_ACTION, buildCodexMarkup } from './codex';
 import { WORLD_BACK_ACTION, WORLD_CANVAS_REF, buildWorldMapMarkup } from './world-map';
+import { COMPANY_BACK_ACTION, COMPANY_OPEN_ACTION, buildCompanyMarkup } from './company';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
 export const CHART_WIDTH = 1024;
@@ -188,6 +189,12 @@ export interface StageRefs {
   readonly worldCanvas: HTMLCanvasElement;
   /** 세계지도 → 타이틀로 돌아가는 버튼. */
   readonly worldBackButton: HTMLButtonElement;
+  /** 회사(부서 업그레이드) 오버레이 (FR-11.1). */
+  readonly company: HTMLElement;
+  /** 부서 목록이 들어가는 칸. 업그레이드 한 번에 자본금과 레벨이 함께 바뀌므로 통째로 다시 그린다. */
+  readonly companyBody: HTMLElement;
+  readonly companyOpenButton: HTMLButtonElement;
+  readonly companyBackButton: HTMLButtonElement;
   readonly panelHost: HTMLElement;
   /**
    * 사운드 설정 3종 (PRD §3.1 ⑬).
@@ -408,6 +415,7 @@ export function buildStageMarkup(): string {
       ${buildWorldMapMarkup()}
       ${buildRegionSelectMarkup()}
       ${buildCodexMarkup()}
+      ${buildCompanyMarkup()}
     </div>
   `;
 }
@@ -492,6 +500,14 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const worldBackButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${WORLD_BACK_ACTION}"]`,
   );
+  const company = pick('company');
+  const companyBody = pick('company-body');
+  const companyOpenButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${COMPANY_OPEN_ACTION}"]`,
+  );
+  const companyBackButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${COMPANY_BACK_ACTION}"]`,
+  );
   const codex = pick('codex');
   const codexBody = pick('codex-body');
   const codexOpenButton = root.querySelector<HTMLButtonElement>(
@@ -559,7 +575,11 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !worldBrief ||
     !worldFoot ||
     !worldCanvas ||
-    !worldBackButton
+    !worldBackButton ||
+    !company ||
+    !companyBody ||
+    !companyOpenButton ||
+    !companyBackButton
   ) {
     return null;
   }
@@ -629,6 +649,10 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     worldFoot,
     worldCanvas,
     worldBackButton,
+    company,
+    companyBody,
+    companyOpenButton,
+    companyBackButton,
     panelHost,
     audioMuteButton,
     audioSlider,
