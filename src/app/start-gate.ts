@@ -38,6 +38,25 @@ export const START_BUTTON_LABEL = '스테이지 시작';
 /** `stage.ts`가 이 값으로 시작 버튼을 찾는다. */
 export const GATE_START_ACTION = 'start-stage';
 
+/**
+ * 일일 챌린지 진입 — 오늘 날짜를 시드로 쓴다.
+ *
+ * `generateChartSet(seed)`가 결정론적이라 **전 유저가 같은 차트**를 받는다. 실데이터가
+ * 없어도 경쟁 구조는 지금 성립한다 (`challenge.ts` 머리말).
+ */
+export const GATE_DAILY_ACTION = 'start-daily';
+
+/** 시드를 직접 넣어 같은 판을 여는 입력. 결과 카드에 찍힌 시드를 그대로 붙여넣는 용도다. */
+export const GATE_SEED_INPUT = 'seed-input';
+export const GATE_SEED_ACTION = 'start-seed';
+
+export const DAILY_BUTTON_LABEL = '오늘의 챌린지';
+export const SEED_BUTTON_LABEL = '이 시드로';
+export const SEED_INPUT_PLACEHOLDER = '시드 또는 2026-08-03';
+/** 왜 시드가 있는지 한 줄. 없으면 입력칸이 정체불명으로 남는다. */
+export const GATE_SEED_HINT =
+  '같은 시드는 같은 차트다 — 결과 카드의 시드를 넣으면 상대와 똑같은 판을 푼다.';
+
 const TITLE_ID = 'gate-title';
 
 export function buildStartGateMarkup(): string {
@@ -57,6 +76,22 @@ export function buildStartGateMarkup(): string {
           ${START_BUTTON_LABEL}
         </button>
         <p class="gate__hint">${GATE_HINT}</p>
+
+        <div class="gate__challenge">
+          <button class="btn gate__daily" type="button" data-action="${GATE_DAILY_ACTION}">
+            ${DAILY_BUTTON_LABEL}
+          </button>
+          <div class="gate__seed">
+            <label class="sr-only" for="tf-seed">시드</label>
+            <input class="gate__seed-input" id="tf-seed" type="text" inputmode="numeric"
+                   data-ref="${GATE_SEED_INPUT}" placeholder="${SEED_INPUT_PLACEHOLDER}"
+                   autocomplete="off" />
+            <button class="btn" type="button" data-action="${GATE_SEED_ACTION}">
+              ${SEED_BUTTON_LABEL}
+            </button>
+          </div>
+          <p class="gate__seed-hint">${GATE_SEED_HINT}</p>
+        </div>
       </div>
     </div>
   `;

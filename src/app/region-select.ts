@@ -157,6 +157,16 @@ export function regionCards(
   return REGION_ORDER.map((id) => cardOf(id, progress));
 }
 
+/**
+ * 지역 표시 이름 — `REGION_IDENTITY`가 단일 출처다.
+ *
+ * 테이블 전체를 내보내지 않는 이유: 밖에서 임의 필드를 읽기 시작하면 이 파일이 사실상
+ * 정체성 저장소가 되고, 아트 시트와의 1:1 대응이 흐려진다. 필요한 것만 함수로 준다.
+ */
+export function regionNameOf(id: StageId): string {
+  return REGION_IDENTITY[id].name;
+}
+
 /** 잠긴 카드에 붙는 문구. 왜 잠겼는지까지 말한다 — "눌리지 않는다"만으로는 이유를 모른다. */
 export function lockedNoticeFor(id: StageId): string {
   const index = REGION_ORDER.indexOf(id);

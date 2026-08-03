@@ -7,7 +7,12 @@
 
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import type { SettlementRow } from './settlement';
-import { buildStartGateMarkup } from './start-gate';
+import {
+  GATE_DAILY_ACTION,
+  GATE_SEED_ACTION,
+  GATE_SEED_INPUT,
+  buildStartGateMarkup,
+} from './start-gate';
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
@@ -33,6 +38,14 @@ export const TUTORIAL_SKIP_ACTION = 'tutorial-skip';
 
 /** 공개 연출의 단계 스킵 버튼 (FR-9.2 — 각 단계는 개별적으로 건너뛸 수 있다). */
 export const REVEAL_SKIP_ACTION = 'reveal-skip';
+
+/**
+ * 결과 카드를 PNG로 내려받는다.
+ *
+ * 카드는 밖으로 나가는 산출물이라 **시드가 반드시 실린다** — 받는 사람이 같은 판을
+ * 열 수 있어야 공유의 의미가 있다 (`result-card.ts`).
+ */
+export const RESULT_CARD_ACTION = 'result-card';
 
 /** 결과 화면의 두 출구. 여기서만 스테이지가 다시 시작된다. */
 export const RESULT_RETRY_ACTION = 'result-retry';
@@ -112,6 +125,13 @@ export interface StageRefs {
   readonly resultSubtitle: HTMLElement;
   readonly resultBody: HTMLElement;
   readonly resultRetryButton: HTMLButtonElement;
+  /** 결과 카드 저장 버튼 (PNG 다운로드 + 공유 문자열 클립보드). */
+  readonly resultCardButton: HTMLButtonElement;
+  /** 일일 챌린지 진입 — 오늘 날짜가 시드가 된다. */
+  readonly dailyButton: HTMLButtonElement;
+  /** 시드 직접 입력. 결과 카드의 시드를 그대로 붙여넣는 용도다. */
+  readonly seedInput: HTMLInputElement;
+  readonly seedButton: HTMLButtonElement;
   readonly resultRegionButton: HTMLButtonElement;
   readonly gate: HTMLElement;
   readonly startButton: HTMLButtonElement;
@@ -278,6 +298,7 @@ export function buildStageMarkup(): string {
           <p class="stage__result-subtitle" data-ref="result-subtitle"></p>
           <dl class="stage__result-body" data-ref="result-body"></dl>
           <div class="stage__result-actions">
+            <button class="btn" type="button" data-action="${RESULT_CARD_ACTION}">결과 카드 저장</button>
             <button class="btn" type="button" data-action="${RESULT_RETRY_ACTION}">다시</button>
             <button class="btn" type="button" data-action="${RESULT_REGION_ACTION}">지역 선택으로</button>
           </div>
@@ -351,6 +372,16 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const resultRetryButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${RESULT_RETRY_ACTION}"]`,
   );
+  const resultCardButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${RESULT_CARD_ACTION}"]`,
+  );
+  const dailyButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${GATE_DAILY_ACTION}"]`,
+  );
+  const seedButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${GATE_SEED_ACTION}"]`,
+  );
+  const seedInput = root.querySelector<HTMLInputElement>(`[data-ref="${GATE_SEED_INPUT}"]`);
   const resultRegionButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${RESULT_REGION_ACTION}"]`,
   );
@@ -398,6 +429,10 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !resultSubtitle ||
     !resultBody ||
     !resultRetryButton ||
+    !resultCardButton ||
+    !dailyButton ||
+    !seedButton ||
+    !seedInput ||
     !resultRegionButton ||
     !gate ||
     !panelHost ||
@@ -451,6 +486,10 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     resultSubtitle,
     resultBody,
     resultRetryButton,
+    resultCardButton,
+    dailyButton,
+    seedButton,
+    seedInput,
     resultRegionButton,
     gate,
     startButton,

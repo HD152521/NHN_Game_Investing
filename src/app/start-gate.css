@@ -224,3 +224,54 @@
     transform: none;
   }
 }
+
+/*
+ * ── 챌린지 진입 (일일 챌린지 · 시드 공유) ─────────────────────────
+ *
+ * [스테이지 시작] 아래에 둔다. 주 동선은 여전히 자유 플레이이고, 챌린지는 "같은 판으로
+ * 겨루고 싶은 사람"이 찾아 쓰는 부가 경로다 — 위에 두면 첫 진입자가 헷갈린다.
+ */
+.gate__challenge {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--tf-muted) 30%, transparent);
+}
+
+.gate__seed {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.gate__seed-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 45%, transparent);
+  border-radius: 0.3rem;
+  background: var(--tf-bg-0);
+  color: var(--tf-text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.gate__seed-input:focus-visible {
+  outline: 2px solid var(--tf-gold);
+  outline-offset: 1px;
+}
+
+/* 읽지 못한 시드 — 왜 안 되는지는 로그가 말하고, 여기서는 어디가 문제인지만 가리킨다. */
+.gate__seed-input[aria-invalid='true'] {
+  border-color: var(--tf-up-ally);
+}
+
+.gate__seed-hint {
+  margin: 0;
+  color: var(--tf-muted);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}

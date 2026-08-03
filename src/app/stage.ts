@@ -70,7 +70,7 @@ import type {
   TradePanelViewModel,
 } from '../ui';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
-import { mountRegionArt, stageIdFor, syncRegionLocks } from './region-select';
+import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
 import { clearedCount, loadProgress, recordCleared } from './progress';
 import {
   advanceTutorial,
@@ -86,6 +86,15 @@ import {
   skipToNextStage,
 } from './reveal';
 import type { RevealInput } from './reveal';
+import {
+  CHALLENGE_TERRITORIES,
+  challengeModeOf,
+  dailySeedFor,
+  parseSeedInput,
+} from './challenge';
+import type { ChallengeMode } from './challenge';
+import { buildResultCard } from './result-card';
+
 import type { GameProgress } from './progress';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
 import type { StageOutcome } from './settlement';
@@ -118,6 +127,17 @@ import {
 
 const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
 
+/**
+ * 결과 카드 크기 — **고정값**이다.
+ *
+ * 화면 크기에 따라 카드가 달라지면 같은 성적이 사람마다 다른 그림으로 나간다.
+ * 가로 세로 비를 소셜 공유에 흔한 1.91:1 근처로 잡았다.
+ */
+const CARD_WIDTH = 1200;
+const CARD_HEIGHT = 630;
+/** 카드 상단에서 차트가 차지하는 높이. 나머지가 수치 영역이다. */
+const CARD_CHART_HEIGHT = 300;
+
 /** 프레임 간격이 이보다 크면 탭 비활성 복귀로 보고 버린다. */
 const MAX_FRAME_DT_MS = 250;
 
@@ -137,6 +157,19 @@ export function mountStage(root: HTMLElement): () => void {
   }
 
   let seed = 1;
+  /**
+   * 사용자가 시드를 직접 골랐는가 (일일 챌린지 · 시드 입력).
+   *
+   * `challengeModeOf`가 이 값으로 `seed`와 `free`를 가른다 — 그냥 시작한 판까지 "시드
+   * 대결"로 표시하면 라벨이 의미를 잃는다.
+   */
+  let seedPicked = false;
+  /**
+   * 이 판이 챌린지인가. **챌린지에서는 heat를 1로 고정한다** (`CHALLENGE_TERRITORIES`).
+   * 같은 시드라도 진도가 앞선 사람은 적 HP가 높은 판을 받으므로, 그대로 두면 랭킹이
+   * 조용히 불공정해진다 (`challenge.ts` 머리말).
+   */
+  let challengeRun = false;
   /**
    * 지역 선택 화면에서 고른 지역. 세션을 만들 때마다 이 값이 `StageSession`으로 넘어가
    * 시작 AUM·골드·웨이브 테이블을 결정한다 — 여기서만 바뀐다.
@@ -269,7 +302,9 @@ export function mountStage(root: HTMLElement): () => void {
 
   function startSession(nowMs: number): void {
     // 점령 수가 heat가 된다 — 지역을 깰수록 다음 판의 적 HP가 올라간다 (FR-6.7).
-    session = new StageSession(seed, speed, nowMs, stageId, clearedCount(progress));
+    // ★ 단 챌린지는 0으로 못박는다 ★ 같은 시드로 성적을 비교하려면 난이도가 같아야 한다.
+    const territories = challengeRun ? CHALLENGE_TERRITORIES : clearedCount(progress);
+    session = new StageSession(seed, speed, nowMs, stageId, territories);
     lastFrameMs = nowMs;
     marketClosed = false;
     overtimeRemainingMs = 0;
@@ -777,6 +812,104 @@ export function mountStage(root: HTMLElement): () => void {
   /** 연출이 끝난 뒤 띄울 결과. `showReveal`이 정산을 다시 계산하려면 필요하다. */
   let pendingOutcome: StageOutcome | null = null;
 
+  /** 마지막 정산 — 결과 카드가 같은 수치를 다시 계산하지 않도록 물고 있는다(단일 출처). */
+  let lastSettlement: ReturnType<typeof computeSettlement> | null = null;
+
+  /**
+   * 결과 카드를 PNG로 굽는다.
+   *
+   * 카드 크기는 **공유 매체에 맞춘 고정값**이다 — 화면 크기에 따라 카드가 달라지면
+   * 같은 성적이 사람마다 다른 그림으로 나간다. 내용은 전부 `result-card.ts`가 정하고
+   * 여기서는 픽셀만 찍는다.
+   */
+  function renderResultCard(current: StageSession): HTMLCanvasElement | null {
+    if (lastSettlement === null) {
+      return null;
+    }
+    const mode: ChallengeMode = challengeModeOf(seed, new Date(), seedPicked);
+    const combat = current.combatState;
+    const closes = current.closedPositions;
+    const card = buildResultCard({
+      outcome: lastSettlement.outcome,
+      settlement: lastSettlement,
+      stageId,
+      stageName: regionNameOf(stageId),
+      seed,
+      mode,
+      closeCount: closes.length,
+      liquidatedCount: closes.filter((close) => close.reason === 'liquidated').length,
+      remainingBaseHp: combat.baseHp,
+      maxBaseHp: combat.maxBaseHp,
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = CARD_WIDTH;
+    canvas.height = CARD_HEIGHT;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return null;
+    }
+    const palette = theme.palette;
+
+    ctx.fillStyle = palette.BG_0;
+    ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+    // 차트를 무채색 배경처럼 깐다 — 카드의 정체는 '그날의 차트'다.
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    drawChart(ctx, {
+      bars: current.set.bars,
+      state: current.replay.tick(Number.MAX_SAFE_INTEGER),
+      palette,
+      width: CARD_WIDTH,
+      height: CARD_CHART_HEIGHT,
+    });
+    ctx.restore();
+
+    ctx.fillStyle = palette.MUTED;
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('TICKER FRONT', 32, 28);
+    ctx.fillText(card.modeLabel, 32, CARD_CHART_HEIGHT + 24);
+
+    ctx.fillStyle = palette[card.gradeTone];
+    ctx.font = 'bold 92px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(card.grade, CARD_WIDTH - 32, 24);
+
+    ctx.font = '20px sans-serif';
+    ctx.fillText(card.headline, CARD_WIDTH - 32, 130);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = palette.TEXT;
+    ctx.font = '22px sans-serif';
+    ctx.fillText(card.identity, 32, CARD_CHART_HEIGHT + 56);
+
+    // 수치 줄들. 색 토큰이 있으면 그 색으로 — 초록은 팔레트에 없다.
+    let y = CARD_CHART_HEIGHT + 104;
+    for (const stat of card.stats) {
+      ctx.fillStyle = palette.MUTED;
+      ctx.font = '16px sans-serif';
+      ctx.fillText(stat.label, 32, y);
+      ctx.fillStyle = stat.tone ? palette[stat.tone] : palette.TEXT;
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText(stat.value, 200, y - 4);
+      y += 44;
+    }
+
+    ctx.fillStyle = palette.MUTED;
+    ctx.font = '14px sans-serif';
+    ctx.fillText(card.shareLine, 32, CARD_HEIGHT - 34);
+
+    lastCardName = card.fileName;
+    lastShareLine = card.shareLine;
+    return canvas;
+  }
+
+  let lastCardName = 'ticker-front';
+  let lastShareLine = '';
+
   function showResult(current: StageSession, outcome: StageOutcome): void {
     // ★ 진행도 기록은 여기 한 곳뿐이다 ★ 정산 화면이 스테이지가 끝나는 유일한 경로이고
     // (무음 리셋 경로는 타입 수준에서 제거됐다), `cleared`만 점령으로 친다.
@@ -804,6 +937,8 @@ export function mountStage(root: HTMLElement): () => void {
       // 전투 시뮬레이션에 적 본진 개념이 아직 없다 (`CombatState` 참고).
       enemyBaseDestroyed: false,
     });
+    // 결과 카드가 같은 수치를 다시 계산하지 않도록 물고 있는다(단일 출처).
+    lastSettlement = settlement;
 
     refs!.resultTitle.textContent = settlementTitle(outcome);
     refs!.resultSubtitle.textContent = settlementSubtitle(outcome);
@@ -861,7 +996,51 @@ export function mountStage(root: HTMLElement): () => void {
     loop.start();
   }
 
-  refs.startButton.addEventListener('click', showRegionSelect);
+  refs.startButton.addEventListener('click', () => {
+    // 자유 플레이 — 시드는 지금 값 그대로, 챌린지 규칙을 걸지 않는다.
+    seedPicked = false;
+    challengeRun = false;
+    showRegionSelect();
+  });
+
+  /**
+   * 일일 챌린지 — 오늘 날짜가 곧 시드다.
+   *
+   * `new Date()`를 읽는 것은 셸의 일이다(판정 모듈은 시계를 모른다, §17-2).
+   * `dailySeedFor`가 날짜를 그대로 숫자로 바꾸므로 결과 카드의 시드만 보고
+   * **언제 판인지 사람이 바로 읽는다**.
+   */
+  refs.dailyButton.addEventListener('click', () => {
+    seed = dailySeedFor(new Date());
+    seedPicked = true;
+    challengeRun = true;
+    refs.seedInput.value = String(seed);
+    showRegionSelect();
+  });
+
+  /** 시드 직접 입력 — 결과 카드에 찍힌 값을 그대로 붙여넣는 것이 가장 흔한 사용법이다. */
+  function startWithSeedInput(): void {
+    const parsed = parseSeedInput(refs!.seedInput.value);
+    if (parsed === null) {
+      // 실패를 조용히 넘기지 않는다 — 왜 안 되는지 말한다.
+      refs!.seedInput.setAttribute('aria-invalid', 'true');
+      refs!.log.textContent = '시드를 읽지 못했습니다 — 숫자나 2026-08-03 형식으로 넣어주세요';
+      return;
+    }
+    refs!.seedInput.removeAttribute('aria-invalid');
+    seed = parsed;
+    seedPicked = true;
+    challengeRun = true;
+    showRegionSelect();
+  }
+
+  refs.seedButton.addEventListener('click', startWithSeedInput);
+  refs.seedInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      startWithSeedInput();
+    }
+  });
   refs.regionBackButton.addEventListener('click', showGate);
 
   for (const button of refs.regionButtons) {
@@ -1025,6 +1204,42 @@ export function mountStage(root: HTMLElement): () => void {
    * 마지막 단계에서 누르면 `skipToNextStage`가 총 길이를 돌려주므로 시퀀스가 끝나고
    * 정산으로 넘어간다. 판정은 `reveal.ts`가 소유한다 — 여기서 경계를 다시 계산하지 마라.
    */
+  /**
+   * 결과 카드 저장 — PNG 다운로드 + 공유 문자열 클립보드.
+   *
+   * 클립보드는 **실패해도 다운로드를 막지 않는다.** 권한이 없거나 보안 컨텍스트가 아닌
+   * 환경이 흔한데, 그때 카드까지 못 받으면 기능이 통째로 죽는다.
+   */
+  refs.resultCardButton.addEventListener('click', () => {
+    const current = session;
+    if (!current) {
+      return;
+    }
+    const canvas = renderResultCard(current);
+    if (!canvas) {
+      refs.log.textContent = '결과 카드를 만들지 못했습니다 (캔버스 없음)';
+      return;
+    }
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        refs.log.textContent = '결과 카드를 만들지 못했습니다';
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${lastCardName}.png`;
+      link.click();
+      // 즉시 해제하면 브라우저가 다운로드를 시작하기 전에 사라질 수 있다.
+      setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      refs.log.textContent = `결과 카드를 저장했습니다 — ${lastShareLine}`;
+    }, 'image/png');
+
+    void navigator.clipboard?.writeText(lastShareLine).catch(() => {
+      // 클립보드는 부가 기능이다. 실패해도 조용히 넘긴다 — 카드는 이미 받았다.
+    });
+  });
+
   refs.revealSkipButton.addEventListener('click', () => {
     if (revealInput === null) {
       return;
