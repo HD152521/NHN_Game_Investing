@@ -39,8 +39,15 @@ import {
   summonUnit,
   upgradeTower,
 } from '../combat';
-import type { ChartSet, Replay } from '../market';
+import type { ChartSet, Replay, ReplayState } from '../market';
 import { createReplay, generateChartSet } from '../market';
+import type { MarketConditions, WeatherKind, WeatherView } from '../weather';
+import {
+  activeEventAt,
+  recentChangePct,
+  resolveWeatherKind,
+  weatherIntensity,
+} from '../weather';
 import type {
   ClosedPosition,
   Direction,
@@ -120,6 +127,20 @@ export class StageSession {
    * 통째로 교체되고, 전투가 끝나면 빈 목록으로 되돌아간다.
    */
   private lastDeaths: readonly DeathEvent[] = NO_DEATHS;
+
+  /**
+   * ── 날씨 판정의 시간축 상태 (`stepWeather`가 소유한다) ──────────
+   *
+   * 판정 자체는 `src/weather`(순수 함수)가 전부 한다. 다만 정전(WX-04)은 **직전 종류**와
+   * **정지 구간이 시작된 뒤 지난 프레임 수**라는 두 개의 시간축 입력을 요구하는데,
+   * 순수 함수는 시계를 가질 수 없으므로 그 둘을 들고 있는 자리가 필요하다. 여기가 그 자리다.
+   *
+   * ⚠️ `haltedFrames`는 "정전이 보이는 동안"이 아니라 **정지 구간 전체**를 센다.
+   *    정전이 3프레임 뒤 다른 날씨로 넘어갈 때 카운터를 되돌리면 정지가 이어지는 내내
+   *    3프레임마다 정전이 재점멸한다 (`weather/resolve.ts` 머리말).
+   */
+  private weatherKind: WeatherKind = 'clear';
+  private haltedFrames = 0;
 
   /**
    * FR-8.1 정산 분모 — **총 획득 골드**.
@@ -202,6 +223,50 @@ export class StageSession {
       };
       this.goldEarned += goldIncome;
     }
+  }
+
+  /**
+   * 이번 프레임의 날씨(= 시장 상태 표시)를 판정한다. **프레임당 정확히 한 번** 불러야 한다.
+   *
+   * ★ 왜 세션이 이걸 하는가 ★ 날씨는 "차트 → 화면"을 잇는 네 갈래 중 하나이고, 그 입력
+   *   (`bars` · `sigma30` · `events`)은 전부 이 세션이 들고 있는 `ChartSet`에 있다. 전장
+   *   렌더러는 시장 지표를 알면 안 되므로(§17-2 경계 규칙), 지표를 `WeatherView`로 바꾸는
+   *   일은 차트를 소유한 쪽이 해야 한다. 판정 규칙 자체는 한 줄도 여기 없다 —
+   *   전부 `src/weather`의 순수 함수 호출이며, 이 메서드는 **호출 순서와 시간축 상태**만 맡는다.
+   *
+   * ⚠️ 이 배선이 오래 비어 있었다 (§19-5). `src/weather`와 `src/battle/draw-weather-*`가
+   *   양쪽 다 구현·테스트를 끝냈는데도 셸이 잇지 않아, 트리셰이킹으로 통째로 빠진 채
+   *   **게임 중 날씨가 한 번도 뜨지 않았다.** 테스트는 모듈을 직접 import하므로 전부 통과했다.
+   *
+   * @param state         리플레이 상태. 필드를 손으로 옮겨 적지 않고 통째로 받는다 (§19-10).
+   * @param halted        거래가 멈춰 있는가 → WX-04 정전. 합성 차트에는 서킷브레이커가
+   *                      없으므로, 실제로 매매가 잠기는 유일한 구간인 **장 마감**을 셸이
+   *                      넘긴다. 정전은 3프레임 상한이라 마감 순간 한 번 번쩍이고 끝난다.
+   * @param reducedMotion `prefers-reduced-motion`. 모션만 멈추고 **시장 상태 정보(색)는
+   *                      그대로 남는다** — 날씨는 장식이 아니므로 (`weather/signature.ts`).
+   */
+  stepWeather(state: ReplayState, halted: boolean, reducedMotion: boolean): WeatherView {
+    const conditions: MarketConditions = {
+      recentChangePct: recentChangePct(this.set.bars, state.barIndex),
+      sigma30: this.set.sigma30,
+      halted,
+      event: activeEventAt(this.set.events, state.elapsedMs),
+    };
+
+    const kind = resolveWeatherKind(conditions, this.weatherKind, this.haltedFrames);
+    // 카운터는 **판정 뒤에** 움직인다. 정지가 시작된 첫 프레임은 `haltedFrames === 0`이어야
+    // `resolveWeatherKind`가 "새 정지"로 보고 반드시 한 번 번쩍인다.
+    this.haltedFrames = halted ? this.haltedFrames + 1 : 0;
+    this.weatherKind = kind;
+
+    return {
+      kind,
+      intensity: weatherIntensity(conditions, kind),
+      // 재생 시각을 쓴다 — 배속을 올리면 시장이 빨리 흐르는 만큼 날씨도 같이 빨라진다.
+      // 발판 맥동(`drawBattle`의 `timeMs`)이 이미 같은 시계를 쓰고 있어 연출이 어긋나지 않는다.
+      timeMs: state.elapsedMs,
+      reducedMotion,
+    };
   }
 
   /** FR-8.1 정산에 필요한 누적 수치. 계산은 `src/app/settlement.ts`가 한다. */

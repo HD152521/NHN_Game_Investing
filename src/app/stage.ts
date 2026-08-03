@@ -26,6 +26,15 @@ import { createDeathField, drawBattle, computeBattleLayout, progressToX, slotAt 
  * 프레임마다 새로 만들면 재생 중인 연출이 매 프레임 초기화되어 아무 것도 안 보인다.
  */
 const deathField = createDeathField();
+
+import { createWeatherField } from '../weather';
+
+/**
+ * 날씨 입자·광선 버퍼 — `deathField`와 **정확히 같은 규약**으로 앱 수명 동안 하나만 만든다.
+ * 슬롯별 시드만 들고 있고 매 프레임 위치는 `시드 + 시각`으로 계산하므로, 이 버퍼 하나면
+ * 프레임당 할당 없이 날씨 4종을 전부 그린다 (`weather/field.ts` 머리말).
+ */
+const weatherField = createWeatherField();
 import { drawChart } from '../chart';
 import {
   ALLY_IDENTITY,
@@ -419,6 +428,19 @@ export function mountStage(root: HTMLElement): () => void {
         : {}),
     });
 
+    /**
+     * 날씨 판정 — **프레임당 한 번**, 그리기 직전에.
+     *
+     * 셸은 판정을 하지 않는다. 세션이 자기 `ChartSet`을 읽어 `src/weather`(순수 함수)에
+     * 물어보고 `WeatherView`만 돌려주며, 셸은 그것을 전장에 얹기만 한다 — 전장이 시장
+     * 지표를 알게 되는 순간 판정/렌더 분리가 무너진다 (§17-2).
+     *
+     * `marketClosed`를 정지 신호로 넘기는 이유: 합성 차트에는 서킷브레이커가 없어서
+     * WX-04를 켤 다른 입력이 없다. 실제로 매매가 전부 잠기는 유일한 구간이 장 마감이고,
+     * 정전은 3프레임 상한이라 마감 순간 한 번 번쩍인 뒤 지표가 말하는 날씨로 돌아간다.
+     */
+    const weatherView = session.stepWeather(state, marketClosed, prefersReducedMotion());
+
     drawBattle(refs!.battleCtx, {
       state: combat,
       palette: theme.palette,
@@ -433,6 +455,8 @@ export function mountStage(root: HTMLElement): () => void {
       reducedMotion: prefersReducedMotion(),
       // 사망 연출 — 버퍼는 앱 수명 동안 하나, 이벤트는 직전 틱의 것만 넘긴다.
       deaths: { field: deathField, events: session.lastCombatDeaths },
+      // 시장 상태 표시 — 사망 연출과 같은 모양(버퍼 하나 + 이번 프레임 값)이다.
+      weather: { view: weatherView, field: weatherField },
     });
 
     // 스킬 이펙트는 전장 위에 얹는다 — 가산 합성이라 반드시 전장을 다 그린 뒤여야 한다.
