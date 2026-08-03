@@ -31,6 +31,8 @@
 import type { PaletteToken } from '../design';
 import type { ClosedPosition } from '../position';
 import type { Settlement, StageOutcome } from './settlement';
+import type { CodexCard } from './codex';
+import { CODEX_CAPACITY, RARITY_LABEL, cardTitle, dateLabelFromSeed, rarityOf } from './codex';
 
 /** 시퀀스 단계. 순서는 PRD FR-9.2를 그대로 따른다. */
 export type RevealStageId =
@@ -83,12 +85,10 @@ export const REVEAL_STAGES: readonly RevealStageSpec[] = [
   },
   { id: 'trades', durationMs: 1_500, available: true },
   { id: 'summary', durationMs: 2_000, available: true },
-  {
-    id: 'codex',
-    durationMs: 1_500,
-    available: false,
-    blockedBy: '차트 도감 미구현 (§15-6)',
-  },
+  // ★ 도감이 구현되면서 이 단계의 차단 사유가 사라졌다 ★
+  // 예전 blockedBy는 '차트 도감 미구현 (§15-6)'이었다. 이제 클리어가 카드를 발행하므로
+  // 마지막 단계가 그 카드를 보여준다 — 연출이 "이 판이 무엇으로 남는가"로 닫힌다.
+  { id: 'codex', durationMs: 1_500, available: true },
 ];
 
 /** 실제로 재생되는 단계들. `available: false`는 시간도 소비하지 않는다. */
@@ -135,6 +135,15 @@ export interface RevealInput {
   readonly stageDurationMs: number;
   /** 그날의 시가·종가·고가·저가·거래량 배수 — 5단계 요약용. */
   readonly ohlcv: RevealOhlcv;
+  /**
+   * 이 판이 남긴 도감 카드 — 6단계용. 클리어가 아니면 `undefined`다.
+   *
+   * 카드를 여기서 만들지 않고 **받는** 이유: 발행은 셸이 `recordCard`로 이미 한 번
+   * 했고, 연출이 두 번째로 만들면 두 카드가 어긋날 수 있다(등급·시각이 다른 계산에서 온다).
+   */
+  readonly card?: CodexCard;
+  /** 지금까지 모은 카드 수 — 6단계의 진척 표시. */
+  readonly collected?: number;
 }
 
 export interface RevealOhlcv {
@@ -285,9 +294,43 @@ function revealSubtitleFor(stage: RevealStageId | null): string {
       return '차트 위에 남은 당신의 매매';
     case 'summary':
       return '그날의 수치와 당신의 성적';
+    case 'codex':
+      return '이 판이 무엇으로 남는가';
     default:
       return '';
   }
+}
+
+/**
+ * 6단계 — 도감에 남은 기록.
+ *
+ * ★ 카드가 없어도 빈 화면을 내지 않는다 ★ 패배한 판은 카드를 남기지 않는데, 그
+ * 사실 자체가 정보다. "기록으로 남지 않는다"고 말하는 것이 아무것도 없는 1.5초보다 낫다
+ * (`available: false`는 시간도 소비하지 않지만, 이 단계는 판마다 달라서 상수로 끌 수 없다).
+ */
+export function codexLines(input: RevealInput): readonly RevealSummaryLine[] {
+  const card = input.card;
+  if (card === undefined) {
+    return [
+      { label: '도감', value: '이 판은 기록으로 남지 않는다' },
+      { label: '조건', value: '13웨이브 방어 완료', tone: 'GOLD' },
+    ];
+  }
+
+  const lines: RevealSummaryLine[] = [
+    { label: '기록', value: cardTitle(card), tone: 'GOLD' },
+    { label: '등급', value: `${RARITY_LABEL[rarityOf(card.grade)]} · RANK ${card.grade}`, tone: 'GOLD' },
+    { label: '날짜', value: dateLabelFromSeed(card.seed) },
+  ];
+  if (input.collected !== undefined) {
+    lines.push({ label: '수집', value: `${input.collected} / ${codexTotalOf(input.collected)}` });
+  }
+  return lines;
+}
+
+/** 분모는 도감 화면과 같은 규칙을 쓴다 — 정원을 넘기면 분모가 따라 올라간다. */
+function codexTotalOf(collected: number): number {
+  return Math.max(CODEX_CAPACITY, collected);
 }
 
 /**
@@ -311,7 +354,8 @@ export function revealFrame(input: RevealInput, elapsedMs: number): RevealFrame 
         progress: REVEAL_TOTAL_MS > 0 ? clamp01(clamped / REVEAL_TOTAL_MS) : 1,
         finished: false,
         markers: stage.id === 'trades' ? markers : [],
-        summary: stage.id === 'summary' ? summary : [],
+        summary:
+          stage.id === 'summary' ? summary : stage.id === 'codex' ? codexLines(input) : [],
         title,
         subtitle: revealSubtitleFor(stage.id),
       };

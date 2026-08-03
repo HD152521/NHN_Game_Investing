@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
+import type { CodexCard } from './codex';
+import { dateLabelFromSeed } from './codex';
+
 /**
  * 공개 연출 판정 — 전건.
  *
@@ -10,6 +13,7 @@ import type { ClosedPosition } from '../position';
 import {
   PLAYABLE_STAGES,
   REVEAL_STAGES,
+  codexLines,
   REVEAL_TOTAL_MS,
   pendingStageNotices,
   revealFrame,
@@ -81,19 +85,21 @@ describe('시퀀스 골격 — 6단계 자리를 잡되 만들 수 있는 것만
     ]);
   });
 
-  test('★ 지금 재생되는 것은 4·5단계뿐이다 — 나머지는 실데이터·도감 선행', () => {
-    expect(PLAYABLE_STAGES.map((s) => s.id)).toEqual(['trades', 'summary']);
+  test('★ 지금 재생되는 것은 4·5·6단계다 — 남은 셋은 실데이터 선행', () => {
+    // 6단계(도감)는 도감이 구현되면서 열렸다. 나머지 셋은 여전히 실데이터가 없어 막혀 있다.
+    expect(PLAYABLE_STAGES.map((s) => s.id)).toEqual(['trades', 'summary', 'codex']);
   });
 
   test('못 만드는 단계에는 이유가 적혀 있다 — 다음 사람이 다시 조사하지 않게', () => {
     for (const stage of REVEAL_STAGES.filter((s) => !s.available)) {
       expect(stage.blockedBy).toBeTruthy();
     }
-    expect(pendingStageNotices()).toHaveLength(4);
+    // 남은 차단은 zoomout · identity · headlines 셋 — 전부 실데이터 미연결이다.
+    expect(pendingStageNotices()).toHaveLength(3);
   });
 
   test('건너뛰는 단계는 시간도 소비하지 않는다 — 빈 화면 1.5초는 버그로 읽힌다', () => {
-    expect(REVEAL_TOTAL_MS).toBe(1_500 + 2_000);
+    expect(REVEAL_TOTAL_MS).toBe(1_500 + 2_000 + 1_500);
   });
 });
 
@@ -249,12 +255,64 @@ describe('단계 스킵 — 각 단계를 개별적으로 건너뛴다 (FR-9.2)'
   });
 
   test('마지막 단계에서 스킵하면 시퀀스가 끝난다', () => {
-    const at = skipToNextStage(2_000);
+    // 마지막 단계(codex)는 3,500ms에서 시작한다 — 그 안의 시각에서 스킵해야 끝난다.
+    const at = skipToNextStage(4_000);
     expect(at).toBe(REVEAL_TOTAL_MS);
     expect(revealFrame(input(), at).finished).toBe(true);
   });
 
   test('이미 끝난 뒤 스킵해도 총 길이를 넘지 않는다', () => {
     expect(skipToNextStage(REVEAL_TOTAL_MS + 5_000)).toBe(REVEAL_TOTAL_MS);
+  });
+});
+
+
+// ── ⑥ 도감 단계 (도감 구현으로 열린 단계) ──────────────────────
+
+describe('⑥ 도감 — 이 판이 무엇으로 남는가', () => {
+  const card: CodexCard = {
+    id: '7-R1',
+    stageId: 'R1',
+    seed: 7,
+    grade: 'S',
+    changeRate: 12.5,
+    hasEvent: false,
+    durationMs: 60_000,
+    baseHp: 100,
+    maxBaseHp: 100,
+    accuracy: 0.8,
+    bars: [{ o: 100, c: 110 }],
+  };
+
+  test('★ 카드가 없어도 빈 화면을 내지 않는다 — 왜 없는지를 말한다', () => {
+    const lines = codexLines(input());
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.map((line) => line.value).join(' ')).toContain('기록으로 남지 않는다');
+  });
+
+  test('카드가 있으면 제목·등급·날짜를 말한다', () => {
+    const lines = codexLines({ ...input(), card });
+    const text = lines.map((line) => `${line.label} ${line.value}`).join(' | ');
+    expect(text).toContain('LEGENDARY');
+    expect(text).toContain('RANK S');
+    expect(text).toContain(dateLabelFromSeed(7));
+  });
+
+  test('수집 수를 넘기면 진척이 함께 나온다', () => {
+    const lines = codexLines({ ...input(), card, collected: 37 });
+    expect(lines.some((line) => line.value.includes('37 /'))).toBe(true);
+  });
+
+  test('수집 수를 넘기지 않으면 진척 줄이 없다 (0 / 120이라 거짓말하지 않는다)', () => {
+    const lines = codexLines({ ...input(), card });
+    expect(lines.some((line) => line.label === '수집')).toBe(false);
+  });
+
+  test('마지막 단계의 프레임이 도감 내용을 싣는다', () => {
+    // trades(1500) + summary(2000) 이후가 codex 구간이다.
+    const frame = revealFrame({ ...input(), card }, 4_000);
+    expect(frame.stage).toBe('codex');
+    expect(frame.summary.length).toBeGreaterThan(0);
+    expect(frame.subtitle).toBe('이 판이 무엇으로 남는가');
   });
 });

@@ -97,7 +97,7 @@ import {
   codexFilterFor,
   mintCard,
 } from './codex';
-import type { CodexFilter } from './codex';
+import type { CodexCard, CodexFilter } from './codex';
 import {
   WORLD_ENTER_ACTION,
   WORLD_REGIONS,
@@ -883,6 +883,14 @@ export function mountStage(root: HTMLElement): () => void {
    * 골드 비행 연출과 같은 방식이다. 시계는 rAF의 `nowMs`를 쓰고, 그 차이만 누적한다.
    */
   let revealInput: RevealInput | null = null;
+  /**
+   * 이 판이 남길 도감 카드. **한 번만 만든다.**
+   *
+   * 공개 연출(6단계)이 정산보다 먼저 오므로 카드가 그때 이미 필요하다. 두 화면이 각자
+   * 만들면 서로 다른 카드가 나올 수 있어(등급·시각이 다른 계산에서 온다), 먼저 필요한
+   * 쪽에서 만들고 정산이 그것을 그대로 기록한다.
+   */
+  let pendingCard: CodexCard | null = null;
   let revealElapsedMs = 0;
   let revealLastMs: number | null = null;
   let revealHandle: number | null = null;
@@ -900,6 +908,7 @@ export function mountStage(root: HTMLElement): () => void {
   function finishReveal(): void {
     stopReveal();
     revealInput = null;
+    pendingCard = null;
     revealShown = false;
     refs!.reveal.hidden = true;
     const then = revealThen;
@@ -998,6 +1007,20 @@ export function mountStage(root: HTMLElement): () => void {
     const bars = current.set.bars;
     const first = bars[0];
     const last = bars[bars.length - 1];
+    // 클리어일 때만 카드가 생긴다 — 진 판은 기록으로 남지 않는다(`codexLines`가 그렇게 말한다).
+    pendingCard =
+      pendingOutcome === 'cleared'
+        ? mintCard({
+            stageId,
+            seed,
+            grade: settlement.grade,
+            chart: current.set,
+            durationMs: elapsedMs,
+            baseHp: combat.baseHp,
+            maxBaseHp: combat.maxBaseHp,
+            accuracy: settlement.accuracy,
+          })
+        : null;
     revealInput = {
       outcome: pendingOutcome ?? 'unresolved',
       settlement,
@@ -1010,6 +1033,8 @@ export function mountStage(root: HTMLElement): () => void {
         close: last?.c ?? 0,
         volumeMultiple: current.set.volumeMultiple,
       },
+      ...(pendingCard === null ? {} : { card: pendingCard }),
+      collected: progress.codexCards.length + (pendingCard === null ? 0 : 1),
     };
     revealElapsedMs = 0;
     revealLastMs = null;
@@ -1175,7 +1200,9 @@ export function mountStage(root: HTMLElement): () => void {
     if (outcome === 'cleared') {
       // 자본금 적립 (FR-11). `capital`은 클리어가 아니면 0이므로 이 분기 안이 유일한 경로다.
       progress = addCapital(settlement.capital);
-      const minted = recordCard(
+      // 연출이 이미 만들었으면 **그 카드를 그대로** 기록한다 — 두 번 만들지 않는다.
+      const card =
+        pendingCard ??
         mintCard({
           stageId,
           seed,
@@ -1185,8 +1212,8 @@ export function mountStage(root: HTMLElement): () => void {
           baseHp: combat.baseHp,
           maxBaseHp: combat.maxBaseHp,
           accuracy: settlement.accuracy,
-        }),
-      );
+        });
+      const minted = recordCard(card);
       progress = minted.progress;
       if (minted.isNew) {
         // 처음 본 날에만 알린다. 같은 시드를 다시 깼을 때 "획득"이라고 말하면 거짓이다.
