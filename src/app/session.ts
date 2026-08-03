@@ -157,6 +157,16 @@ export class StageSession {
   /** 총 청산 수 / 그중 `pnl > 0`인 수 — FR-8.1 적중률과 `aumGate`의 입력이다. */
   private closeCount = 0;
   private profitCloseCount = 0;
+  /**
+   * 이번 스테이지의 청산 기록 전부 (FR-9.2 공개 연출 4단계).
+   *
+   * 예전에는 `closeCount`/`profitCloseCount` **스칼라 두 개만** 남겼다. 정산에는 그것으로
+   * 충분했지만, "내가 어떻게 매매했는지"를 차트 위에 되짚어 보여주려면 진입·청산 시각과
+   * 가격이 필요하다 — 집계에서는 복원할 수 없다.
+   *
+   * 진입 24회가 상한이라(`maxPositions`) 배열이 무한정 자라지 않는다.
+   */
+  private readonly closes: ClosedPosition[] = [];
 
   /**
    * @param stageId 플레이할 지역. 생략하면 R1 — 지역 선택 화면이 붙기 전 호출부와
@@ -293,6 +303,16 @@ export class StageSession {
       closeCount: this.closeCount,
       profitCloseCount: this.profitCloseCount,
     };
+  }
+
+  /**
+   * 청산 기록 전부 — 공개 연출이 차트 위에 되짚어 그릴 원본이다.
+   *
+   * 내부 배열을 그대로 넘기지 않는다(불변 규율). 호출부가 밀어 넣으면 세션 상태가
+   * 조용히 오염된다.
+   */
+  get closedPositions(): readonly ClosedPosition[] {
+    return [...this.closes];
   }
 
   /** 다음 웨이브까지 남은 준비 시간(ms). 0이면 교전 중이다 (HUD 카운트다운용). */
@@ -515,6 +535,10 @@ export class StageSession {
     this.position = null;
     this.goldEarned += result.result.goldGained;
     this.closeCount += 1;
+    // 공개 연출(FR-9.2 4단계)이 차트 위에 되짚어 그릴 원본이다. 집계값만으로는
+    // "언제 어느 가격에 들어가 언제 나왔는지"를 복원할 수 없어 기록 자체를 남긴다.
+    // push는 청산 시점에만 일어나므로 프레임당 할당 0 규율을 깨지 않는다.
+    this.closes.push(result.result.position);
     if (result.result.position.pnl > 0) {
       this.profitCloseCount += 1;
     }

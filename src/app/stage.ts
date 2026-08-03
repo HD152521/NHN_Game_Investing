@@ -35,7 +35,7 @@ import { createWeatherField } from '../weather';
  * 프레임당 할당 없이 날씨 4종을 전부 그린다 (`weather/field.ts` 머리말).
  */
 const weatherField = createWeatherField();
-import { drawChart } from '../chart';
+import { computeLayout, computePriceRange, drawChart, indexToCenterX, priceToY } from '../chart';
 import {
   ALLY_IDENTITY,
   SKILL_SPECS,
@@ -79,6 +79,13 @@ import {
   tutorialOverlay,
 } from './tutorial';
 import type { TutorialState } from './tutorial';
+import {
+  REVEAL_TOTAL_MS,
+  pendingStageNotices,
+  revealFrame,
+  skipToNextStage,
+} from './reveal';
+import type { RevealInput } from './reveal';
 import type { GameProgress } from './progress';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
 import type { StageOutcome } from './settlement';
@@ -598,11 +605,178 @@ export function mountStage(root: HTMLElement): () => void {
     }
 
     if (decision.kind === 'finish') {
-      showResult(session, decision.outcome);
+      // ★ FR-9.1 — 공개 연출이 정산 **앞**에 온다 ★
+      // 패배해도 보여준다(FR-9.5): 실패해도 정체를 알려줘야 재도전 동기가 생긴다.
+      const current = session;
+      const outcome = decision.outcome;
+      pendingOutcome = outcome;
+      showReveal(current, () => showResult(current, outcome));
     }
   }
 
   /** 정산을 계산해 결과 화면에 꽂는다. 스테이지가 끝나는 **유일한** 경로다. */
+  /**
+   * ── 공개 연출 (FR-9) ─────────────────────────────────────────
+   *
+   * 정산 **앞**에 온다(FR-9.1: 정산 직후, 보상 선택 전). 시퀀스가 끝나야 정산이 뜬다.
+   *
+   * 프레임 루프는 이미 멈춰 있으므로(결과 확정), 연출은 `scheduler`(rAF)로 따로 돈다 —
+   * 골드 비행 연출과 같은 방식이다. 시계는 rAF의 `nowMs`를 쓰고, 그 차이만 누적한다.
+   */
+  let revealInput: RevealInput | null = null;
+  let revealElapsedMs = 0;
+  let revealLastMs: number | null = null;
+  let revealHandle: number | null = null;
+  /** 연출이 끝나면 실행할 것 — 정산 화면 띄우기. */
+  let revealThen: (() => void) | null = null;
+
+  function stopReveal(): void {
+    if (revealHandle !== null) {
+      scheduler.cancel(revealHandle);
+      revealHandle = null;
+    }
+    revealLastMs = null;
+  }
+
+  function finishReveal(): void {
+    stopReveal();
+    revealInput = null;
+    refs!.reveal.hidden = true;
+    const then = revealThen;
+    revealThen = null;
+    then?.();
+  }
+
+  /** 차트 위에 매매를 되짚어 그린다. 좌표 변환은 전부 여기(렌더러)가 한다. */
+  function drawRevealChart(current: StageSession, markers: ReturnType<typeof revealFrame>['markers']): void {
+    const ctx = refs!.revealCanvas.getContext('2d');
+    if (!ctx) return;
+
+    const bars = current.set.bars;
+    // 공개 연출에서는 **블라인드가 풀린다** — 마지막 봉까지 전부 보여준다.
+    drawChart(ctx, {
+      bars,
+      state: current.replay.tick(Number.MAX_SAFE_INTEGER),
+      palette: theme.palette,
+      width: CHART_WIDTH,
+      height: CHART_HEIGHT,
+    });
+    if (markers.length === 0 || bars.length === 0) return;
+
+    const layout = computeLayout(CHART_WIDTH, CHART_HEIGHT);
+    const range = computePriceRange(bars);
+    const lastIndex = bars.length - 1;
+
+    for (const marker of markers) {
+      const openX = indexToCenterX(Math.round(marker.openAt * lastIndex), bars.length, layout.horizontal);
+      const closeX = indexToCenterX(Math.round(marker.closeAt * lastIndex), bars.length, layout.horizontal);
+      const openY = priceToY(marker.openPrice, range, layout.candles);
+      const closeY = priceToY(marker.closePrice, range, layout.candles);
+      const color = theme.palette[marker.tone];
+
+      // 진입 → 청산을 잇는 선. 이게 "얼마나 오래 들고 있었는가"를 한눈에 보여준다.
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(openX, openY);
+      ctx.lineTo(closeX, closeY);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // 진입 표식 ▲/▼.
+      ctx.fillStyle = color;
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(marker.glyph, openX, openY);
+
+      // 강제 청산은 ✕ — "졌다"가 아니라 "터졌다"를 따로 읽히게 한다.
+      ctx.fillText(marker.liquidated ? '✕' : '●', closeX, closeY);
+      ctx.restore();
+    }
+  }
+
+  function renderReveal(current: StageSession): void {
+    if (!revealInput) return;
+    const frame = revealFrame(revealInput, revealElapsedMs);
+    refs!.revealTitle.textContent = frame.title;
+    refs!.revealSubtitle.textContent = frame.subtitle;
+
+    drawRevealChart(current, frame.markers);
+
+    refs!.revealSummary.innerHTML = frame.summary
+      .map(
+        (line) =>
+          `<div class="stage__reveal-row"><dt>${line.label}</dt>` +
+          `<dd${line.tone ? ` style="color:${theme.palette[line.tone]}"` : ''}>${line.value}</dd></div>`,
+      )
+      .join('');
+
+    // 아직 못 만드는 단계는 숨기지 않고 알린다 — 게이트가 약속한 것은 '정체 공개'인데
+    // 지금 보여주는 것은 매매 되짚기뿐이라, 아무 말도 없으면 약속 위반으로 읽힌다.
+    refs!.revealPending.textContent =
+      frame.stage === 'summary' ? `아직 오지 않은 것 — ${pendingStageNotices().join(' · ')}` : '';
+  }
+
+  function showReveal(current: StageSession, then: () => void): void {
+    const facts = current.settlementFacts;
+    const wallet = current.walletSnapshot;
+    const combat = current.combatState;
+    const settlement = computeSettlement({
+      outcome: pendingOutcome ?? 'unresolved',
+      remainingGold: wallet.gold,
+      remainingAum: wallet.aum,
+      totalGoldEarned: facts.totalGoldEarned,
+      closeCount: facts.closeCount,
+      profitCloseCount: facts.profitCloseCount,
+      baseHp: combat.baseHp,
+      maxBaseHp: combat.maxBaseHp,
+      enemyBaseDestroyed: false,
+    });
+    const bars = current.set.bars;
+    const first = bars[0];
+    const last = bars[bars.length - 1];
+    revealInput = {
+      outcome: pendingOutcome ?? 'unresolved',
+      settlement,
+      closes: current.closedPositions,
+      stageDurationMs: elapsedMs > 0 ? elapsedMs : 1,
+      ohlcv: {
+        open: first?.o ?? 0,
+        high: bars.reduce((max, bar) => Math.max(max, bar.h), 0),
+        low: bars.reduce((min, bar) => Math.min(min, bar.l), Number.POSITIVE_INFINITY),
+        close: last?.c ?? 0,
+        volumeMultiple: current.set.volumeMultiple,
+      },
+    };
+    revealElapsedMs = 0;
+    revealLastMs = null;
+    revealThen = then;
+    refs!.reveal.hidden = false;
+    renderReveal(current);
+    refs!.revealSkipButton.focus();
+
+    const tick = (nowMs: number): void => {
+      revealHandle = null;
+      if (revealLastMs !== null) {
+        revealElapsedMs += Math.min(nowMs - revealLastMs, MAX_FRAME_DT_MS);
+      }
+      revealLastMs = nowMs;
+      renderReveal(current);
+      if (revealElapsedMs >= REVEAL_TOTAL_MS) {
+        finishReveal();
+        return;
+      }
+      revealHandle = scheduler.request(tick);
+    };
+    revealHandle = scheduler.request(tick);
+  }
+
+  /** 연출이 끝난 뒤 띄울 결과. `showReveal`이 정산을 다시 계산하려면 필요하다. */
+  let pendingOutcome: StageOutcome | null = null;
+
   function showResult(current: StageSession, outcome: StageOutcome): void {
     // ★ 진행도 기록은 여기 한 곳뿐이다 ★ 정산 화면이 스테이지가 끝나는 유일한 경로이고
     // (무음 리셋 경로는 타입 수준에서 제거됐다), `cleared`만 점령으로 친다.
@@ -843,6 +1017,26 @@ export function mountStage(root: HTMLElement): () => void {
    */
   refs.tutorialSkipButton.addEventListener('click', () => {
     tutorialState = skipTutorial(tutorialState, isFirstRun);
+  });
+
+  /**
+   * 공개 연출 단계 스킵 (FR-9.2 — 각 단계는 개별적으로 건너뛸 수 있다).
+   *
+   * 마지막 단계에서 누르면 `skipToNextStage`가 총 길이를 돌려주므로 시퀀스가 끝나고
+   * 정산으로 넘어간다. 판정은 `reveal.ts`가 소유한다 — 여기서 경계를 다시 계산하지 마라.
+   */
+  refs.revealSkipButton.addEventListener('click', () => {
+    if (revealInput === null) {
+      return;
+    }
+    revealElapsedMs = skipToNextStage(revealElapsedMs);
+    if (revealElapsedMs >= REVEAL_TOTAL_MS) {
+      finishReveal();
+      return;
+    }
+    if (session) {
+      renderReveal(session);
+    }
   });
 
   /** Space 를 받은 시점의 포커스 대상 분류. 판정은 `shouldSkipPrep`이 한다. */

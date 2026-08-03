@@ -565,3 +565,86 @@ body {
     transition: none;
   }
 }
+
+/*
+ * ── 공개 연출 (FR-9) ────────────────────────────────────────────
+ *
+ * 정산 앞에 오는 전체 화면 오버레이. 결과 화면과 같은 자리를 쓰되 먼저 뜬다.
+ * 배경은 불투명해야 한다 — 전장이 비쳐 보이면 "판이 아직 안 끝났다"로 읽힌다.
+ */
+.stage__reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.5rem;
+  background: color-mix(in srgb, var(--tf-bg-0) 97%, transparent);
+}
+
+.stage__reveal[hidden] {
+  display: none;
+}
+
+.stage__reveal-title {
+  margin: 0;
+  font-size: 1.4rem;
+  letter-spacing: -0.01em;
+}
+
+.stage__reveal-subtitle {
+  margin: 0;
+  color: var(--tf-muted);
+  font-size: 0.85rem;
+}
+
+.stage__reveal-canvas {
+  width: min(100%, 60rem);
+  height: auto;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 35%, transparent);
+  border-radius: 0.35rem;
+}
+
+.stage__reveal-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.4rem 1.2rem;
+  width: min(100%, 60rem);
+  margin: 0;
+}
+
+.stage__reveal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--tf-muted) 22%, transparent);
+}
+
+.stage__reveal-row dt {
+  color: var(--tf-muted);
+  font-size: 0.78rem;
+}
+
+.stage__reveal-row dd {
+  margin: 0;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 아직 못 만드는 단계 안내 — 숨기면 게이트의 약속이 깨진 것으로 읽힌다. */
+.stage__reveal-pending {
+  max-width: min(100%, 60rem);
+  margin: 0;
+  color: var(--tf-muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.stage__reveal-skip {
+  min-width: 8rem;
+}

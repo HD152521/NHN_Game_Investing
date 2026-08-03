@@ -31,6 +31,9 @@ export const SKIP_PREP_ACTION = 'skip-prep';
 /** 튜토리얼 건너뛰기 버튼. 첫 회차에는 `tutorial.ts`가 스킵을 거부한다. */
 export const TUTORIAL_SKIP_ACTION = 'tutorial-skip';
 
+/** 공개 연출의 단계 스킵 버튼 (FR-9.2 — 각 단계는 개별적으로 건너뛸 수 있다). */
+export const REVEAL_SKIP_ACTION = 'reveal-skip';
+
 /** 결과 화면의 두 출구. 여기서만 스테이지가 다시 시작된다. */
 export const RESULT_RETRY_ACTION = 'result-retry';
 export const RESULT_REGION_ACTION = 'result-region';
@@ -86,6 +89,18 @@ export interface StageRefs {
   readonly tutorialWhy: HTMLElement;
   readonly tutorialFill: HTMLElement;
   readonly tutorialSkipButton: HTMLButtonElement;
+  /**
+   * 공개 연출 화면 (FR-9). 정산 앞에 온다.
+   *
+   * 판정은 전부 `reveal.ts`가 소유한다. 캔버스는 차트 위에 매매 마커를 되짚어 그린다.
+   */
+  readonly reveal: HTMLElement;
+  readonly revealTitle: HTMLElement;
+  readonly revealSubtitle: HTMLElement;
+  readonly revealCanvas: HTMLCanvasElement;
+  readonly revealSummary: HTMLElement;
+  readonly revealPending: HTMLElement;
+  readonly revealSkipButton: HTMLButtonElement;
   /**
    * 스테이지 결과 화면 (FR-8 정산).
    *
@@ -239,6 +254,24 @@ export function buildStageMarkup(): string {
                   data-action="${TUTORIAL_SKIP_ACTION}">튜토리얼 건너뛰기</button>
         </aside>
 
+        <!--
+          공개 연출 (FR-9) — 정산 화면 "앞"에 온다(FR-9.1: 정산 직후, 보상 선택 전).
+          내용은 전부 reveal.ts 가 판정해 넘긴다. 여기서 문구를 만들지 마라.
+          ⚠️ 템플릿 리터럴 안이라 주석에도 백틱을 쓰면 문자열이 끊긴다.
+        -->
+        <div class="stage__reveal" data-ref="reveal" role="dialog" aria-live="polite"
+             aria-labelledby="tf-reveal-title" hidden>
+          <h2 class="stage__reveal-title" id="tf-reveal-title" data-ref="reveal-title"></h2>
+          <p class="stage__reveal-subtitle" data-ref="reveal-subtitle"></p>
+          <canvas class="stage__reveal-canvas" data-ref="reveal-canvas"
+                  width="" height=""
+                  role="img" aria-label="차트 위에 되짚은 내 매매"></canvas>
+          <dl class="stage__reveal-summary" data-ref="reveal-summary"></dl>
+          <p class="stage__reveal-pending" data-ref="reveal-pending"></p>
+          <button class="btn stage__reveal-skip" type="button"
+                  data-action="">다음 ▸</button>
+        </div>
+
         <div class="stage__result" data-ref="result" role="dialog" aria-live="polite"
              aria-labelledby="tf-result-title" hidden>
           <h2 class="stage__result-title" id="tf-result-title" data-ref="result-title"></h2>
@@ -302,6 +335,15 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const tutorialSkipButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${TUTORIAL_SKIP_ACTION}"]`,
   );
+  const reveal = pick('reveal');
+  const revealTitle = pick('reveal-title');
+  const revealSubtitle = pick('reveal-subtitle');
+  const revealCanvas = pick<HTMLCanvasElement>('reveal-canvas');
+  const revealSummary = pick('reveal-summary');
+  const revealPending = pick('reveal-pending');
+  const revealSkipButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${REVEAL_SKIP_ACTION}"]`,
+  );
   const result = pick('result');
   const resultTitle = pick('result-title');
   const resultSubtitle = pick('result-subtitle');
@@ -344,6 +386,13 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !tutorialWhy ||
     !tutorialFill ||
     !tutorialSkipButton ||
+    !reveal ||
+    !revealTitle ||
+    !revealSubtitle ||
+    !revealCanvas ||
+    !revealSummary ||
+    !revealPending ||
+    !revealSkipButton ||
     !result ||
     !resultTitle ||
     !resultSubtitle ||
@@ -383,6 +432,13 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     prep,
     prepText,
     prepSkipButton,
+    reveal,
+    revealTitle,
+    revealSubtitle,
+    revealCanvas,
+    revealSummary,
+    revealPending,
+    revealSkipButton,
     tutorial,
     tutorialStep,
     tutorialTitle,
