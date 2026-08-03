@@ -64,6 +64,15 @@ const REQUIRED_REFS: readonly string[] = [
   // `[data-ref="volume"]`는 접두사 일치가 아니라 정확 일치라 서로를 가리지 않는다.
   'volume-slider',
   'volume-value',
+  // 도감 (PRD P1 #10). 본문은 열 때마다 교체되지만 **칸 자체**는 마크업에 있어야 한다.
+  'codex',
+  'codex-body',
+  // 세계지도 (FR-2). 목록·브리핑·상태줄·캔버스 네 칸이 전부 필요하다.
+  'world-map',
+  'world-list',
+  'world-brief',
+  'world-foot',
+  'world-canvas',
 ];
 
 /** `collectStageRefs`가 `data-action`으로 찾는 것 전부. */
@@ -79,6 +88,9 @@ const REQUIRED_ACTIONS: readonly string[] = [
   'start-daily',
   'start-seed',
   'audio-mute',
+  'open-codex',
+  'codex-back',
+  'world-back',
 ];
 
 const MARKUP = buildStageMarkup();
@@ -122,6 +134,8 @@ describe('오버레이는 전부 hidden으로 태어난다', () => {
     ['정산', 'data-ref="result"'],
     ['튜토리얼', 'data-ref="tutorial"'],
     ['준비 카운트다운', 'data-ref="prep"'],
+    ['도감', 'data-ref="codex"'],
+    ['세계지도', 'data-ref="world-map"'],
   ])('%s 오버레이 태그에 hidden이 있다', (_label, marker) => {
     const at = MARKUP.indexOf(marker);
     expect(at).toBeGreaterThanOrEqual(0);

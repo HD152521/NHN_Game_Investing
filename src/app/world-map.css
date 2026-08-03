@@ -1,0 +1,374 @@
+/**
+ * 세계지도 스타일 — 목업 `worldmap`의 상황실 레이아웃.
+ *
+ * 지역 선택(`region-select.css`)이 카드 3장을 나란히 놓는 브리핑 보드라면, 여기는
+ * **상황실**이다: 좌측 목록 · 중앙 지도 · 우측 브리핑의 3열 고정 구조로, 시선이
+ * 목록 → 지도 → 진입 버튼 순으로 흐르게 한다.
+ *
+ * 색은 전부 `--tf-*` 토큰만 참조한다 (`no-hardcoded-hex` 가드).
+ */
+
+.wmap {
+  position: absolute;
+  inset: 0;
+  z-index: 21;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 300px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'head  head   brief'
+    'list  canvas brief'
+    'foot  foot   foot';
+  gap: 16px 20px;
+  padding: 22px 24px;
+  overflow: auto;
+  background:
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--tf-bg-2) 30%, transparent) 0%,
+      transparent 40%
+    ),
+    color-mix(in srgb, var(--tf-bg-0) 98%, transparent);
+}
+
+.wmap[hidden] {
+  display: none;
+}
+
+/* 배경 격자 — 상황실 느낌의 근거. 지도와 같은 8px 리듬을 쓴다. */
+.wmap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      color-mix(in srgb, var(--tf-muted) 9%, transparent) 0 1px,
+      transparent 1px 48px
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--tf-muted) 9%, transparent) 0 1px,
+      transparent 1px 48px
+    );
+}
+
+.wmap > * {
+  position: relative;
+}
+
+/* ── 헤더 ─────────────────────────────────────────────── */
+
+.wmap__head {
+  grid-area: head;
+}
+
+.wmap__title {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: 0.04em;
+  color: var(--tf-text);
+}
+
+.wmap__eyebrow {
+  margin: 4px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--tf-muted);
+}
+
+/* ── 좌측 목록 ────────────────────────────────────────── */
+
+.wmap__list {
+  grid-area: list;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-content: start;
+}
+
+.wmap__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--tf-bg-1) 70%, transparent);
+  color: var(--tf-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.wmap__row:hover {
+  background: color-mix(in srgb, var(--tf-bg-2) 78%, transparent);
+}
+
+.wmap__row:focus-visible {
+  outline: 2px solid var(--tf-up-ally);
+  outline-offset: 1px;
+}
+
+.wmap__row--on {
+  border-color: color-mix(in srgb, var(--tf-up-ally) 60%, transparent);
+  border-left-color: var(--tf-up-ally);
+  background: color-mix(in srgb, var(--tf-up-ally) 10%, transparent);
+}
+
+.wmap__row-name {
+  grid-column: 2;
+  font-size: 14px;
+  color: var(--tf-text);
+}
+
+.wmap__row-count {
+  grid-column: 2;
+  grid-row: 2;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.wmap__row-status {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  font-size: 11px;
+}
+
+.wmap__row--active .wmap__row-status {
+  color: var(--tf-up-ally);
+}
+
+.wmap__row--unlocked .wmap__row-status {
+  color: var(--tf-gold);
+}
+
+/* 잠긴 지역은 목록에서 눌리기는 한다 — 왜 못 가는지 브리핑에서 읽혀야 하기 때문이다. */
+.wmap__row--locked .wmap__row-name,
+.wmap__row--locked .wmap__row-count,
+.wmap__row--locked .wmap__row-status {
+  color: color-mix(in srgb, var(--tf-muted) 62%, transparent);
+}
+
+/* 지역 색 견본 — 캔버스의 지역색과 같은 토큰을 쓴다. */
+.wmap__swatch {
+  grid-row: 1 / span 2;
+  width: 11px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--tf-muted);
+}
+
+.wmap__swatch--korea {
+  background: var(--tf-up-ally);
+}
+.wmap__swatch--japan,
+.wmap__swatch--africa {
+  background: var(--tf-enemy-down);
+}
+.wmap__swatch--china {
+  background: var(--tf-enemy-deep);
+}
+.wmap__swatch--india,
+.wmap__swatch--oceania {
+  background: var(--tf-up-deep);
+}
+.wmap__swatch--europe {
+  background: var(--tf-aum);
+}
+.wmap__swatch--namerica {
+  background: var(--tf-direction);
+}
+.wmap__swatch--samerica {
+  background: var(--tf-gold);
+}
+.wmap__swatch--russia {
+  background: var(--tf-muted);
+}
+
+/* ── 중앙 지도 ────────────────────────────────────────── */
+
+.wmap__canvas-wrap {
+  grid-area: canvas;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.wmap__canvas {
+  width: 100%;
+  height: auto;
+  /* 격자를 뭉개지 않는다 — 이 화면의 픽셀 느낌은 정수 스케일링에 달려 있다. */
+  image-rendering: pixelated;
+}
+
+.wmap__proj {
+  margin: 0;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--tf-muted) 70%, transparent);
+}
+
+/* ── 우측 브리핑 ──────────────────────────────────────── */
+
+.wmap__brief {
+  grid-area: brief;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 40%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tf-bg-1) 92%, transparent);
+}
+
+.wmap__brief-eyebrow {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--tf-muted) 26%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--tf-muted);
+}
+
+.wmap__brief-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 22px;
+  color: var(--tf-text);
+}
+
+.wmap__brief-name .wmap__swatch {
+  width: 15px;
+  height: 15px;
+}
+
+.wmap__brief-flavor {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--tf-muted);
+}
+
+.wmap__brief-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 6px 0 0;
+}
+
+.wmap__brief-stats > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.wmap__brief-stats dt {
+  color: var(--tf-muted);
+}
+
+.wmap__brief-stats dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--tf-text);
+}
+
+.wmap__enter {
+  margin-top: 8px;
+  padding: 13px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--tf-up-ally);
+  color: var(--tf-bg-0);
+  font: inherit;
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+}
+
+.wmap__enter:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--tf-up-ally) 82%, var(--tf-text));
+}
+
+.wmap__enter:disabled {
+  background: color-mix(in srgb, var(--tf-muted) 30%, transparent);
+  color: color-mix(in srgb, var(--tf-muted) 85%, transparent);
+  cursor: not-allowed;
+}
+
+.wmap__enter:focus-visible {
+  outline: 2px solid var(--tf-text);
+  outline-offset: 2px;
+}
+
+/* ── 하단 ─────────────────────────────────────────────── */
+
+.wmap__foot {
+  grid-area: foot;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--tf-muted) 26%, transparent);
+}
+
+.wmap__back {
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 44%, transparent);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wmap__back:hover {
+  color: var(--tf-text);
+  border-color: var(--tf-text);
+}
+
+.wmap__back:focus-visible {
+  outline: 2px solid var(--tf-up-ally);
+  outline-offset: 2px;
+}
+
+.wmap__foot-status {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--tf-muted);
+}
+
+/* 좁은 화면 — 3열이 무너지면 지도가 먼저, 브리핑이 그 아래로 간다. */
+@media (max-width: 900px) {
+  .wmap {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'head'
+      'canvas'
+      'brief'
+      'list'
+      'foot';
+  }
+}

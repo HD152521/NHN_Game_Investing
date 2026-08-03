@@ -22,6 +22,7 @@ import {
 } from './start-gate';
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
 import { CODEX_BACK_ACTION, CODEX_OPEN_ACTION, buildCodexMarkup } from './codex';
+import { WORLD_BACK_ACTION, WORLD_CANVAS_REF, buildWorldMapMarkup } from './world-map';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
 export const CHART_WIDTH = 1024;
@@ -175,6 +176,18 @@ export interface StageRefs {
   readonly codexOpenButton: HTMLButtonElement;
   /** 도감 → 타이틀로 돌아가는 버튼. */
   readonly codexBackButton: HTMLButtonElement;
+  /** 세계지도 오버레이 (FR-2). 타이틀과 전선 선택 **사이**에 들어간다. */
+  readonly worldMap: HTMLElement;
+  /**
+   * 지역 목록·브리핑·상태줄 — 셋 다 진행도에 따라 내용이 바뀌므로 **열 때 다시 그린다.**
+   * 그래서 안쪽 버튼(지역 행 · [진입])은 참조로 담지 않고 위임으로 받는다(`codexBody`와 같은 이유).
+   */
+  readonly worldList: HTMLElement;
+  readonly worldBrief: HTMLElement;
+  readonly worldFoot: HTMLElement;
+  readonly worldCanvas: HTMLCanvasElement;
+  /** 세계지도 → 타이틀로 돌아가는 버튼. */
+  readonly worldBackButton: HTMLButtonElement;
   readonly panelHost: HTMLElement;
   /**
    * 사운드 설정 3종 (PRD §3.1 ⑬).
@@ -392,6 +405,7 @@ export function buildStageMarkup(): string {
       </div>
 
       ${buildStartGateMarkup()}
+      ${buildWorldMapMarkup()}
       ${buildRegionSelectMarkup()}
       ${buildCodexMarkup()}
     </div>
@@ -470,6 +484,14 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const regionBackButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${REGION_BACK_ACTION}"]`,
   );
+  const worldMap = pick('world-map');
+  const worldList = pick('world-list');
+  const worldBrief = pick('world-brief');
+  const worldFoot = pick('world-foot');
+  const worldCanvas = pick<HTMLCanvasElement>(WORLD_CANVAS_REF);
+  const worldBackButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${WORLD_BACK_ACTION}"]`,
+  );
   const codex = pick('codex');
   const codexBody = pick('codex-body');
   const codexOpenButton = root.querySelector<HTMLButtonElement>(
@@ -531,7 +553,13 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !codex ||
     !codexBody ||
     !codexOpenButton ||
-    !codexBackButton
+    !codexBackButton ||
+    !worldMap ||
+    !worldList ||
+    !worldBrief ||
+    !worldFoot ||
+    !worldCanvas ||
+    !worldBackButton
   ) {
     return null;
   }
@@ -595,6 +623,12 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     codexBody,
     codexOpenButton,
     codexBackButton,
+    worldMap,
+    worldList,
+    worldBrief,
+    worldFoot,
+    worldCanvas,
+    worldBackButton,
     panelHost,
     audioMuteButton,
     audioSlider,

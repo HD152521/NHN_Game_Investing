@@ -37,7 +37,14 @@ export const REGION_BACK_ACTION = 'region-back';
 /** 카드 배경 씬이 꽂히는 자리 표시자 속성. */
 export const REGION_ART_ATTR = 'data-region-art';
 
-export const REGION_SELECT_EYEBROW = 'STAGE SELECT · 3 REGIONS';
+/**
+ * 윗줄 — **어느 챕터 안에 있는지**를 말한다 (목업 `countrymap`의 "CHAPTER 1 — 국내 시장").
+ *
+ * 세계지도(`world-map.ts`)가 앞 단계로 들어오면서 이 화면의 성격이 바뀌었다:
+ * 예전에는 "전 게임의 지역 3곳"이었지만 지금은 **한 국가 안의 전선 3곳**이다.
+ * 윗줄이 그 층위를 말하지 않으면 세계지도에서 들어온 사람이 같은 층으로 착각한다.
+ */
+export const REGION_SELECT_EYEBROW = 'CHAPTER 1 · 국내 시장 · 3 FRONTS';
 export const REGION_SELECT_TITLE = '어느 전선부터 잡을 것인가';
 /**
  * 화면 한 줄 설명. "목표 수익률"이라는 단어를 여기서 한 번 먼저 심어 두면,
@@ -45,7 +52,8 @@ export const REGION_SELECT_TITLE = '어느 전선부터 잡을 것인가';
  */
 export const REGION_SELECT_LEDE =
   '목표 수익률은 그 지역의 필요 지출을 감당하는 최소선이다. 낮은 곳부터 잡는 편이 안전하다.';
-export const REGION_BACK_LABEL = '← 타이틀로';
+/** 뒤로 가면 **한 층 위(세계지도)**다. 타이틀까지 한 번에 보내면 국가를 다시 고를 수 없다. */
+export const REGION_BACK_LABEL = '← 세계지도';
 
 /** 화면에 나오는 순서. `STAGES`는 레코드라 순서를 보장하지 않으므로 여기서 고정한다. */
 export const REGION_ORDER: readonly StageId[] = ['R1', 'R2', 'R3'];

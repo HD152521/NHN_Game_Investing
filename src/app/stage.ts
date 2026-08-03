@@ -16,6 +16,7 @@ import './shell.css';
 import './start-gate.css';
 import './region-select.css';
 import './codex.css';
+import './world-map.css';
 import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
 import '../ui/skill-tooltip.css';
@@ -82,6 +83,18 @@ import {
   mintCard,
 } from './codex';
 import type { CodexFilter } from './codex';
+import {
+  WORLD_ENTER_ACTION,
+  WORLD_REGIONS,
+  WORLD_SELECT_ACTION,
+  buildBriefingMarkup,
+  buildFootMarkup,
+  buildSidebarMarkup,
+  isPlayable,
+  paintWorldMap,
+  worldRegionFor,
+} from './world-map';
+import type { WorldRegionId } from './world-map';
 import {
   COMBAT_HELD_NOTICE,
   TUTORIAL_STEPS,
@@ -1192,8 +1205,46 @@ export function mountStage(root: HTMLElement): () => void {
   function showGate(): void {
     refs!.regionSelect.hidden = true;
     refs!.codex.hidden = true;
+    refs!.worldMap.hidden = true;
     refs!.gate.hidden = false;
     refs!.startButton.focus();
+  }
+
+  // ── 세계지도 (FR-2) ────────────────────────────────────────
+  /**
+   * 지금 선택된 지역. **DOM 밖에 둔다** — 목록과 브리핑이 함께 다시 그려지므로
+   * 선택 상태를 class 에서 읽으면 갱신하는 순간 잃는다(`codexFilter`와 같은 이유).
+   */
+  let worldSelection: WorldRegionId = WORLD_REGIONS[0]!.id;
+
+  /**
+   * 세계지도의 세 칸(목록 · 브리핑 · 상태줄)과 캔버스를 한 번에 되맞춘다.
+   *
+   * 네 곳이 전부 같은 두 입력(`progress`, `worldSelection`)에서만 파생되므로 갱신을
+   * 쪼개지 않는다 — 쪼개면 "목록은 새 진행도, 브리핑은 옛 진행도"가 가능해진다.
+   */
+  function renderWorldMap(): void {
+    refs!.worldList.innerHTML = buildSidebarMarkup(progress);
+    // 선택된 행을 표시한다. 마크업 생성 쪽은 선택을 모르므로 여기서 입힌다.
+    for (const row of refs!.worldList.querySelectorAll<HTMLElement>('[data-world]')) {
+      row.classList.toggle('wmap__row--on', row.dataset['world'] === worldSelection);
+    }
+
+    const region = worldRegionFor(worldSelection) ?? WORLD_REGIONS[0]!;
+    refs!.worldBrief.innerHTML = buildBriefingMarkup(region, progress);
+    refs!.worldFoot.textContent = buildFootMarkup(progress);
+    // 캔버스가 없는 환경(헤드리스)에서는 0을 돌려주고 조용히 넘어간다.
+    paintWorldMap(refs!.worldCanvas, { selected: worldSelection });
+  }
+
+  function showWorldMap(): void {
+    progress = loadProgress();
+    renderWorldMap();
+    refs!.gate.hidden = true;
+    refs!.regionSelect.hidden = true;
+    refs!.codex.hidden = true;
+    refs!.worldMap.hidden = false;
+    refs!.worldBackButton.focus();
   }
 
   // ── 도감 (PRD P1 #10) ──────────────────────────────────────
@@ -1227,6 +1278,8 @@ export function mountStage(root: HTMLElement): () => void {
 
   function showRegionSelect(): void {
     refs!.gate.hidden = true;
+    refs!.worldMap.hidden = true;
+    refs!.codex.hidden = true;
     refs!.regionSelect.hidden = false;
     // 마크업은 앱 시작 시 1회만 지어지므로, 그 사이 클리어로 열린 지역을 여기서 되맞춘다.
     syncRegionLocks(refs!.regionSelect, progress);
@@ -1280,7 +1333,9 @@ export function mountStage(root: HTMLElement): () => void {
     // 자유 플레이 — 시드는 지금 값 그대로, 챌린지 규칙을 걸지 않는다.
     seedPicked = false;
     challengeRun = false;
-    showRegionSelect();
+    // ★ 자유 플레이만 세계지도를 거친다 ★ 일일 챌린지·시드 입력은 이미 "어떤 판을
+    // 할지"를 정한 진입이라, 국가를 다시 고르게 하면 한 단계가 늘기만 한다.
+    showWorldMap();
   });
 
   /**
@@ -1323,7 +1378,36 @@ export function mountStage(root: HTMLElement): () => void {
       startWithSeedInput();
     }
   });
-  refs.regionBackButton.addEventListener('click', showGate);
+  // 전선 선택에서 뒤로 = 한 층 위(세계지도)로. 목업의 "← 세계지도"가 이 동선이다.
+  refs.regionBackButton.addEventListener('click', showWorldMap);
+  refs.worldBackButton.addEventListener('click', showGate);
+
+  /**
+   * 지역 목록·브리핑의 클릭은 **위임으로 받는다** — 둘 다 `renderWorldMap()`이 매번
+   * 새로 만들기 때문에 버튼별 리스너는 첫 렌더에서만 살아 있다(도감 필터와 같은 함정).
+   */
+  refs.worldList.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const row = target.closest<HTMLElement>(`[data-action="${WORLD_SELECT_ACTION}"]`);
+    const region = worldRegionFor(row?.dataset['world']);
+    if (region === null) return;
+    worldSelection = region.id;
+    renderWorldMap();
+  });
+
+  refs.worldBrief.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest<HTMLElement>(`[data-action="${WORLD_ENTER_ACTION}"]`);
+    const region = worldRegionFor(button?.dataset['world']);
+    // 준비 중 지역은 버튼이 `disabled`라 여기 오지 않지만, 한 번 더 막는다 —
+    // 스테이지가 없는 지역으로 들어가면 빈 화면이 뜬다.
+    if (region === null || !isPlayable(region)) return;
+    audio.resume();
+    showRegionSelect();
+  });
+
   refs.codexOpenButton.addEventListener('click', showCodex);
   refs.codexBackButton.addEventListener('click', showGate);
 
@@ -1599,11 +1683,19 @@ export function mountStage(root: HTMLElement): () => void {
    * Space 가 늘 삼켜졌다 — 화면은 계속 "Space로 바로 시작"이라고 말하면서.
    */
   function onKeyDown(event: KeyboardEvent): void {
-    // Esc — 지역 선택·도감에서 타이틀로. 다이얼로그의 관습적인 탈출 키다.
-    if (event.code === 'Escape' && (!refs!.regionSelect.hidden || !refs!.codex.hidden)) {
-      event.preventDefault();
-      showGate();
-      return;
+    // Esc — 한 층씩 뒤로. 전선 선택은 세계지도로, 세계지도·도감은 타이틀로 간다.
+    // (한 번에 타이틀로 보내면 지역을 다시 고르러 두 단계를 되짚어야 한다.)
+    if (event.code === 'Escape') {
+      if (!refs!.regionSelect.hidden) {
+        event.preventDefault();
+        showWorldMap();
+        return;
+      }
+      if (!refs!.worldMap.hidden || !refs!.codex.hidden) {
+        event.preventDefault();
+        showGate();
+        return;
+      }
     }
     if (event.code !== 'Space') return;
 
