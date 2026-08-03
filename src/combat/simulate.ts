@@ -134,6 +134,9 @@ function spawnDue(
     spawned.push({
       id: nextEnemyId,
       lane: spec.lane,
+      // ⚠️ `kind`도 `isBoss`와 같은 부류다 — 빠뜨리면 렌더러가 id 폴백으로 떨어져
+      // **스탯과 그림이 어긋난다**(속공 스탯을 가진 적이 탱커 그림으로 나온다).
+      kind: spec.kind,
       x: 1,
       hp: spec.hp,
       maxHp: spec.hp,

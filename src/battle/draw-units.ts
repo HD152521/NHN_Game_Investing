@@ -11,11 +11,11 @@
  *   근거와 실측은 `entity-sprites.ts` 머리말에 있다.
  *
  * ★ 적의 종류 선택: `Enemy`에는 종류 필드가 없다(시뮬레이션은 레인과 스탯만으로 돈다).
- *   렌더러가 id로 결정적으로 고르므로(`enemyKindForId`) 같은 적은 매 프레임 같은 모습이고,
+ *   스폰이 개체에 실어 준 종류(`enemyKindOf`)를 그대로 쓰므로 같은 적은 매 프레임 같은 모습이고,
  *   한 화면에 지상 3종 · 공중 2종이 섞여 보인다.
  */
 
-import type { EnemyKind } from '../combat/identity.js';
+import type { EnemyKind } from '../combat/types.js';
 import { bossPhaseOf } from '../combat/boss.js';
 import type { BossPhase } from '../combat/boss.js';
 import type { Combatant, Enemy, Unit, UnitKind } from '../combat/types.js';
@@ -32,7 +32,7 @@ import {
 import type { EntityAnimId, RenderableSpriteKey, SpriteRaster, UnitAnimId } from '../sprites/render/index.js';
 import { drawRasterStanding, drawSpriteStanding, drawUnitSprite, syncSpriteColorMode } from './draw-sprite.js';
 import { drawHpBar } from './draw-hp-bar.js';
-import { ALLY_SPRITES, BOSS_SPRITE, ENEMY_SPRITES, enemyKindForId } from './entity-sprites.js';
+import { ALLY_SPRITES, BOSS_SPRITE, ENEMY_SPRITES, enemyKindOf } from './entity-sprites.js';
 import type { BattleLayout } from './layout.js';
 import { laneY, progressToX } from './layout.js';
 import type { BattleCtx } from './surface.js';
@@ -265,7 +265,8 @@ export function drawEnemies(ctx: BattleCtx, palette: Palette, layout: BattleLayo
     const cx = progressToX(enemyUnit.x, layout);
     const cy = laneY(enemyUnit.lane, layout);
 
-    const kind = enemyKindForId(enemyUnit.lane, enemyUnit.id);
+    // 개체가 실어 온 종류를 쓴다 — 스탯(속공/방패/탱커…)과 그림이 같은 출처여야 한다.
+    const kind = enemyKindOf(enemyUnit);
     const key = ENEMY_SPRITES[kind].key;
     const frame = motionFrame(enemyAttackFrameRaster(enemyUnit, kind), key, enemyUnit.x);
     // 정지 스프라이트 원점을 그대로 쓴다 — 프레임이 더 넓어도 몸이 좌우로 튀지 않는다.

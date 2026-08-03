@@ -18,7 +18,7 @@
 import { silhouetteShapeFor } from '../design';
 import type { Faction, SilhouetteShape } from '../design';
 import { WAVE_COUNT } from './constants';
-import type { Lane, TowerKind, UnitKind } from './types';
+import type { EnemyKind, Lane, TowerKind, UnitKind } from './types';
 
 /** 시트의 자산 코드(`A-01`, `E-04`, `T-02`, `B-03`). 아트 발주서와 코드를 잇는 열쇠다. */
 export type EntityCode = string;
@@ -53,16 +53,11 @@ export interface BossIdentity extends EntityIdentity {
 }
 
 /**
- * 악당 종류. `Enemy`(types.ts)는 아직 종류 필드를 싣지 않는다 — 시뮬레이션은 레인과
- * 스탯만으로 동작하고, 종류는 **표현 계층의 구분**이기 때문이다. 시뮬 규칙이 종류별로
- * 갈라지는 날 `Enemy`에 필드를 추가하면 된다.
+ * 악당 종류. **정의는 계약 파일(`types.ts`)이 소유한다** — 종류가 스폰 시점에 개체 스탯을
+ * 정하게 되면서(속공/방패/탱커/정찰/광역이 실제로 다른 적이 됐다) 시뮬레이션과 렌더러가
+ * 함께 보는 사실이 됐기 때문이다. 여기서는 정체성 데이터와 같이 쓰라고 재수출만 한다.
  */
-export type EnemyKind =
-  | 'gapScout'
-  | 'marginEnforcer'
-  | 'liquidationDigger'
-  | 'rumorKite'
-  | 'panicSiren';
+export type { EnemyKind } from './types';
 
 export const ENEMY_KINDS: readonly EnemyKind[] = [
   'gapScout',

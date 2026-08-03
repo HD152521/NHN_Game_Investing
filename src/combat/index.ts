@@ -13,6 +13,7 @@ export type {
   DeathEvent,
   DeathKind,
   Enemy,
+  EnemyKind,
   Lane,
   SkillCurrency,
   SkillId,
@@ -26,14 +27,8 @@ export type {
 
 export * from './constants';
 
-export type {
-  BossIdentity,
-  EnemyIdentity,
-  EnemyKind,
-  EntityCode,
-  EntityIdentity,
-  TowerIdentity,
-} from './identity';
+// `EnemyKind`는 계약 파일(`types.ts`)이 소유한다 — 위 블록에서 이미 내보냈다.
+export type { BossIdentity, EnemyIdentity, EntityCode, EntityIdentity, TowerIdentity } from './identity';
 export {
   ALLY_IDENTITY,
   BOSS_IDENTITY,

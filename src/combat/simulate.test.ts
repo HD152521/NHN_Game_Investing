@@ -4,6 +4,7 @@ import {
   AUM_DROP_PER_WAVE,
   BASE_HP,
   BASE_INCOME_PER_WAVE,
+  ENEMY_KIND_STATS,
   TOWER_SLOTS,
   WAVE_COUNT,
   WAVE_DURATION_MS,
@@ -127,7 +128,10 @@ describe('step — 웨이브 진행', () => {
 
 describe('step — 패배 조건 (FR-6.9)', () => {
   test('아무 방어도 없이 적이 본진에 도달하면 본진 HP가 0이 되어 phase가 defeated로 전환된다', () => {
-    const params = fixtureParams({ maxBaseHp: 5 }); // BASE_DAMAGE_PER_LEAK(6) 한 방으로 확정 패배
+    // 웨이브 1은 속공(E-01)이 선두다(`WAVE_GROUND_MIX`). 누출 피해는 종류가 정하므로
+    // **가장 가벼운 누출**(속공)로 한 방에 죽는 본진 HP를 쓴다 — 예전의 6(전 종 공통값)을
+    // 그대로 두면 속공이 먼저 새는 지금은 한 방으로 안 죽어 테스트가 의미를 잃는다.
+    const params = fixtureParams({ maxBaseHp: ENEMY_KIND_STATS.gapScout.leakDamage });
     let state = createCombat(params);
 
     for (let i = 0; i < 30 && state.phase === 'running'; i += 1) {
@@ -206,7 +210,7 @@ describe('step — 결정론 및 큰 dtMs 안전성', () => {
   });
 
   test('phase가 running이 아니면 더 이상 상태가 바뀌지 않는다', () => {
-    const params = fixtureParams({ maxBaseHp: 5 });
+    const params = fixtureParams({ maxBaseHp: ENEMY_KIND_STATS.gapScout.leakDamage });
     let state = createCombat(params);
     for (let i = 0; i < 30 && state.phase === 'running'; i += 1) {
       state = step(state, 1000, params).state;

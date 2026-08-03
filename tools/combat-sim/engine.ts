@@ -90,6 +90,16 @@ export interface CombatSimResult {
   readonly unitsSummoned: number;
   /** 보스를 잡았는가. 마지막까지 살아 있었으면 `false`. */
   readonly bossKilled: boolean;
+  /**
+   * 웨이브별 본진 실점(인덱스 0 = 웨이브 1).
+   *
+   * ★ 왜 필요한가 ★ 적 5종이 스탯을 갖게 되면서 웨이브마다 성격이 다르다
+   * (`combat/constants.ts WAVE_GROUND_MIX`: 앞은 얇고 빠른 속공, 뒤는 두꺼운 탱커).
+   * "타워 종류 선택이 결과를 가르는가"는 총 클리어 여부만 봐서는 알 수 없다 —
+   * 어느 **구간**에서 덜 새는지를 봐야 광역이 속공 웨이브에서, 단일이 탱커 웨이브에서
+   * 값을 한다는 설계 의도를 확인할 수 있다. `tower-axis.ts`가 이 배열을 구간별로 접는다.
+   */
+  readonly baseDamageByWave: readonly number[];
 }
 
 /** 스테이지 설정 → 전투 파라미터. 실제 셸(`app/session.ts`)과 같은 방식으로 만든다. */
@@ -169,6 +179,7 @@ export function runCombat(stage: StageConfig, loadout: Loadout, budget: number):
   let firstBreachWave: number | null = null;
   let maxWave = 0;
   let bossSeen = false;
+  const baseDamageByWave: number[] = Array.from({ length: WAVE_COUNT }, () => 0);
 
   for (let elapsed = 0; elapsed < MAX_MS && state.phase === 'running'; elapsed += TICK_MS) {
     if (loadout.unit !== null && state.prepRemainingMs <= 0 && state.units.length < loadout.unitCap) {
@@ -187,8 +198,15 @@ export function runCombat(stage: StageConfig, loadout: Loadout, budget: number):
     const result = step(state, TICK_MS, params);
     state = result.state;
 
-    if (state.baseHp < before && firstBreachWave === null) {
-      firstBreachWave = state.wave;
+    if (state.baseHp < before) {
+      if (firstBreachWave === null) {
+        firstBreachWave = state.wave;
+      }
+      // 웨이브 0(준비 구간)에서는 스폰이 없으므로 실점도 없다 — 인덱스 방어만 해 둔다.
+      const index = state.wave - 1;
+      if (index >= 0 && index < baseDamageByWave.length) {
+        baseDamageByWave[index] = (baseDamageByWave[index] ?? 0) + (before - state.baseHp);
+      }
     }
     if (state.wave > maxWave) {
       maxWave = state.wave;
@@ -209,6 +227,7 @@ export function runCombat(stage: StageConfig, loadout: Loadout, budget: number):
     unitsSummoned,
     // 보스를 한 번이라도 봤고 끝에 없으면 잡은 것이다. 아예 못 본 경우(조기 패배)는 false.
     bossKilled: bossSeen && (state.boss ?? null) === null,
+    baseDamageByWave,
   };
 }
 

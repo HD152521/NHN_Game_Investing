@@ -23,8 +23,8 @@
  */
 
 import { enemyKindsForLane } from '../combat/identity.js';
-import type { EnemyKind, EntityCode } from '../combat/identity.js';
-import type { Lane, TowerKind, UnitKind } from '../combat/types.js';
+import type { EntityCode } from '../combat/identity.js';
+import type { Enemy, EnemyKind, Lane, TowerKind, UnitKind } from '../combat/types.js';
 import type { RenderableSpriteKey } from '../sprites/render/index';
 
 export interface EntitySprite {
@@ -101,13 +101,37 @@ const AIR_KINDS = enemyKindsForLane('air');
 const FALLBACK_KIND: EnemyKind = 'gapScout';
 
 /**
- * `Enemy`에는 종류 필드가 없다(시뮬레이션은 레인과 스탯만으로 돈다 — `identity.ts` 주석).
- * 그래서 렌더러가 id로 결정적으로 스프라이트를 고른다: 같은 적은 매 프레임 같은 모습이고,
- * 한 화면에 지상 3종 · 공중 2종이 섞여 보인다.
+ * **폴백**: 종류 필드가 없는 적의 스프라이트를 id로 결정적으로 고른다.
+ *
+ * 예전에는 이것이 **유일한** 경로였다 — `Enemy`에 종류가 없어 시뮬레이션은 레인과 스탯만으로
+ * 돌았고, 종류는 순수한 표현 계층의 구분이었다. 지금은 스폰이 종류를 개체에 실으므로
+ * (`combat/waves.ts`) 정상 경로는 `enemyKindOf`다. 이 함수는 시뮬레이션 밖에서 `Enemy`
+ * 리터럴을 만드는 곳(`combat-fixtures.ts`)을 위해 남는다.
+ *
+ * ⚠️ 게임 개체에 이 함수를 직접 쓰지 마라 — **스탯과 그림이 어긋난다.** 개체의 실제 종류가
+ * 속공(E-01)인데 id 나머지가 탱커(E-03)를 가리키면, 화면은 굴착기인데 얇고 빠른 적이 된다.
  */
 export function enemyKindForId(lane: Lane, id: number): EnemyKind {
   const kinds = lane === 'air' ? AIR_KINDS : GROUND_KINDS;
   if (kinds.length === 0) return FALLBACK_KIND;
   const index = ((id % kinds.length) + kinds.length) % kinds.length;
   return kinds[index] ?? FALLBACK_KIND;
+}
+
+/**
+ * 적 개체 → 종류. **렌더러가 써야 하는 유일한 진입점이다.**
+ *
+ * 개체가 종류를 들고 있으면 그것을 쓰고(= 스탯과 그림이 같은 출처에서 나온다), 없으면
+ * id 폴백으로 떨어진다. 레인이 어긋난 개체(예: 지상 개체에 공중 종류가 실림)는 폴백으로
+ * 되돌린다 — 공중 그림이 지면을 걸어가는 것보다는 종류가 한 번 틀리는 편이 낫다.
+ */
+export function enemyKindOf(enemy: Enemy): EnemyKind {
+  const kind = enemy.kind;
+  if (kind !== undefined) {
+    const laneKinds = enemy.lane === 'air' ? AIR_KINDS : GROUND_KINDS;
+    if (laneKinds.includes(kind)) {
+      return kind;
+    }
+  }
+  return enemyKindForId(enemy.lane, enemy.id);
 }

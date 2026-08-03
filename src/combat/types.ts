@@ -12,6 +12,26 @@
 /** 지상 / 공중 2레인 (FR-6.2). */
 export type Lane = 'ground' | 'air';
 
+/**
+ * 악당 5종 (아트 프로덕션 시트 §05).
+ *
+ * ★ 왜 이 타입이 `identity.ts`가 아니라 계약 파일에 있는가 ★
+ * 예전에는 종류가 **표현 계층의 구분**이었다 — 시뮬레이션은 레인과 스탯만으로 돌고 렌더러가
+ * 개체 id에서 결정적으로 스프라이트를 골랐다. 그 결과 `identity.ts`가 정의한 역할
+ * (속공/방패/탱커/정찰/광역)이 **플레이에 한 번도 반영되지 않았다**: 같은 레인의 적은 속도도
+ * 피해량도 HP도 전부 같아서, 타워 종류를 무엇으로 고르든 결과가 같았다.
+ *
+ * 이제 종류가 스폰 시점에 **개체 스탯을 결정**하므로(`waves.ts` `spawnPlanFor`) 종류는
+ * 시뮬레이션과 렌더러가 **함께 보는 사실**이 됐다. 그래서 계약 파일이 소유한다.
+ * 정체성 데이터(`ENEMY_IDENTITY`)는 여전히 `identity.ts`이며 이 타입을 재수출한다.
+ */
+export type EnemyKind =
+  | 'gapScout'
+  | 'marginEnforcer'
+  | 'liquidationDigger'
+  | 'rumorKite'
+  | 'panicSiren';
+
 /** 타워 3종 (FR-6.4). */
 export type TowerKind = 'basic' | 'antiair' | 'splash';
 
@@ -76,6 +96,23 @@ export interface Combatant {
 export interface Enemy extends Combatant {
   readonly id: number;
   readonly lane: Lane;
+  /**
+   * 악당 5종 중 무엇인가.
+   *
+   * ★ 이 필드는 **정체 표시**이지 스탯 조회 키가 아니다 ★ `isBoss`와 같은 성격이다.
+   * 스탯(hp/speed/damage/range/leakDamage)은 이미 위 `Combatant`에 개체 값으로 실려 있고,
+   * 시뮬레이션은 그 필드만 읽는다 — **런타임에 `kind`로 상수 테이블을 조회하는 코드를 쓰지
+   * 마라.** 종류가 스탯을 정하는 지점은 스폰 시점(`waves.ts spawnPlanFor`) 한 곳뿐이며,
+   * 그래야 부서 업그레이드(FR-11)처럼 "같은 종류인데 스탯이 다른 개체"가 표현된다.
+   *
+   * 이 필드가 실제로 하는 일은 렌더러가 스프라이트·공격 애니메이션을 고르는 것이다
+   * (`src/battle/entity-sprites.ts` `enemyKindOf`).
+   *
+   * **선택 필드인 이유**는 `CombatState.skillCooldowns`와 같다: 시뮬레이션 밖에서 `Enemy`
+   * 리터럴을 만드는 곳이 있다(`src/battle/combat-fixtures.ts`). 생략되면 렌더러가 id 기반
+   * 폴백(`enemyKindForId`)으로 떨어진다.
+   */
+  readonly kind?: EnemyKind | undefined;
   /** 1(적 본진)에서 0(아군 사옥) 쪽으로 감소한다. */
   readonly x: number;
   /**

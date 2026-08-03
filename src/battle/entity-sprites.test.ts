@@ -37,6 +37,7 @@ import { parseHex, resolvePalette } from '../design/index.js';
 import { spriteGrid } from '../sprites/index.js';
 import type { SpriteGrid } from '../sprites/index.js';
 import { RENDERABLE_SPRITE_KEYS } from '../sprites/render/index.js';
+import type { Enemy } from '../combat/types.js';
 import type { RenderableSpriteKey } from '../sprites/render/index.js';
 import {
   ALLY_SPRITES,
@@ -47,6 +48,7 @@ import {
   HQ_SPRITE,
   TOWER_SPRITES,
   enemyKindForId,
+  enemyKindOf,
 } from './entity-sprites.js';
 
 /** 아군 진영 잉크 문자(UP_ALLY / UP_DEEP). */
@@ -269,5 +271,48 @@ describe('enemyKindForId — 종류 필드 없는 적을 결정적으로 고른�
     for (let id = 0; id < 8; id += 1) {
       expect(ENEMY_SPRITES[enemyKindForId('air', id)].key).toMatch(/^tf-enemy-air-/);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
+/**
+ * `enemyKindOf`는 렌더러의 정상 경로다 — 스폰이 개체에 실어 준 종류를 그대로 쓴다.
+ * 이것이 지켜져야 **스탯과 그림이 같은 출처**에서 나온다(속공 스탯인데 탱커 그림이 나오는
+ * 사고를 막는 지점이 여기다).
+ */
+describe('enemyKindOf — 개체가 실어 온 종류가 그림을 정한다', () => {
+  /** 최소 `Enemy` 리터럴. 스탯은 이 테스트와 무관하므로 0으로 채운다. */
+  function enemyWith(overrides: Partial<Enemy> & Pick<Enemy, 'id' | 'lane'>): Enemy {
+    return {
+      x: 1,
+      hp: 1,
+      maxHp: 1,
+      speed: 0,
+      damage: 0,
+      range: 0,
+      attackCooldownMs: 0,
+      cooldownMs: 0,
+      ...overrides,
+    };
+  }
+
+  test('종류가 실려 있으면 id와 무관하게 그 종류를 쓴다', () => {
+    // id 나머지 폴백이라면 id 0·1·2가 서로 다른 종류를 내야 하지만, 개체가 종류를 들고
+    // 있으므로 셋 다 같은 종류가 나와야 한다.
+    for (const id of [0, 1, 2]) {
+      expect(enemyKindOf(enemyWith({ id, lane: 'ground', kind: 'liquidationDigger' }))).toBe(
+        'liquidationDigger',
+      );
+    }
+  });
+
+  test('종류가 없으면 id 폴백으로 떨어진다 — 시뮬 밖에서 만든 리터럴(combat-fixtures)이 이 경로다', () => {
+    expect(enemyKindOf(enemyWith({ id: 3, lane: 'ground' }))).toBe(enemyKindForId('ground', 3));
+    expect(enemyKindOf(enemyWith({ id: 3, lane: 'air' }))).toBe(enemyKindForId('air', 3));
+  });
+
+  test('레인과 어긋난 종류는 폴백으로 되돌린다 — 공중 그림이 지면을 걷지 않는다', () => {
+    const key = ENEMY_SPRITES[enemyKindOf(enemyWith({ id: 1, lane: 'ground', kind: 'rumorKite' }))].key;
+    expect(key).not.toMatch(/^tf-enemy-air-/);
   });
 });
