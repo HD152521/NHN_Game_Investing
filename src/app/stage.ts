@@ -43,7 +43,6 @@ import {
   TOWER_IDENTITY,
   TOWER_UPGRADE_COST,
   UNIT_COST,
-  UNIT_HOLD_LINE,
 } from '../combat';
 import type { CombatState, SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
@@ -156,8 +155,6 @@ const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
  * 화면 크기에 따라 카드가 달라지면 같은 성적이 사람마다 다른 그림으로 나간다.
  * 가로 세로 비를 소셜 공유에 흔한 1.91:1 근처로 잡았다.
  */
-/** 전진 한계선 표식의 높이(px). 유닛보다 조금 높게 그어 가려지지 않게 한다. */
-const HOLD_LINE_HEIGHT = 74;
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
@@ -561,28 +558,6 @@ export function mountStage(root: HTMLElement): () => void {
     }
   }
 
-  /** 전진 한계선을 점선으로 긋는다. 좌표는 전장 레이아웃에서 파생한다. */
-  function drawHoldLine(ctx: CanvasRenderingContext2D): void {
-    const x = progressToX(UNIT_HOLD_LINE, battleLayout);
-    ctx.save();
-    ctx.strokeStyle = theme.palette.MUTED;
-    ctx.globalAlpha = 0.45;
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
-    ctx.beginPath();
-    ctx.moveTo(x, battleLayout.groundY - HOLD_LINE_HEIGHT);
-    ctx.lineTo(x, battleLayout.groundY + 6);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = theme.palette.MUTED;
-    ctx.font = '10px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('전진 한계', x, battleLayout.groundY - HOLD_LINE_HEIGHT - 2);
-    ctx.restore();
-  }
-
   function syncRosterButtons(current: StageSession | null): void {
     const gold = current?.walletSnapshot.gold ?? 0;
 
@@ -790,17 +765,6 @@ export function mountStage(root: HTMLElement): () => void {
       weather: { view: weatherView, field: weatherField },
     });
 
-    /*
-     * ★ 유닛 전진 한계선 ★
-     * 유닛은 표적이 없어도 x = UNIT_HOLD_LINE(0.45)을 넘지 않는다. 이것은 버그가 아니라
-     * 설계다 — 한계선이 없던 시절 유닛은 적 본진까지 걸어가 거기서 요격했고, 그 결과
-     * **타워가 5웨이브 동안 한 발도 못 쐈다**(예산을 유닛에 더 쓰면 잔여 HP가 40 → 16으로
-     * 오히려 나빠졌다).
-     *
-     * 그런데 화면 어디에도 그 사실이 없어서 "유닛이 중앙에서 멈추는데 왜인지 모르겠다"는
-     * 피드백이 나왔다. 선을 그어 **의도된 경계임을 보이게** 한다.
-     */
-    drawHoldLine(refs!.battleCtx);
 
     // 스킬 이펙트는 전장 위에 얹는다 — 가산 합성이라 반드시 전장을 다 그린 뒤여야 한다.
     drawSkillFx(

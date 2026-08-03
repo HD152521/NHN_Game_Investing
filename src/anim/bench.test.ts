@@ -111,7 +111,16 @@ describe('pose calculation performance', () => {
     expect(perFrameMs).toBeLessThan(FRAME_BUDGET_MS);
   });
 
-  test('cost scales linearly with entity count, so headroom is predictable', () => {
+  /**
+   * ⚠️ 이 단언은 **타이밍 기반**이라 병렬 부하에서 흔들린다. 실제로 전체 스위트 실행 때만
+   * 실패하는 플레이키로 두 번 걸렸다(단독 실행은 항상 통과). vitest 워커 여러 개가 CPU 를
+   * 나눠 쓰면 두 측정 구간이 받는 몫이 달라져 비율이 왜곡된다.
+   *
+   * 검증하려는 것은 "실수로 O(n²)이 되지 않았는가" 하나다. 진짜 이차식이면 4배 엔티티에서
+   * 비율이 16 근처로 뛴다. 그래서 상한을 12 로 넉넉히 두고, 하한도 부하로 인한 왜곡을
+   * 견디게 1.5 로 내린다 — 판별력은 그대로 유지되면서 잡음에는 걸리지 않는다.
+   */
+  test('cost scales linearly with entity count, so headroom is predictable', { timeout: 60_000 }, () => {
     const small = new SkeletonBatch(rig, ENTITY_COUNT);
     const large = new SkeletonBatch(rig, ENTITY_COUNT * 4);
     const entities = buildEntities();
@@ -129,9 +138,9 @@ describe('pose calculation performance', () => {
       `scaling factor  ${(four / one).toFixed(2)}x for 4x the entities`,
     ]);
 
-    // Generous bounds: this asserts "no accidental quadratic", not a precise ratio.
-    expect(four / one).toBeGreaterThan(2);
-    expect(four / one).toBeLessThan(8);
+    // "실수로 이차식이 되지 않았는가"만 본다. 정확한 비율이 아니다(위 주석 참조).
+    expect(four / one).toBeGreaterThan(1.5);
+    expect(four / one).toBeLessThan(12);
   });
 
   /**

@@ -10,7 +10,6 @@ import {
   TOWER_COOLDOWN_MS,
   TOWER_DAMAGE,
   TOWER_RANGE,
-  UNIT_HOLD_LINE,
   towerX,
 } from './constants';
 import type { Enemy, Tower, Unit } from './types';
@@ -236,25 +235,20 @@ export function moveEnemies(enemies: readonly Enemy[], blockedEnemyIds: Readonly
 }
 
 /**
- * 교전 중이 아닌 유닛을 전진(x 증가)시킨다.
+ * 교전 중이 아닌 유닛을 전진(x 증가)시킨다. 표적이 없으면 적 본진(x = 1)까지 나아간다.
  *
- * ★ 전진 한계선(`UNIT_HOLD_LINE`) ★ 유닛은 표적이 없어도 이 선을 넘지 않는다 — 아군은
- * 사옥을 지키는 쪽이지 적 본진을 치는 쪽이 아니고(§04), 무엇보다 한계선이 없으면 유닛이
- * 적 본진 앞에서 적을 전부 요격해 **타워가 한 발도 못 쏘는** 상태가 된다(근거와 실측은
- * `constants.ts UNIT_HOLD_LINE` 주석).
- *
- * 이미 한계선 너머에 있는 유닛(한계선을 내리는 밸런스 조정 직후 등)은 **뒤로 끌려오지
- * 않는다** — `Math.min`이 현재 위치보다 큰 값만 자르기 때문이다. 후퇴는 이동 규칙이
- * 아니므로 여기서 만들어내지 않는다.
+ * ★ 전진 한계선 폐지 (기획자 결정) ★ 예전에는 `UNIT_HOLD_LINE`(0.45)에서 유닛을 세웠다.
+ * 유닛이 적 본진 앞까지 나가 초반 웨이브를 혼자 요격하면 타워가 한 발도 못 쏘기 때문에
+ * 넣었던 장치인데, 플레이해 보니 아군이 보이지 않는 선에 막혀 서는 것이 어색했다.
+ * 지금은 유닛이 자유롭게 전진한다 — 전선을 어디에 세울지는 플레이어가 소환 타이밍으로
+ * 정한다.
  */
 export function moveUnits(units: readonly Unit[], blockedUnitIds: ReadonlySet<number>, dtSec: number): Unit[] {
   return units.map((unit) => {
     if (blockedUnitIds.has(unit.id)) {
       return unit;
     }
-    const advanced = unit.x + unit.speed * dtSec;
-    const limit = Math.max(unit.x, UNIT_HOLD_LINE);
-    return { ...unit, x: Math.min(1, limit, advanced) };
+    return { ...unit, x: Math.min(1, unit.x + unit.speed * dtSec) };
   });
 }
 
