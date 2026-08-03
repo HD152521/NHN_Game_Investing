@@ -20,6 +20,18 @@
 export const Z_SIGMA_FLOOR_PCT = 0.05;
 
 /** 방향성 날씨(WX-01/WX-02)가 시작되는 |z| 임계. 이 미만은 '맑음'. */
+/**
+ * σ 윈도(30분) → 등락률 측정 윈도(`RECENT_WINDOW_BARS` = 10분) 환산 계수.
+ *
+ * 랜덤워크에서 변동성은 √t로 커진다. 10분 구간 수익률의 표준편차는 30분 것의
+ * `√(10/30) ≈ 0.577`배다. 이 계수를 빼먹으면 10분 움직임을 30분 눈금으로 재게 되어
+ * |z|가 항상 작아지고, 변동성이 큰 차트에서는 방향성 날씨가 **아예 뜨지 않는다**
+ * (`classify.ts` `marketZ` 주석의 실측표 참고).
+ *
+ * ⚠️ `RECENT_WINDOW_BARS`나 σ 윈도를 바꾸면 이 값도 같이 바꿔야 한다.
+ */
+export const RECENT_WINDOW_SIGMA_SCALE = Math.sqrt(10 / 30);
+
 export const DIRECTIONAL_MIN_Z = 1;
 
 /** |z|가 이 값에 도달하면 강도가 1(최대)로 포화한다. */

@@ -43,6 +43,7 @@ import {
   TOWER_IDENTITY,
   TOWER_UPGRADE_COST,
   UNIT_COST,
+  UNIT_HOLD_LINE,
 } from '../combat';
 import type { SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
@@ -71,12 +72,14 @@ import type {
 } from '../ui';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
-import { clearedCount, loadProgress, recordCleared } from './progress';
+import { clearedCount, loadProgress, markTutorialSeen, recordCleared } from './progress';
 import {
   COMBAT_HELD_NOTICE,
+  TUTORIAL_STEPS,
   advanceTutorial,
   initialTutorialState,
   shouldHoldCombat,
+  isTutorialDone,
   skipTutorial,
   tutorialOverlay,
 } from './tutorial';
@@ -135,6 +138,9 @@ const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
  * 화면 크기에 따라 카드가 달라지면 같은 성적이 사람마다 다른 그림으로 나간다.
  * 가로 세로 비를 소셜 공유에 흔한 1.91:1 근처로 잡았다.
  */
+/** 전진 한계선 표식의 높이(px). 유닛보다 조금 높게 그어 가려지지 않게 한다. */
+const HOLD_LINE_HEIGHT = 74;
+
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
 /** 카드 상단에서 차트가 차지하는 높이. 나머지가 수치 영역이다. */
@@ -201,6 +207,8 @@ export function mountStage(root: HTMLElement): () => void {
   let overtimeRemainingMs = 0;
   /** 결과 화면이 떠 있는가. 떠 있는 동안 프레임은 아무 것도 진행시키지 않는다. */
   let resultShown = false;
+  /** 공개 연출이 떠 있는가. 정산 앞 단계라 `resultShown`과 별개로 필요하다(위 render 주석). */
+  let revealShown = false;
   /** 배속 버튼이 예고한 배속 (CLICK-PATH-002). 두 번째 클릭이 동의다. */
   let armedSpeed: number | null = null;
 
@@ -291,8 +299,18 @@ export function mountStage(root: HTMLElement): () => void {
    * ⚠️ 앱 수명 동안 한 번만 읽는다. 판 중간에 클리어해도 그 판의 스킵 가능 여부는 바뀌지
    * 않아야 한다 — 바뀌면 스킵 버튼이 판 도중에 갑자기 활성화된다.
    */
-  const isFirstRun = clearedCount(progress) === 0;
-  let tutorialState: TutorialState = initialTutorialState();
+  /**
+   * 튜토리얼을 이번 세션에 띄울 것인가 — **진행도의 `tutorialSeen`으로 판정한다.**
+   *
+   * 예전에는 "클리어한 지역이 0개면 첫 회차"로 봤는데, 지역을 깨기 전에는 그 값이 영원히
+   * 0이라 **매 판 다시 뜨고 건너뛰기 버튼은 영구 비활성**이었다(실제 피드백).
+   * 본 것과 깬 것은 별개의 사실이므로 필드를 나눴다.
+   *
+   * 이미 본 사람에게는 완료 상태로 시작해 오버레이가 아예 뜨지 않는다.
+   */
+  let tutorialState: TutorialState = progress.tutorialSeen
+    ? { stepIndex: TUTORIAL_STEPS.length, aumMark: null }
+    : initialTutorialState();
 
   /**
    * 튜토리얼이 전투를 붙잡아 둔 누적 시간(ms).
@@ -329,6 +347,8 @@ export function mountStage(root: HTMLElement): () => void {
   /** 결과 화면을 닫고 다음 세션이 만들어질 수 있는 상태로 되돌린다. */
   function hideResult(): void {
     resultShown = false;
+    revealShown = false;
+    refs!.reveal.hidden = true;
     refs!.result.hidden = true;
     refs!.result.classList.remove('stage__result--win');
   }
@@ -427,7 +447,12 @@ export function mountStage(root: HTMLElement): () => void {
     const changed = next !== tutorialState;
     tutorialState = next;
 
-    const overlay = tutorialOverlay(tutorialState, isFirstRun);
+    // 끝까지 봤으면 기록한다 — 다음 판부터는 뜨지 않는다.
+    if (changed && isTutorialDone(tutorialState) && !progress.tutorialSeen) {
+      progress = markTutorialSeen();
+    }
+
+    const overlay = tutorialOverlay(tutorialState);
     refs!.tutorial.hidden = !overlay.visible;
     // 강조는 매 프레임 건드리면 낭비다 — 단계가 바뀔 때만 갱신한다.
     if (!changed && !overlay.visible) {
@@ -450,6 +475,28 @@ export function mountStage(root: HTMLElement): () => void {
     if (overlay.focus !== null) {
       refs!.stage.classList.add(`stage--tut-${overlay.focus}`);
     }
+  }
+
+  /** 전진 한계선을 점선으로 긋는다. 좌표는 전장 레이아웃에서 파생한다. */
+  function drawHoldLine(ctx: CanvasRenderingContext2D): void {
+    const x = progressToX(UNIT_HOLD_LINE, battleLayout);
+    ctx.save();
+    ctx.strokeStyle = theme.palette.MUTED;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(x, battleLayout.groundY - HOLD_LINE_HEIGHT);
+    ctx.lineTo(x, battleLayout.groundY + 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = theme.palette.MUTED;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('전진 한계', x, battleLayout.groundY - HOLD_LINE_HEIGHT - 2);
+    ctx.restore();
   }
 
   function syncRosterButtons(current: StageSession | null): void {
@@ -527,9 +574,18 @@ export function mountStage(root: HTMLElement): () => void {
   }
 
   function render(nowMs: number): void {
-    // 결과 화면이 떠 있으면 화면을 그 상태로 고정한다. 다음 판은 결과 화면의 두 버튼
-    // ([다시] / [지역 선택으로])에서만 시작된다 — 저절로 재시작되는 경로는 없다.
-    if (resultShown) {
+    /*
+     * 결과 화면이 떠 있으면 화면을 그 상태로 고정한다. 다음 판은 결과 화면의 두 버튼
+     * ([다시] / [지역 선택으로])에서만 시작된다 — 저절로 재시작되는 경로는 없다.
+     *
+     * ★ `revealShown`도 반드시 함께 본다 ★
+     * 공개 연출은 정산 **앞**에 오므로(FR-9.1) 그 시점에 `resultShown`은 아직 false다.
+     * 이 조건을 빠뜨리면 프레임 루프가 계속 돌면서 `decision.kind === 'finish'`를 매 프레임
+     * 다시 만나 `showReveal`을 재호출하고, 그때마다 경과 시간이 0으로 리셋되어
+     * **연출이 영원히 끝나지 않는다**(실제로 발생했다: "스테이지 끝나면 이상한 차트 화면이
+     * 나오면서 아무것도 안 됨").
+     */
+    if (resultShown || revealShown) {
       lastFrameMs = nowMs;
       return;
     }
@@ -611,6 +667,18 @@ export function mountStage(root: HTMLElement): () => void {
       // 시장 상태 표시 — 사망 연출과 같은 모양(버퍼 하나 + 이번 프레임 값)이다.
       weather: { view: weatherView, field: weatherField },
     });
+
+    /*
+     * ★ 유닛 전진 한계선 ★
+     * 유닛은 표적이 없어도 x = UNIT_HOLD_LINE(0.45)을 넘지 않는다. 이것은 버그가 아니라
+     * 설계다 — 한계선이 없던 시절 유닛은 적 본진까지 걸어가 거기서 요격했고, 그 결과
+     * **타워가 5웨이브 동안 한 발도 못 쐈다**(예산을 유닛에 더 쓰면 잔여 HP가 40 → 16으로
+     * 오히려 나빠졌다).
+     *
+     * 그런데 화면 어디에도 그 사실이 없어서 "유닛이 중앙에서 멈추는데 왜인지 모르겠다"는
+     * 피드백이 나왔다. 선을 그어 **의도된 경계임을 보이게** 한다.
+     */
+    drawHoldLine(refs!.battleCtx);
 
     // 스킬 이펙트는 전장 위에 얹는다 — 가산 합성이라 반드시 전장을 다 그린 뒤여야 한다.
     drawSkillFx(
@@ -706,6 +774,7 @@ export function mountStage(root: HTMLElement): () => void {
   function finishReveal(): void {
     stopReveal();
     revealInput = null;
+    revealShown = false;
     refs!.reveal.hidden = true;
     const then = revealThen;
     revealThen = null;
@@ -819,6 +888,7 @@ export function mountStage(root: HTMLElement): () => void {
     revealElapsedMs = 0;
     revealLastMs = null;
     revealThen = then;
+    revealShown = true;
     refs!.reveal.hidden = false;
     renderReveal(current);
     refs!.revealSkipButton.focus();
@@ -1225,7 +1295,9 @@ export function mountStage(root: HTMLElement): () => void {
    * 여기서 다시 검사하지 않는다(버튼 `disabled`는 표시일 뿐, 판정의 출처가 아니다).
    */
   refs.tutorialSkipButton.addEventListener('click', () => {
-    tutorialState = skipTutorial(tutorialState, isFirstRun);
+    tutorialState = skipTutorial(tutorialState);
+    // 건너뛴 것도 "봤다"로 친다 — 명시적으로 끈 사람에게 다시 띄우면 같은 조작을 반복시킨다.
+    progress = markTutorialSeen();
   });
 
   /**

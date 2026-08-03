@@ -234,53 +234,60 @@ describe('전투 보류 — 돈의 흐름을 설명하는 동안 웨이브를 �
   });
 
   test('스킵하면 즉시 풀린다 — 스킵은 "설명 없이 바로 하겠다"는 뜻이다', () => {
-    expect(shouldHoldCombat(skipTutorial(stateAt('chart'), false))).toBe(false);
+    expect(shouldHoldCombat(skipTutorial(stateAt('chart')))).toBe(false);
   });
 
   test('오버레이가 전투 보류를 화면에 알린다 — 안 알리면 "고장"으로 읽힌다', () => {
-    expect(tutorialOverlay(stateAt('open'), true).combatHeld).toBe(true);
-    expect(tutorialOverlay(stateAt('build'), true).combatHeld).toBe(false);
+    expect(tutorialOverlay(stateAt('open')).combatHeld).toBe(true);
+    expect(tutorialOverlay(stateAt('build')).combatHeld).toBe(false);
   });
 });
 
-describe('스킵 — 첫 회차는 불가', () => {
-  test('첫 회차에는 스킵할 수 없다', () => {
-    expect(canSkipTutorial(true)).toBe(false);
-    expect(skipTutorial(stateAt('open'), true)).toEqual(stateAt('open'));
+/**
+ * ★ 실제 플레이 피드백: "건너뛰기 버튼이 안 됨" ★
+ * 첫 회차 판정을 "클리어한 지역이 0개"로 했더니 지역을 깨기 전에는 영원히 0이라
+ * 버튼이 영구 비활성이었다. 강제 튜토리얼 자체를 버리고 항상 스킵 가능으로 바꿨다.
+ */
+describe('스킵 — 항상 가능하다', () => {
+  test('언제나 스킵할 수 있다 — 영구 비활성 버튼을 만들지 않는다', () => {
+    expect(canSkipTutorial()).toBe(true);
   });
 
-  test('두 번째부터는 스킵할 수 있다', () => {
-    expect(canSkipTutorial(false)).toBe(true);
-    expect(isTutorialDone(skipTutorial(stateAt('open'), false))).toBe(true);
+  test('첫 단계에서도 스킵된다', () => {
+    expect(isTutorialDone(skipTutorial(stateAt('chart')))).toBe(true);
   });
 
-  test('이미 끝났으면 스킵해도 그대로다', () => {
-    const done = skipTutorial(stateAt('open'), false);
-    expect(skipTutorial(done, false)).toBe(done);
+  test('중간 단계에서도 스킵된다', () => {
+    expect(isTutorialDone(skipTutorial(stateAt('open')))).toBe(true);
+  });
+
+  test('이미 끝났으면 스킵해도 같은 참조다', () => {
+    const done = skipTutorial(stateAt('open'));
+    expect(skipTutorial(done)).toBe(done);
   });
 });
 
 describe('오버레이 — 셸은 이 객체를 화면에 옮기기만 한다', () => {
   test('진행 중에는 보이고 단계 번호가 1부터 센다', () => {
-    const overlay = tutorialOverlay(initialTutorialState(), true);
+    const overlay = tutorialOverlay(initialTutorialState());
     expect(overlay.visible).toBe(true);
     expect(overlay.stepNumber).toBe(1);
     expect(overlay.stepTotal).toBe(TUTORIAL_STEPS.length);
-    expect(overlay.skippable).toBe(false);
+    expect(overlay.skippable).toBe(true);
   });
 
   test('끝나면 숨는다', () => {
-    const overlay = tutorialOverlay({ stepIndex: TUTORIAL_STEPS.length, aumMark: 0 }, false);
+    const overlay = tutorialOverlay({ stepIndex: TUTORIAL_STEPS.length, aumMark: 0 });
     expect(overlay.visible).toBe(false);
     expect(overlay.focus).toBeNull();
     expect(overlay.progress).toBe(1);
   });
 
   test('각 단계가 강조할 화면 영역을 지정한다', () => {
-    expect(tutorialOverlay(stateAt('chart'), false).focus).toBe('chart');
-    expect(tutorialOverlay(stateAt('open'), false).focus).toBe('trade');
-    expect(tutorialOverlay(stateAt('build'), false).focus).toBe('buildbar');
-    expect(tutorialOverlay(stateAt('aum'), false).focus).toBe('battle');
+    expect(tutorialOverlay(stateAt('chart')).focus).toBe('chart');
+    expect(tutorialOverlay(stateAt('open')).focus).toBe('trade');
+    expect(tutorialOverlay(stateAt('build')).focus).toBe('buildbar');
+    expect(tutorialOverlay(stateAt('aum')).focus).toBe('battle');
   });
 
   test('진행도는 0에서 1로 단조 증가한다', () => {

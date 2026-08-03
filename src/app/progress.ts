@@ -54,6 +54,16 @@ export interface GameProgress {
    * 지금 쓰지도 않을 증감 API를 만들지 마라(YAGNI).
    */
   readonly carriedCapital: number;
+  /**
+   * 튜토리얼을 한 번이라도 봤는가.
+   *
+   * 예전에는 "클리어한 지역이 0개면 첫 회차"로 판정했는데, **지역을 깨기 전에는 그 값이
+   * 영원히 0이라 튜토리얼이 매 판 다시 뜨고 건너뛰기 버튼이 영구 비활성이었다.**
+   * 본 것을 기록하는 것과 지역을 깬 것은 별개의 사실이므로 필드를 따로 둔다.
+   *
+   * 필드 추가는 하위 호환이라 포맷 버전을 올리지 않는다(없으면 false로 채운다).
+   */
+  readonly tutorialSeen: boolean;
 }
 
 /** 실제 존재하는 지역 ID. 손상 입력에서 지역 이름을 걸러내는 기준이다. */
@@ -61,7 +71,7 @@ const KNOWN_STAGE_IDS: readonly StageId[] = Object.keys(STAGES) as StageId[];
 
 /** 진행도 없음. **모든 실패 경로가 여기로 수렴한다.** */
 export function emptyProgress(): GameProgress {
-  return { clearedStages: [], carriedCapital: 0 };
+  return { clearedStages: [], carriedCapital: 0, tutorialSeen: false };
 }
 
 function isStageId(value: unknown): value is StageId {
@@ -118,6 +128,8 @@ export function parseProgress(raw: string | null | undefined): GameProgress {
   return {
     clearedStages: Array.isArray(cleared) ? normalizeCleared(cleared) : [],
     carriedCapital: normalizeCapital(record['carriedCapital']),
+    // 구 포맷에는 없던 필드다. 없으면 false — 처음 보는 사람으로 취급한다.
+    tutorialSeen: record['tutorialSeen'] === true,
   };
 }
 
@@ -127,6 +139,7 @@ export function serializeProgress(progress: GameProgress): string {
     version: PROGRESS_VERSION,
     clearedStages: progress.clearedStages,
     carriedCapital: progress.carriedCapital,
+    tutorialSeen: progress.tutorialSeen,
   });
 }
 
@@ -229,6 +242,19 @@ export function saveProgress(
  * 한 번 부르면 되는, 이 모듈의 대표 진입점이다. 저장에 실패해도 돌려주는 진행도는
  * 갱신돼 있으므로 **그 판 안에서는 잠금 해제가 즉시 보인다**(새로고침하면 사라질 뿐).
  */
+/** 튜토리얼을 봤다고 기록한다. 이미 기록돼 있으면 같은 참조를 돌려준다. */
+export function markTutorialSeen(
+  storage: ProgressStorage | null = defaultProgressStorage(),
+): GameProgress {
+  const current = loadProgress(storage);
+  if (current.tutorialSeen) {
+    return current;
+  }
+  const next: GameProgress = { ...current, tutorialSeen: true };
+  saveProgress(next, storage);
+  return next;
+}
+
 export function recordCleared(
   id: StageId,
   storage: ProgressStorage | null = defaultProgressStorage(),

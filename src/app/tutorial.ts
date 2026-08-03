@@ -260,16 +260,21 @@ export function advanceTutorial(state: TutorialState, view: TutorialView): Tutor
 }
 
 /**
- * 스킵할 수 있는가 (FR-9.4와 같은 관습).
+ * 스킵할 수 있는가 — **항상 가능하다.**
  *
- * **첫 회차는 스킵 불가**다. 이 게임의 코어 루프는 화면만 봐서는 읽히지 않으므로, 처음
- * 들어온 사람에게는 한 바퀴를 끝까지 보여준다. 두 번째부터는 언제든 건너뛸 수 있다.
+ * ⚠️ 원래는 "첫 회차는 스킵 불가"(FR-9.4 관습)였다. 그런데 첫 회차 판정을 "클리어한 지역이
+ * 0개"로 했더니, **지역을 깨기 전에는 그 값이 영원히 0이라 버튼이 영구 비활성**이 됐다.
+ * 재시작해도 안 풀린다 — 실제 플레이 피드백이 "건너뛰기 버튼이 안 됨"이었다.
  *
- * @param firstRun 이번이 첫 플레이인가. 셸이 진행도(`progress.ts`)에서 판단해 넘긴다 —
- *   클리어한 지역이 하나도 없으면 첫 회차로 본다.
+ * 판정을 `tutorialSeen`으로 옮겨 고칠 수도 있었지만, **강제 튜토리얼 자체를 버렸다.**
+ * 근거 둘:
+ *   ① 처음 보는 사람에게 6단계를 강제하면 첫인상이 "설명부터 듣는 게임"이 된다.
+ *   ② 튜토리얼은 기본으로 **뜬다**. 끄는 것은 명시적 행동이므로 가르치려는 의도는 유지된다.
+ *
+ * 대신 셸이 `tutorialSeen`을 진행도에 기록해 **다음부터는 아예 뜨지 않게** 한다.
  */
-export function canSkipTutorial(firstRun: boolean): boolean {
-  return !firstRun;
+export function canSkipTutorial(): boolean {
+  return true;
 }
 
 /**
@@ -301,7 +306,7 @@ export interface TutorialOverlay {
 export const COMBAT_HELD_NOTICE = '설명이 끝날 때까지 웨이브는 멈춰 있다';
 
 /** 현재 상태 → 화면에 그릴 내용. */
-export function tutorialOverlay(state: TutorialState, firstRun: boolean): TutorialOverlay {
+export function tutorialOverlay(state: TutorialState): TutorialOverlay {
   const step = currentStep(state);
   return {
     visible: step !== null,
@@ -312,16 +317,13 @@ export function tutorialOverlay(state: TutorialState, firstRun: boolean): Tutori
     why: step?.why ?? '',
     focus: step?.focus ?? null,
     progress: tutorialProgress(state),
-    skippable: canSkipTutorial(firstRun),
+    skippable: canSkipTutorial(),
     combatHeld: shouldHoldCombat(state),
   };
 }
 
 /** 즉시 종료(스킵). 스킵 불가 상태에서 부르면 아무 일도 일어나지 않는다. */
-export function skipTutorial(state: TutorialState, firstRun: boolean): TutorialState {
-  if (!canSkipTutorial(firstRun)) {
-    return state;
-  }
+export function skipTutorial(state: TutorialState): TutorialState {
   if (isTutorialDone(state)) {
     return state;
   }

@@ -111,7 +111,7 @@ describe('parseProgress — 버전이 맞아도 필드를 다시 검사한다', 
 
 describe('직렬화 왕복', () => {
   test('저장했다 읽으면 같은 진행도가 나온다', () => {
-    const progress: GameProgress = { clearedStages: ['R1', 'R2'], carriedCapital: 1200 };
+    const progress: GameProgress = { clearedStages: ['R1', 'R2'], carriedCapital: 1200, tutorialSeen: false };
     expect(parseProgress(serializeProgress(progress))).toEqual(progress);
   });
 
@@ -143,7 +143,7 @@ describe('withCleared — 불변', () => {
   });
 
   test('carriedCapital은 보존된다', () => {
-    const base: GameProgress = { clearedStages: [], carriedCapital: 500 };
+    const base: GameProgress = { clearedStages: [], carriedCapital: 500, tutorialSeen: false };
     expect(withCleared(base, 'R1').carriedCapital).toBe(500);
   });
 });
@@ -181,7 +181,7 @@ describe('저장소 배선 — 어떤 실패에도 던지지 않는다', () => {
 
   test('정상 저장소에서는 읽고 쓴다', () => {
     const storage = fakeStorage();
-    expect(saveProgress({ clearedStages: ['R1'], carriedCapital: 0 }, storage)).toBe(true);
+    expect(saveProgress({ clearedStages: ['R1'], carriedCapital: 0, tutorialSeen: false }, storage)).toBe(true);
     expect(loadProgress(storage).clearedStages).toEqual(['R1']);
   });
 });

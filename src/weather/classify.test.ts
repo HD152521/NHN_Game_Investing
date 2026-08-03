@@ -7,6 +7,7 @@ import {
   FOG_FULL_SIGMA_PCT,
   FOG_MAX_ABS_CHANGE_PCT,
   FOG_MAX_SIGMA_PCT,
+  RECENT_WINDOW_SIGMA_SCALE,
 } from './constants.js';
 import { classifyWeatherKind, marketZ, weatherIntensity } from './classify.js';
 import type { MarketConditions } from './types.js';
@@ -28,8 +29,16 @@ function read(c: MarketConditions): { kind: string; intensity: number } {
 }
 
 describe('marketZ — σ 대비 정규화', () => {
-  test('σ로 나눈 값이다', () => {
-    expect(marketZ(-3, 1.5)).toBeCloseTo(-2, 10);
+  test('★ 분모는 sigma30이 아니라 측정 윈도로 환산한 σ다', () => {
+    // 분자는 10분 변화, sigma30은 30분 σ다. √t 스케일링으로 맞춘 뒤 나눈다 —
+    // 이 계수를 빼면 |z|가 항상 작아져 변동성 큰 차트에서 날씨가 아예 안 뜬다.
+    expect(marketZ(-3, 1.5)).toBeCloseTo(-3 / (1.5 * RECENT_WINDOW_SIGMA_SCALE), 10);
+  });
+
+  test('환산 계수는 √(10/30) — 윈도가 짧을수록 같은 %가 더 이례적이다', () => {
+    expect(RECENT_WINDOW_SIGMA_SCALE).toBeCloseTo(Math.sqrt(1 / 3), 10);
+    // 같은 -3%가 30분 눈금(-2σ)보다 10분 눈금에서 더 크게 읽힌다.
+    expect(Math.abs(marketZ(-3, 1.5))).toBeGreaterThan(2);
   });
 
   test('σ가 0이어도 폭주하지 않는다 (하한 적용)', () => {
@@ -70,18 +79,37 @@ describe('classifyWeatherKind — 시장 지표 → 날씨 종류', () => {
     expect(classifyWeatherKind(c)).toBe('panic_rain');
   });
 
+  /**
+   * ⚠️ 분모는 `sigma30`이 아니라 **측정 윈도로 환산한 σ**다.
+   * `RECENT_WINDOW_SIGMA_SCALE`(√(10/30))을 빼먹으면 10분 움직임을 30분 눈금으로 재게 되어
+   * 변동성이 큰 차트에서 날씨가 아예 안 뜬다(`marketZ` 주석의 실측표). 아래 헬퍼가 그
+   * 관계를 한 곳에 고정한다 — 테스트가 스케일을 손으로 적으면 같은 버그를 놓친다.
+   */
+  const changeForZ = (z: number, sigma30 = 1): number =>
+    z * sigma30 * RECENT_WINDOW_SIGMA_SCALE;
+
   test('|z|가 임계 미만이면 아무 날씨도 아니다', () => {
-    const c = conditions({ sigma30: 1, recentChangePct: -(DIRECTIONAL_MIN_Z - 0.01) });
+    const c = conditions({ sigma30: 1, recentChangePct: changeForZ(-(DIRECTIONAL_MIN_Z - 0.01)) });
     expect(classifyWeatherKind(c)).toBe('clear');
   });
 
   test('z 임계 경계 바로 위에서 폭우/상승기류가 시작된다', () => {
-    expect(classifyWeatherKind(conditions({ sigma30: 1, recentChangePct: -DIRECTIONAL_MIN_Z }))).toBe(
-      'panic_rain',
-    );
-    expect(classifyWeatherKind(conditions({ sigma30: 1, recentChangePct: DIRECTIONAL_MIN_Z }))).toBe(
-      'fomo_updraft',
-    );
+    expect(
+      classifyWeatherKind(conditions({ sigma30: 1, recentChangePct: changeForZ(-DIRECTIONAL_MIN_Z) })),
+    ).toBe('panic_rain');
+    expect(
+      classifyWeatherKind(conditions({ sigma30: 1, recentChangePct: changeForZ(DIRECTIONAL_MIN_Z) })),
+    ).toBe('fomo_updraft');
+  });
+
+  /**
+   * ★ 회귀 방어선 — "변동성이 큰 차트에서 날씨가 한 번도 안 뜨던" 버그 ★
+   * 고치기 전에는 sigma30 ≈ 2.8인 차트에서 |z| 최대가 0.83이라 방향성 날씨가 0회였다.
+   */
+  test('변동성이 큰 차트(σ≈2.8)에서도 1σ 움직임이면 날씨가 뜬다', () => {
+    const sigma = 2.834; // 기본 시드 1의 실측값
+    const c = conditions({ sigma30: sigma, recentChangePct: changeForZ(-DIRECTIONAL_MIN_Z, sigma) });
+    expect(classifyWeatherKind(c)).toBe('panic_rain');
   });
 });
 
