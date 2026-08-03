@@ -7,7 +7,12 @@
 
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import type { SettlementRow } from './settlement';
-import { buildStartGateMarkup } from './start-gate';
+import {
+  GATE_DAILY_ACTION,
+  GATE_SEED_ACTION,
+  GATE_SEED_INPUT,
+  buildStartGateMarkup,
+} from './start-gate';
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
 import { STARTING_AUM, STARTING_GOLD } from './session';
 
@@ -27,6 +32,21 @@ export const SPEEDS = [1, 2, 4] as const;
 
 /** 준비 카운트다운의 클릭 가능한 즉시 시작 버튼 (CLICK-PATH-005 대비책). */
 export const SKIP_PREP_ACTION = 'skip-prep';
+
+/** 튜토리얼 건너뛰기 버튼. 첫 회차에는 `tutorial.ts`가 스킵을 거부한다. */
+export const TUTORIAL_SKIP_ACTION = 'tutorial-skip';
+
+/** 공개 연출의 단계 스킵 버튼 (FR-9.2 — 각 단계는 개별적으로 건너뛸 수 있다). */
+export const REVEAL_SKIP_ACTION = 'reveal-skip';
+
+/**
+ * 결과 카드를 PNG로 내려받는다.
+ *
+ * 카드는 밖으로 나가는 산출물이라 **시드가 반드시 실린다** — 받는 사람이 같은 판을
+ * 열 수 있어야 공유의 의미가 있다 (`result-card.ts`).
+ */
+export const RESULT_CARD_ACTION = 'result-card';
+
 /** 결과 화면의 두 출구. 여기서만 스테이지가 다시 시작된다. */
 export const RESULT_RETRY_ACTION = 'result-retry';
 export const RESULT_REGION_ACTION = 'result-region';
@@ -70,6 +90,31 @@ export interface StageRefs {
   /** 카운트다운의 [바로 시작] 버튼 — Space 가 안 먹히는 상황의 대비책. */
   readonly prepSkipButton: HTMLButtonElement;
   /**
+   * 튜토리얼 오버레이 (가이드 모드, §15-1).
+   *
+   * 판정은 전부 `tutorial.ts`가 소유한다 — 여기 있는 것은 문구가 들어갈 빈 칸뿐이다.
+   * 별도 씬이 아니라 실제 세션 위에 얹히므로 게임은 뒤에서 계속 굴러간다.
+   */
+  readonly tutorial: HTMLElement;
+  readonly tutorialStep: HTMLElement;
+  readonly tutorialTitle: HTMLElement;
+  readonly tutorialInstruction: HTMLElement;
+  readonly tutorialWhy: HTMLElement;
+  readonly tutorialFill: HTMLElement;
+  readonly tutorialSkipButton: HTMLButtonElement;
+  /**
+   * 공개 연출 화면 (FR-9). 정산 앞에 온다.
+   *
+   * 판정은 전부 `reveal.ts`가 소유한다. 캔버스는 차트 위에 매매 마커를 되짚어 그린다.
+   */
+  readonly reveal: HTMLElement;
+  readonly revealTitle: HTMLElement;
+  readonly revealSubtitle: HTMLElement;
+  readonly revealCanvas: HTMLCanvasElement;
+  readonly revealSummary: HTMLElement;
+  readonly revealPending: HTMLElement;
+  readonly revealSkipButton: HTMLButtonElement;
+  /**
    * 스테이지 결과 화면 (FR-8 정산).
    *
    * 예전의 `stage__banner`(문구 한 줄)를 대체한다. 배너는 재생이 끝난 경우를 아예 다루지
@@ -80,6 +125,13 @@ export interface StageRefs {
   readonly resultSubtitle: HTMLElement;
   readonly resultBody: HTMLElement;
   readonly resultRetryButton: HTMLButtonElement;
+  /** 결과 카드 저장 버튼 (PNG 다운로드 + 공유 문자열 클립보드). */
+  readonly resultCardButton: HTMLButtonElement;
+  /** 일일 챌린지 진입 — 오늘 날짜가 시드가 된다. */
+  readonly dailyButton: HTMLButtonElement;
+  /** 시드 직접 입력. 결과 카드의 시드를 그대로 붙여넣는 용도다. */
+  readonly seedInput: HTMLInputElement;
+  readonly seedButton: HTMLButtonElement;
   readonly resultRegionButton: HTMLButtonElement;
   readonly gate: HTMLElement;
   readonly startButton: HTMLButtonElement;
@@ -204,12 +256,49 @@ export function buildStageMarkup(): string {
         </div>
 
         <!-- 결과 화면. 전투가 끝나거나 장이 마감되면 여기로 끝난다 — 무음 리셋은 없다. -->
+        <!--
+          튜토리얼 오버레이 — 실제 세션 위에 얹는 가이드 모드다(별도 씬이 아니다).
+          문구와 강조 대상은 전부 tutorial.ts 가 판정해 넘긴다. 여기서 문구를 만들지 마라.
+          ⚠️ 이 블록은 템플릿 리터럴 안이다 — 주석에도 백틱을 쓰면 문자열이 끊긴다.
+        -->
+        <aside class="stage__tutorial" data-ref="tutorial" role="region" aria-live="polite"
+               aria-labelledby="tf-tutorial-title" hidden>
+          <p class="stage__tutorial-step" data-ref="tutorial-step"></p>
+          <h3 class="stage__tutorial-title" id="tf-tutorial-title" data-ref="tutorial-title"></h3>
+          <p class="stage__tutorial-instruction" data-ref="tutorial-instruction"></p>
+          <p class="stage__tutorial-why" data-ref="tutorial-why"></p>
+          <div class="stage__tutorial-bar" role="presentation">
+            <span class="stage__tutorial-fill" data-ref="tutorial-fill"></span>
+          </div>
+          <button class="btn stage__tutorial-skip" type="button"
+                  data-action="${TUTORIAL_SKIP_ACTION}">튜토리얼 건너뛰기</button>
+        </aside>
+
+        <!--
+          공개 연출 (FR-9) — 정산 화면 "앞"에 온다(FR-9.1: 정산 직후, 보상 선택 전).
+          내용은 전부 reveal.ts 가 판정해 넘긴다. 여기서 문구를 만들지 마라.
+          ⚠️ 템플릿 리터럴 안이라 주석에도 백틱을 쓰면 문자열이 끊긴다.
+        -->
+        <div class="stage__reveal" data-ref="reveal" role="dialog" aria-live="polite"
+             aria-labelledby="tf-reveal-title" hidden>
+          <h2 class="stage__reveal-title" id="tf-reveal-title" data-ref="reveal-title"></h2>
+          <p class="stage__reveal-subtitle" data-ref="reveal-subtitle"></p>
+          <canvas class="stage__reveal-canvas" data-ref="reveal-canvas"
+                  width="" height=""
+                  role="img" aria-label="차트 위에 되짚은 내 매매"></canvas>
+          <dl class="stage__reveal-summary" data-ref="reveal-summary"></dl>
+          <p class="stage__reveal-pending" data-ref="reveal-pending"></p>
+          <button class="btn stage__reveal-skip" type="button"
+                  data-action="${REVEAL_SKIP_ACTION}">다음 ▸</button>
+        </div>
+
         <div class="stage__result" data-ref="result" role="dialog" aria-live="polite"
              aria-labelledby="tf-result-title" hidden>
           <h2 class="stage__result-title" id="tf-result-title" data-ref="result-title"></h2>
           <p class="stage__result-subtitle" data-ref="result-subtitle"></p>
           <dl class="stage__result-body" data-ref="result-body"></dl>
           <div class="stage__result-actions">
+            <button class="btn" type="button" data-action="${RESULT_CARD_ACTION}">결과 카드 저장</button>
             <button class="btn" type="button" data-action="${RESULT_RETRY_ACTION}">다시</button>
             <button class="btn" type="button" data-action="${RESULT_REGION_ACTION}">지역 선택으로</button>
           </div>
@@ -258,6 +347,24 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const prepSkipButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${SKIP_PREP_ACTION}"]`,
   );
+  const tutorial = pick('tutorial');
+  const tutorialStep = pick('tutorial-step');
+  const tutorialTitle = pick('tutorial-title');
+  const tutorialInstruction = pick('tutorial-instruction');
+  const tutorialWhy = pick('tutorial-why');
+  const tutorialFill = pick('tutorial-fill');
+  const tutorialSkipButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${TUTORIAL_SKIP_ACTION}"]`,
+  );
+  const reveal = pick('reveal');
+  const revealTitle = pick('reveal-title');
+  const revealSubtitle = pick('reveal-subtitle');
+  const revealCanvas = pick<HTMLCanvasElement>('reveal-canvas');
+  const revealSummary = pick('reveal-summary');
+  const revealPending = pick('reveal-pending');
+  const revealSkipButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${REVEAL_SKIP_ACTION}"]`,
+  );
   const result = pick('result');
   const resultTitle = pick('result-title');
   const resultSubtitle = pick('result-subtitle');
@@ -265,6 +372,16 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const resultRetryButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${RESULT_RETRY_ACTION}"]`,
   );
+  const resultCardButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${RESULT_CARD_ACTION}"]`,
+  );
+  const dailyButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${GATE_DAILY_ACTION}"]`,
+  );
+  const seedButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${GATE_SEED_ACTION}"]`,
+  );
+  const seedInput = root.querySelector<HTMLInputElement>(`[data-ref="${GATE_SEED_INPUT}"]`);
   const resultRegionButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${RESULT_REGION_ACTION}"]`,
   );
@@ -293,11 +410,29 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !prep ||
     !prepText ||
     !prepSkipButton ||
+    !tutorial ||
+    !tutorialStep ||
+    !tutorialTitle ||
+    !tutorialInstruction ||
+    !tutorialWhy ||
+    !tutorialFill ||
+    !tutorialSkipButton ||
+    !reveal ||
+    !revealTitle ||
+    !revealSubtitle ||
+    !revealCanvas ||
+    !revealSummary ||
+    !revealPending ||
+    !revealSkipButton ||
     !result ||
     !resultTitle ||
     !resultSubtitle ||
     !resultBody ||
     !resultRetryButton ||
+    !resultCardButton ||
+    !dailyButton ||
+    !seedButton ||
+    !seedInput ||
     !resultRegionButton ||
     !gate ||
     !panelHost ||
@@ -332,11 +467,29 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     prep,
     prepText,
     prepSkipButton,
+    reveal,
+    revealTitle,
+    revealSubtitle,
+    revealCanvas,
+    revealSummary,
+    revealPending,
+    revealSkipButton,
+    tutorial,
+    tutorialStep,
+    tutorialTitle,
+    tutorialInstruction,
+    tutorialWhy,
+    tutorialFill,
+    tutorialSkipButton,
     result,
     resultTitle,
     resultSubtitle,
     resultBody,
     resultRetryButton,
+    resultCardButton,
+    dailyButton,
+    seedButton,
+    seedInput,
     resultRegionButton,
     gate,
     startButton,

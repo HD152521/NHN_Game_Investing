@@ -7,6 +7,7 @@
  */
 
 import {
+  clampGoldDisplay,
   countUpTo,
   formatGoldFlightLabel,
   goldFlightToneClass,
@@ -112,10 +113,18 @@ export function createGoldMeter(options: GoldMeterOptions): GoldMeter {
     flight.element.style.transform = `translate(${sample.x}px, ${sample.y}px) translate(-50%, -50%) scale(${sample.scale})`;
     flight.element.style.opacity = String(sample.opacity);
 
-    if (sample.countUpProgress > 0) {
-      options.valueEl.textContent = String(
-        countUpTo(flight.fromGold, flight.gained, sample.countUpProgress),
-      );
+    // 카운트업이 시작되기 전(이동 구간)에는 출발값에 머문다.
+    const countUp =
+      sample.countUpProgress > 0
+        ? countUpTo(flight.fromGold, flight.gained, sample.countUpProgress)
+        : flight.fromGold;
+    // ★ 실제 골드를 넘겨 표시하지 않는다 (CLICK-PATH LOW-3) ★
+    // 연출 중 타워를 사면 `sync`가 줄어든 골드를 `pending`에 넣어 두므로 그것이 상한이 된다.
+    // 이동 구간도 함께 덮는다 — 그 구간에 골드를 쓰면 `fromGold`조차 과대 표시가 된다.
+    const shown = clampGoldDisplay(countUp, pending);
+    if (shown !== displayed) {
+      displayed = shown;
+      options.valueEl.textContent = String(shown);
     }
 
     if (sample.done) {

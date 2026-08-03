@@ -251,21 +251,48 @@ export function createTradePanel(
       ratio,
       variant: button.dataset['stakeVariant'] ?? 'open',
     });
-    button.addEventListener('click', () => handlers.onStakeRatioChange(ratio));
+    button.addEventListener('click', () => {
+      // ★ CLICK-PATH LOW-2 ★ 세션에 알리기 **전에** 로컬에도 새긴다.
+      // 아래 addButton 핸들러가 이 값을 읽는다 — 이유는 그쪽 주석 참고.
+      selectedRatio = ratio;
+      handlers.onStakeRatioChange(ratio);
+    });
   }
 
   let latest: TradePanelViewModel | null = null;
 
-  // 추가 매수는 "현재 선택된 투입 비율"로 실행된다 — 클릭 시점의 최신 뷰모델에서
-  // stakeRatio를 읽는다 (update()가 매 프레임 latest를 갱신해두므로 항상 최신값).
+  /**
+   * [추가]가 실제로 쓸 투입 비율.
+   *
+   * ★ CLICK-PATH LOW-2 — 1프레임 이전 값을 쓰던 결함 ★
+   * 예전에는 `latest.stakeRatio`(뷰모델)를 읽으면서 "update()가 매 프레임 latest를
+   * 갱신해두므로 항상 최신값"이라고 단언했다. **그 단언이 틀렸다.** 비율 버튼 클릭은
+   * 세션 상태만 바꾸고, 뷰모델은 다음 프레임 `update()`에서야 갱신된다. 그 사이(최대
+   * 1프레임)에 [추가]를 누르면 **사용자가 방금 고른 비율이 아니라 직전 비율로 매수된다.**
+   * 실제 돈이 걸린 조작이라 의도한 금액과 다르게 집행됐다.
+   *
+   * 그래서 비율의 소유자를 하나로 못박는다: 클릭이 즉시 여기 새기고, `update()`가 매
+   * 프레임 세션의 값으로 되맞춘다(세션이 최종 진실). 둘은 다음 프레임에 반드시 수렴하므로
+   * 이중 출처(§19-4)가 되지 않는다 — 낙관적 반영의 유효 구간이 딱 1프레임이다.
+   */
+  let selectedRatio: StakeRatio | null = null;
+
   refs.addButton.addEventListener('click', () => {
     if (latest === null) {
       return;
     }
-    handlers.onAdd(latest.stakeRatio);
+    const ratio = selectedRatio ?? latest.stakeRatio;
+    // 비활성 판정도 1프레임 늦으므로 여기서 감당 가능 여부를 다시 본다 —
+    // 감당 못 하는 비율로 바꾼 직후의 클릭이 그대로 통과하면 안 된다.
+    if (!canAffordStakeRatio(latest.aum, ratio)) {
+      return;
+    }
+    handlers.onAdd(ratio);
   });
 
   function update(vm: TradePanelViewModel): void {
+    // 세션이 비율의 최종 진실이다 — 낙관적으로 새겨 둔 값을 매 프레임 되맞춘다.
+    selectedRatio = vm.stakeRatio;
     element.className = ['trade-panel', ...resolveStateClasses(vm)].join(' ');
 
     refs.idle.hidden = vm.holding;

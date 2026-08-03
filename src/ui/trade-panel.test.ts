@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
 /**
- * DOM(jsdom) 없이 검증한다 — 이 프로젝트 vitest는 기본 node 환경이고 jsdom
- * 의존성이 없다. 그래서 DOM 조작(trade-panel.ts)과 순수 표시 로직
- * (trade-panel-logic.ts)을 분리했고, 여기서는 순수 로직만 테스트한다.
+ * 순수 표시 로직(`trade-panel-logic.ts`)만 검증한다 — DOM 없이 돈다.
+ *
+ * vitest 기본 환경은 여전히 node다(전역 전환은 하지 않았다). 다만 이제 jsdom이
+ * 설치돼 있어, DOM 배선이 필요한 검증은 파일 최상단 `// @vitest-environment jsdom`
+ * docblock으로 옵트인한다 — `trade-panel-dom.test.ts`가 그 예다.
+ * 계산과 배선을 나눠 두는 이 구조 자체는 그대로 유지한다.
  */
 import {
   canAffordStakeRatio,

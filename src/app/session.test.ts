@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 
 import { SKILL_SPECS, STAGES, totalBaseIncome } from '../combat';
 import type { StageId } from '../combat';
+import type { ReplayState } from '../market';
+import { BLACKOUT_MAX_FRAMES, EVENT_INTENSITY_FLOOR, WEATHER_KINDS } from '../weather';
 import { DEFAULT_STAGE_ID, STARTING_AUM, STARTING_GOLD, StageSession } from './session';
 
 /**
@@ -556,5 +558,90 @@ describe('StageSession — 정산 누적치', () => {
 
     expect(session.settlementFacts.closeCount).toBe(1);
     expect(session.takeNotice()).not.toBeNull();
+  });
+});
+
+/**
+ * ── 날씨 배선 (§19-5) ───────────────────────────────────────────
+ *
+ * `src/weather`의 판정 규칙 자체는 그 모듈의 테스트가 이미 전부 덮는다. 여기서 보는 것은
+ * **세션이 그 순수 함수들을 올바른 순서로 부르고 시간축 상태를 제대로 들고 있는가**다 —
+ * 판정과 렌더가 양쪽 다 옳았는데도 이 배선이 없어서 게임 중 날씨가 한 번도 뜨지 않았다.
+ */
+describe('StageSession — 날씨 판정 배선', () => {
+  function replayStateAt(elapsedMs: number, barIndex: number): ReplayState {
+    return { elapsedMs, barIndex, price: 0, progress: 0, finished: false };
+  }
+
+  test('시장 지표에서 뽑은 뷰를 돌려준다 (강도는 0~1 연속값)', () => {
+    const session = makeSession();
+    const view = session.stepWeather(replayStateAt(0, 0), false, false);
+
+    expect(WEATHER_KINDS).toContain(view.kind);
+    expect(view.intensity).toBeGreaterThanOrEqual(0);
+    expect(view.intensity).toBeLessThanOrEqual(1);
+    expect(view.timeMs).toBe(0);
+    expect(view.reducedMotion).toBe(false);
+  });
+
+  test('애니메이션 시각은 리플레이 시각을 따라간다 (배속이 반영된 시계)', () => {
+    const session = makeSession();
+    expect(session.stepWeather(replayStateAt(12_345, 12), false, false).timeMs).toBe(12_345);
+  });
+
+  test('reducedMotion 을 그대로 전달한다 (모션만 멈추고 종류는 유지)', () => {
+    const session = makeSession();
+    const moving = session.stepWeather(replayStateAt(0, 0), false, false);
+    const still = session.stepWeather(replayStateAt(0, 0), false, true);
+
+    expect(still.reducedMotion).toBe(true);
+    // 같은 지표면 표시할 시장 상태도 같아야 한다 — 모션을 줄인다고 정보가 사라지면 안 된다.
+    expect(still.kind).toBe(moving.kind);
+    expect(still.intensity).toBe(moving.intensity);
+  });
+
+  test('거래 정지가 시작되면 정전이 뜨고 상한 프레임 뒤에 다른 날씨로 넘어간다', () => {
+    const session = makeSession();
+    session.stepWeather(replayStateAt(0, 0), false, false);
+
+    const halted: string[] = [];
+    for (let i = 0; i < BLACKOUT_MAX_FRAMES + 3; i += 1) {
+      halted.push(session.stepWeather(replayStateAt(1_000 * i, i), true, false).kind);
+    }
+
+    expect(halted.slice(0, BLACKOUT_MAX_FRAMES)).toEqual(
+      new Array<string>(BLACKOUT_MAX_FRAMES).fill('blackout'),
+    );
+    // ★ 재점멸 금지 ★ 카운터를 "정전이 보이는 동안"만 세면 정지가 이어지는 내내
+    //   3프레임마다 다시 번쩍인다 (`weather/resolve.ts` 머리말).
+    expect(halted.slice(BLACKOUT_MAX_FRAMES)).not.toContain('blackout');
+  });
+
+  test('정지가 풀렸다 다시 걸리면 정전이 한 번 더 뜬다 (카운터가 되돌아간다)', () => {
+    const session = makeSession();
+    for (let i = 0; i < BLACKOUT_MAX_FRAMES + 2; i += 1) {
+      session.stepWeather(replayStateAt(1_000 * i, i), true, false);
+    }
+    session.stepWeather(replayStateAt(9_000, 9), false, false);
+
+    expect(session.stepWeather(replayStateAt(10_000, 10), true, false).kind).toBe('blackout');
+  });
+
+  test('활성 시장 이벤트가 전장 날씨를 지배한다 (FR-7 → 전장)', () => {
+    // `ChartSet.events`는 surge/plunge 아키타입에만 실린다. 이벤트가 있는 시드를 찾아 쓴다.
+    let session: StageSession | null = null;
+    for (let seed = 1; seed <= 64 && session === null; seed += 1) {
+      const candidate = new StageSession(seed, 1, 0);
+      if (candidate.set.events.length > 0) session = candidate;
+    }
+    expect(session).not.toBeNull();
+
+    const event = session!.set.events[0]!;
+    const expected = event.kind === 'panic_sell' ? 'panic_rain' : 'fomo_updraft';
+    const view = session!.stepWeather(replayStateAt(event.atMs, 0), false, false);
+
+    expect(view.kind).toBe(expected);
+    // 이벤트는 지표보다 먼저 확정된 '사건'이라 최소 강도가 보장된다.
+    expect(view.intensity).toBeGreaterThanOrEqual(EVENT_INTENSITY_FLOOR);
   });
 });

@@ -301,3 +301,45 @@
     transform: none;
   }
 }
+
+/*
+ * 잠긴 지역 — 선행 지역을 클리어해야 열린다 (PRD §4 인접 점령).
+ *
+ * `disabled`가 이미 클릭·포커스를 막으므로 여기서는 **왜 못 누르는지**만 전달한다.
+ * 흐림만으로는 "고장난 것"과 구분되지 않아서, 잠금 문구를 카드 안에 함께 띄운다.
+ */
+.rcard--locked {
+  cursor: not-allowed;
+  opacity: 0.45;
+  filter: saturate(0.25);
+}
+
+/* 잠긴 카드는 hover/focus 강조를 받지 않는다 — 누를 수 있다는 신호가 되면 안 된다. */
+.rcard--locked:hover,
+.rcard--locked:focus-visible {
+  border-color: color-mix(in srgb, var(--tf-muted) 34%, transparent);
+  box-shadow: none;
+}
+
+.rcard__lock {
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 45%, transparent);
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, var(--tf-bg-1) 85%, transparent);
+  color: var(--tf-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* `hidden`이 클래스 표시에 밀려 무력화되던 사고가 있었다 — 우선순위를 명시한다. */
+.rcard__lock[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rcard--locked {
+    filter: none;
+  }
+}

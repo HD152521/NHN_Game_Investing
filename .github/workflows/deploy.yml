@@ -1,0 +1,75 @@
+# TICKER FRONT — GitHub Pages 배포
+#
+# 게이트: npm ci → npm test → tsc --noEmit → vite build
+#   네 단계 중 하나라도 실패하면 배포 잡은 아예 시작하지 않는다(깨진 빌드 배포 금지).
+#
+# 사전 준비(한 번만, 저장소 관리자가 수동으로):
+#   Settings > Pages > Build and deployment > Source 를 "GitHub Actions" 로 변경
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Pages 배포에 필요한 최소 권한
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 동시에 하나만. 진행 중인 배포는 취소하지 않는다(중간에 끊긴 배포 방지).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 검증 및 빌드
+    runs-on: ubuntu-latest
+    # 테스트가 실측 약 190초 걸린다. 캐시 미스·러너 편차를 감안해 넉넉히 잡는다.
+    timeout-minutes: 30
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          # @types/node 가 ^22 이므로 런타임도 22 LTS 로 맞춘다.
+          node-version: '22'
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # --- 게이트 3종 (docs/GAME.md §18-1 기본 3종과 동일) ---
+      - name: 게이트 1 — 테스트 (약 190초)
+        run: npm test
+
+      - name: 게이트 2 — 타입체크
+        run: npx tsc --noEmit
+
+      - name: 게이트 3 — 프로덕션 빌드
+        run: npm run build
+
+      - name: Pages 설정
+        uses: actions/configure-pages@v5
+
+      - name: dist 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Pages 배포
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 배포
+        id: deployment
+        uses: actions/deploy-pages@v4

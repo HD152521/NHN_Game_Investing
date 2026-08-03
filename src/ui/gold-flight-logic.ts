@@ -172,6 +172,26 @@ export function countUpTo(from: number, gained: number, progress: number): numbe
   return Math.round(from + gained * t);
 }
 
+/**
+ * 연출 중 HUD에 찍을 골드 = 카운트업 값과 **실제 골드** 중 작은 쪽.
+ *
+ * ★ CLICK-PATH LOW-3 — 최대 750ms 과대 표시 결함 ★
+ * `sync()`는 연출 중 목표값을 `pending`에 보류만 하고 표시를 만지지 않았다. 그래서
+ * 연출이 도는 동안(최대 750ms) 타워를 사면 **이미 나간 골드가 HUD에 그대로 남았고**,
+ * 없는 돈을 있다고 믿은 두 번째 구매 시도로 이어졌다.
+ *
+ * 불변식은 하나다: **표시 골드는 실제 골드를 넘지 않는다.**
+ * 반대 방향(실제보다 낮게 보이는 것)은 막지 않는다 — 카운트업 중간값이 목표보다 낮은 것은
+ * 연출의 목적 그 자체이고, 덜 보이는 것은 잘못된 구매를 유발하지 않기 때문이다.
+ * 즉 이 함수는 연출을 죽이지 않고 상한만 씌운다.
+ *
+ * `actual`이 null이면(연출 시작 후 아직 한 번도 sync되지 않음) 상한을 걸 근거가 없으므로
+ * 카운트업 값을 그대로 쓴다.
+ */
+export function clampGoldDisplay(countUp: number, actual: number | null): number {
+  return actual === null ? countUp : Math.min(countUp, actual);
+}
+
 export function resolveGoldFlightTone(reason: CloseReason, pnl: number): GoldFlightTone {
   if (reason === 'liquidated') {
     return 'liquidated';

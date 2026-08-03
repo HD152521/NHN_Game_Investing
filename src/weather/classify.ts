@@ -13,6 +13,7 @@ import {
   FOG_MAX_ABS_CHANGE_PCT,
   FOG_MAX_SIGMA_PCT,
   Z_SIGMA_FLOOR_PCT,
+  RECENT_WINDOW_SIGMA_SCALE,
 } from './constants.js';
 import type { MarketConditions, WeatherKind } from './types.js';
 
@@ -29,10 +30,28 @@ function clamp01(value: number): number {
  *
  * 왜 raw %가 아니라 z인가: 같은 −3%도 조용한 차트에서는 사건이고 요동치는 차트에서는
  * 평시다. z를 쓰면 어떤 차트에서든 "얼마나 이례적인가"가 같은 눈금으로 읽힌다.
+ *
+ * ★★ 분모를 측정 윈도에 맞춘다 — 여기가 실제 버그였다 ★★
+ * 분자 `recentChangePct`는 **10봉(10분)** 변화인데 `sigma30`은 **30분** 수익률의
+ * 표준편차다. 그대로 나누면 10분 움직임을 30분 눈금으로 재는 셈이라 |z|가 구조적으로
+ * 작아진다(√t 스케일링으로 약 0.58배).
+ *
+ * 그 결과 **변동성이 큰 차트에서는 날씨가 한 번도 뜨지 않았다.** 실측(합성기):
+ *
+ * | 시드 | sigma30 | 고치기 전 \|z\|≥1 | 고친 뒤 |
+ * |---|---|---|---|
+ * | 1 | 2.834 | **0.0%** (최대 0.83) | 7.9% |
+ * | 2 | 2.919 | **0.0%** (최대 0.68) | 3.8% |
+ * | 3 | 2.483 | **0.0%** (최대 0.87) | 11.8% |
+ * | 20260803 | 0.795 | 19.2% | 44.6% |
+ *
+ * 기본 시드가 1이라 자유 플레이에서는 390봉 내내 `clear`였다("날씨가 변하지 않는다"는
+ * 플레이 피드백이 이것이다). 임계값을 낮추는 대신 **분모의 단위를 맞췄다** — 임계값
+ * `DIRECTIONAL_MIN_Z = 1`("1σ 이상이면 이례적")의 의미를 지키려면 이쪽이 맞다.
  */
 export function marketZ(recentChangePct: number, sigma30: number): number {
-  const denominator = Math.max(sigma30, Z_SIGMA_FLOOR_PCT);
-  const z = recentChangePct / denominator;
+  const scaled = Math.max(sigma30, Z_SIGMA_FLOOR_PCT) * RECENT_WINDOW_SIGMA_SCALE;
+  const z = recentChangePct / scaled;
   return Number.isFinite(z) ? z : 0;
 }
 

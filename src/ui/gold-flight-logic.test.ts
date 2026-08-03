@@ -9,6 +9,7 @@ import { describe, expect, test } from 'vitest';
 import {
   GOLD_FLIGHT_MAX_MS,
   GOLD_FLIGHT_TOTAL_MS,
+  clampGoldDisplay,
   countUpTo,
   formatGoldFlightLabel,
   goldFlightToneClass,
@@ -187,6 +188,34 @@ describe('formatGoldFlightLabel', () => {
 
   test('강제 청산은 별도 문구를 앞에 붙인다 (FR-5.10)', () => {
     expect(formatGoldFlightLabel('liquidated', 0)).toContain('강제 청산');
+  });
+});
+
+/**
+ * CLICK-PATH LOW-3 회귀 방어선.
+ * 불변식: **표시 골드는 실제 골드를 넘지 않는다.**
+ */
+describe('clampGoldDisplay', () => {
+  test('실제 골드를 모르면(null) 카운트업 값을 그대로 쓴다', () => {
+    expect(clampGoldDisplay(340, null)).toBe(340);
+  });
+
+  test('카운트업이 실제 골드보다 낮으면 그대로 둔다 — 연출 중간값은 정상이다', () => {
+    expect(clampGoldDisplay(250, 400)).toBe(250);
+  });
+
+  test('★ 연출 중 타워를 사면 표시가 실제 골드로 눌린다 (과대 표시 차단)', () => {
+    // 200 G에서 +200 청산 연출이 도는 중(목표 400) 120 G 포탑을 샀다 → 실제 280.
+    expect(clampGoldDisplay(400, 280)).toBe(280);
+  });
+
+  test('실제 골드가 출발값보다 낮아져도 넘겨 표시하지 않는다 — 이동 구간까지 덮는다', () => {
+    // 카운트업 시작 전이라 표시 후보는 출발값(200)인데, 이미 160만 남았다.
+    expect(clampGoldDisplay(200, 160)).toBe(160);
+  });
+
+  test('실제 골드가 0이면 0을 표시한다', () => {
+    expect(clampGoldDisplay(400, 0)).toBe(0);
   });
 });
 

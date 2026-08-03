@@ -39,8 +39,15 @@ import {
   summonUnit,
   upgradeTower,
 } from '../combat';
-import type { ChartSet, Replay } from '../market';
+import type { ChartSet, Replay, ReplayState } from '../market';
 import { createReplay, generateChartSet } from '../market';
+import type { MarketConditions, WeatherKind, WeatherView } from '../weather';
+import {
+  activeEventAt,
+  recentChangePct,
+  resolveWeatherKind,
+  weatherIntensity,
+} from '../weather';
 import type {
   ClosedPosition,
   Direction,
@@ -93,13 +100,18 @@ export interface CloseNotice {
 }
 
 /**
- * 점령 지역 수. 0 고정 (FR-6.7 heat / FR-6.8 운영비).
+ * 점령 지역 수의 기본값 (FR-6.7 heat).
  *
- * 지역 선택이 생겨 R1~R3를 자유롭게 고를 수 있게 됐지만, **점령(진행도) 저장은 아직 없다** —
- * 어느 지역을 이미 클리어했는지 알 수 없으므로 heat는 항상 1이다.
- * TODO: 진행도 저장이 붙으면 클리어한 지역 수를 여기 주입한다.
+ * 예전에는 `const TERRITORIES = 0` 고정이었다 — 진행도 저장이 없어 어느 지역을 클리어했는지
+ * 알 수 없었고, 그래서 `HEAT_PER_TERRITORY`가 코드에만 있고 **런타임 효과가 0**이었다.
+ * 이제 셸이 `progress.ts`에서 읽은 점령 수를 생성자로 주입한다.
+ *
+ * ⚠️ **heat가 살아나면 난이도가 실제로 올라간다.** `heat = 1 + 점령 수 × 0.04`이므로
+ * 2지역 점령 후에는 적 HP가 8% 높아진 판을 만난다. 의도된 설계지만(뒤로 갈수록 압력이
+ * 커진다), 밸런스를 측정할 때는 **어느 점령 수에서 잰 값인지**를 함께 적어야 한다.
+ * 시뮬레이터 2종은 점령 0을 가정한다.
  */
-const TERRITORIES = 0;
+const DEFAULT_TERRITORIES = 0;
 
 export class StageSession {
   readonly set: ChartSet;
@@ -122,6 +134,20 @@ export class StageSession {
   private lastDeaths: readonly DeathEvent[] = NO_DEATHS;
 
   /**
+   * ── 날씨 판정의 시간축 상태 (`stepWeather`가 소유한다) ──────────
+   *
+   * 판정 자체는 `src/weather`(순수 함수)가 전부 한다. 다만 정전(WX-04)은 **직전 종류**와
+   * **정지 구간이 시작된 뒤 지난 프레임 수**라는 두 개의 시간축 입력을 요구하는데,
+   * 순수 함수는 시계를 가질 수 없으므로 그 둘을 들고 있는 자리가 필요하다. 여기가 그 자리다.
+   *
+   * ⚠️ `haltedFrames`는 "정전이 보이는 동안"이 아니라 **정지 구간 전체**를 센다.
+   *    정전이 3프레임 뒤 다른 날씨로 넘어갈 때 카운터를 되돌리면 정지가 이어지는 내내
+   *    3프레임마다 정전이 재점멸한다 (`weather/resolve.ts` 머리말).
+   */
+  private weatherKind: WeatherKind = 'clear';
+  private haltedFrames = 0;
+
+  /**
    * FR-8.1 정산 분모 — **총 획득 골드**.
    *
    * 시작 골드(FR-6.8-b가 명시적으로 포함하라고 못박은 값) + 웨이브 기본 수입 + 청산 대금.
@@ -131,12 +157,29 @@ export class StageSession {
   /** 총 청산 수 / 그중 `pnl > 0`인 수 — FR-8.1 적중률과 `aumGate`의 입력이다. */
   private closeCount = 0;
   private profitCloseCount = 0;
+  /**
+   * 이번 스테이지의 청산 기록 전부 (FR-9.2 공개 연출 4단계).
+   *
+   * 예전에는 `closeCount`/`profitCloseCount` **스칼라 두 개만** 남겼다. 정산에는 그것으로
+   * 충분했지만, "내가 어떻게 매매했는지"를 차트 위에 되짚어 보여주려면 진입·청산 시각과
+   * 가격이 필요하다 — 집계에서는 복원할 수 없다.
+   *
+   * 진입 24회가 상한이라(`maxPositions`) 배열이 무한정 자라지 않는다.
+   */
+  private readonly closes: ClosedPosition[] = [];
 
   /**
    * @param stageId 플레이할 지역. 생략하면 R1 — 지역 선택 화면이 붙기 전 호출부와
    *   테스트가 그대로 동작하도록 남긴 기본값이다.
    */
-  constructor(seed: number, speed: number, startAtMs: number, stageId: StageId = DEFAULT_STAGE_ID) {
+  constructor(
+    seed: number,
+    speed: number,
+    startAtMs: number,
+    stageId: StageId = DEFAULT_STAGE_ID,
+    /** 이미 점령한 지역 수 (FR-6.7 heat). 셸이 `clearedCount(progress)`를 넘긴다. */
+    territories: number = DEFAULT_TERRITORIES,
+  ) {
     const stage = STAGES[stageId];
     this.stage = stage;
     this.set = generateChartSet(seed);
@@ -154,7 +197,8 @@ export class StageSession {
       waveDurationMs: WAVE_DURATION_MS / speed,
       towerSlots: TOWER_SLOTS,
       maxBaseHp: BASE_HP,
-      heat: 1 + TERRITORIES * HEAT_PER_TERRITORY,
+      // 음수·NaN이 새면 heat가 1 미만이 되어 난이도가 조용히 내려간다 — 하한을 건다.
+      heat: 1 + Math.max(0, territories) * HEAT_PER_TERRITORY,
       aumDropPerWave: AUM_DROP_PER_WAVE,
       totalBaseIncome: totalBaseIncome(stage),
     };
@@ -204,6 +248,50 @@ export class StageSession {
     }
   }
 
+  /**
+   * 이번 프레임의 날씨(= 시장 상태 표시)를 판정한다. **프레임당 정확히 한 번** 불러야 한다.
+   *
+   * ★ 왜 세션이 이걸 하는가 ★ 날씨는 "차트 → 화면"을 잇는 네 갈래 중 하나이고, 그 입력
+   *   (`bars` · `sigma30` · `events`)은 전부 이 세션이 들고 있는 `ChartSet`에 있다. 전장
+   *   렌더러는 시장 지표를 알면 안 되므로(§17-2 경계 규칙), 지표를 `WeatherView`로 바꾸는
+   *   일은 차트를 소유한 쪽이 해야 한다. 판정 규칙 자체는 한 줄도 여기 없다 —
+   *   전부 `src/weather`의 순수 함수 호출이며, 이 메서드는 **호출 순서와 시간축 상태**만 맡는다.
+   *
+   * ⚠️ 이 배선이 오래 비어 있었다 (§19-5). `src/weather`와 `src/battle/draw-weather-*`가
+   *   양쪽 다 구현·테스트를 끝냈는데도 셸이 잇지 않아, 트리셰이킹으로 통째로 빠진 채
+   *   **게임 중 날씨가 한 번도 뜨지 않았다.** 테스트는 모듈을 직접 import하므로 전부 통과했다.
+   *
+   * @param state         리플레이 상태. 필드를 손으로 옮겨 적지 않고 통째로 받는다 (§19-10).
+   * @param halted        거래가 멈춰 있는가 → WX-04 정전. 합성 차트에는 서킷브레이커가
+   *                      없으므로, 실제로 매매가 잠기는 유일한 구간인 **장 마감**을 셸이
+   *                      넘긴다. 정전은 3프레임 상한이라 마감 순간 한 번 번쩍이고 끝난다.
+   * @param reducedMotion `prefers-reduced-motion`. 모션만 멈추고 **시장 상태 정보(색)는
+   *                      그대로 남는다** — 날씨는 장식이 아니므로 (`weather/signature.ts`).
+   */
+  stepWeather(state: ReplayState, halted: boolean, reducedMotion: boolean): WeatherView {
+    const conditions: MarketConditions = {
+      recentChangePct: recentChangePct(this.set.bars, state.barIndex),
+      sigma30: this.set.sigma30,
+      halted,
+      event: activeEventAt(this.set.events, state.elapsedMs),
+    };
+
+    const kind = resolveWeatherKind(conditions, this.weatherKind, this.haltedFrames);
+    // 카운터는 **판정 뒤에** 움직인다. 정지가 시작된 첫 프레임은 `haltedFrames === 0`이어야
+    // `resolveWeatherKind`가 "새 정지"로 보고 반드시 한 번 번쩍인다.
+    this.haltedFrames = halted ? this.haltedFrames + 1 : 0;
+    this.weatherKind = kind;
+
+    return {
+      kind,
+      intensity: weatherIntensity(conditions, kind),
+      // 재생 시각을 쓴다 — 배속을 올리면 시장이 빨리 흐르는 만큼 날씨도 같이 빨라진다.
+      // 발판 맥동(`drawBattle`의 `timeMs`)이 이미 같은 시계를 쓰고 있어 연출이 어긋나지 않는다.
+      timeMs: state.elapsedMs,
+      reducedMotion,
+    };
+  }
+
   /** FR-8.1 정산에 필요한 누적 수치. 계산은 `src/app/settlement.ts`가 한다. */
   get settlementFacts(): {
     readonly totalGoldEarned: number;
@@ -215,6 +303,16 @@ export class StageSession {
       closeCount: this.closeCount,
       profitCloseCount: this.profitCloseCount,
     };
+  }
+
+  /**
+   * 청산 기록 전부 — 공개 연출이 차트 위에 되짚어 그릴 원본이다.
+   *
+   * 내부 배열을 그대로 넘기지 않는다(불변 규율). 호출부가 밀어 넣으면 세션 상태가
+   * 조용히 오염된다.
+   */
+  get closedPositions(): readonly ClosedPosition[] {
+    return [...this.closes];
   }
 
   /** 다음 웨이브까지 남은 준비 시간(ms). 0이면 교전 중이다 (HUD 카운트다운용). */
@@ -437,6 +535,10 @@ export class StageSession {
     this.position = null;
     this.goldEarned += result.result.goldGained;
     this.closeCount += 1;
+    // 공개 연출(FR-9.2 4단계)이 차트 위에 되짚어 그릴 원본이다. 집계값만으로는
+    // "언제 어느 가격에 들어가 언제 나왔는지"를 복원할 수 없어 기록 자체를 남긴다.
+    // push는 청산 시점에만 일어나므로 프레임당 할당 0 규율을 깨지 않는다.
+    this.closes.push(result.result.position);
     if (result.result.position.pnl > 0) {
       this.profitCloseCount += 1;
     }
