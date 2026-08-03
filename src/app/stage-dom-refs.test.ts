@@ -60,6 +60,10 @@ const REQUIRED_REFS: readonly string[] = [
   'panel-host',
   'region-select',
   'seed-input',
+  // 사운드 설정 (PRD §3.1 ⑬). HUD의 `volume`(거래량)과 **다른 이름이어야 한다** —
+  // `[data-ref="volume"]`는 접두사 일치가 아니라 정확 일치라 서로를 가리지 않는다.
+  'volume-slider',
+  'volume-value',
 ];
 
 /** `collectStageRefs`가 `data-action`으로 찾는 것 전부. */
@@ -74,6 +78,7 @@ const REQUIRED_ACTIONS: readonly string[] = [
   'reveal-skip',
   'start-daily',
   'start-seed',
+  'audio-mute',
 ];
 
 const MARKUP = buildStageMarkup();

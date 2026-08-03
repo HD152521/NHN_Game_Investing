@@ -5,6 +5,13 @@
  * ② 마크업은 게임 루프와 수명이 완전히 다르다(마운트 시 1회).
  */
 
+import {
+  VOLUME_STEP_PERCENT,
+  defaultAudioSettings,
+  formatVolumeLabel,
+  muteButtonLabel,
+  volumeToPercent,
+} from '../audio';
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import type { SettlementRow } from './settlement';
 import {
@@ -50,6 +57,19 @@ export const RESULT_CARD_ACTION = 'result-card';
 /** 결과 화면의 두 출구. 여기서만 스테이지가 다시 시작된다. */
 export const RESULT_RETRY_ACTION = 'result-retry';
 export const RESULT_REGION_ACTION = 'result-region';
+
+/**
+ * 음소거 토글 (PRD §3.1 ⑬ 설정 — 배속·볼륨·색약 중 볼륨).
+ *
+ * 볼륨 슬라이더와 **따로 둔다.** 슬라이더를 0으로 내리는 것과 음소거는 다른 사실이고
+ * (`effectiveVolume` 주석), 끄기 전 볼륨을 기억해야 다시 켤 때 원래 크기로 돌아온다.
+ */
+export const AUDIO_MUTE_ACTION = 'audio-mute';
+
+/** 볼륨 슬라이더의 `data-ref`. HUD의 `volume`(거래량)과 **다른 이름이어야 한다.** */
+export const AUDIO_SLIDER_REF = 'volume-slider';
+/** 볼륨 숫자 표시. 음소거면 '음소거'라고 쓴다 — 0%와 음소거는 다른 상태다. */
+export const AUDIO_VALUE_REF = 'volume-value';
 
 /**
  * 타워·유닛 라벨에 **담당 레인과 역할을 반드시 함께 노출**한다.
@@ -142,6 +162,15 @@ export interface StageRefs {
   /** 지역 선택 → 시작 게이트로 돌아가는 버튼. */
   readonly regionBackButton: HTMLButtonElement;
   readonly panelHost: HTMLElement;
+  /**
+   * 사운드 설정 3종 (PRD §3.1 ⑬).
+   *
+   * 소리는 **보조 채널**이라 이 컨트롤이 하나도 없어도 게임은 그대로 굴러가야 한다.
+   * 그래서 `collectStageRefs`의 필수 목록에 넣되, 셸의 배선은 전부 실패 허용이다.
+   */
+  readonly audioMuteButton: HTMLButtonElement;
+  readonly audioSlider: HTMLInputElement;
+  readonly audioValue: HTMLElement;
   readonly speedButtons: readonly HTMLButtonElement[];
   readonly towerButtons: readonly HTMLButtonElement[];
   /** 유닛 소환 3종. 골드 부족이면 셸이 매 프레임 비활성으로 만든다(CLICK-PATH-004). */
@@ -185,6 +214,33 @@ export function buildSettlementRowsMarkup(rows: readonly SettlementRow[]): strin
     .join('');
 }
 
+/**
+ * 사운드 설정 컨트롤 (PRD §3.1 ⑬) — 음소거 토글 + 마스터 볼륨 슬라이더.
+ *
+ * ★ 초기값을 여기서 정하지 않는다 ★ 마크업은 마운트 시 1회 지어지므로 저장된 설정을
+ * 아직 모른다. 기본값을 박아 두고 셸이 `syncAudioControls`로 곧바로 되맞춘다 —
+ * `region-select.ts`가 지역 잠금을 마크업이 아니라 `syncRegionLocks`로 맞추는 것과 같다.
+ *
+ * 숫자·문구는 전부 `src/audio/settings.ts`에서 온다(§19-4 이중 출처 금지).
+ */
+export function buildAudioControlsMarkup(): string {
+  const settings = defaultAudioSettings();
+  return `
+        <span class="controls__audio">
+          <button class="btn btn--audio" type="button" data-action="${AUDIO_MUTE_ACTION}"
+                  aria-pressed="false" title="${muteButtonLabel(false)}">
+            <span aria-hidden="true">♪</span><span class="sr-only">${muteButtonLabel(false)}</span>
+          </button>
+          <label class="controls__volume">
+            <span class="sr-only">소리 크기</span>
+            <input type="range" min="0" max="100" step="${VOLUME_STEP_PERCENT}"
+                   value="${volumeToPercent(settings.volume)}" data-ref="${AUDIO_SLIDER_REF}" />
+          </label>
+          <span class="controls__volume-value" data-ref="${AUDIO_VALUE_REF}"
+                >${formatVolumeLabel(settings)}</span>
+        </span>`;
+}
+
 export function buildStageMarkup(): string {
   const speeds = SPEEDS.map(
     (s) => `<button class="btn" type="button" data-speed="${s}">${s}x</button>`,
@@ -193,6 +249,7 @@ export function buildStageMarkup(): string {
   const towers = buildTowerRosterMarkup();
   const units = buildUnitRosterMarkup();
   const skills = buildSkillBarMarkup();
+  const audio = buildAudioControlsMarkup();
 
   return `
     <div class="stage stage--gated" data-ref="stage">
@@ -317,6 +374,7 @@ export function buildStageMarkup(): string {
         <button class="btn" type="button" data-action="restart">새 스테이지</button>
         ${speeds}
         <span class="controls__note" data-ref="log">타워를 고르고 아래 빈 슬롯을 클릭하세요</span>
+        ${audio}
       </div>
 
       ${buildStartGateMarkup()}
@@ -387,6 +445,11 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   );
   const gate = pick('gate');
   const panelHost = pick('panel-host');
+  const audioMuteButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${AUDIO_MUTE_ACTION}"]`,
+  );
+  const audioSlider = root.querySelector<HTMLInputElement>(`[data-ref="${AUDIO_SLIDER_REF}"]`);
+  const audioValue = pick(AUDIO_VALUE_REF);
   const startButton = root.querySelector<HTMLButtonElement>('[data-action="start-stage"]');
   const regionSelect = pick('region-select');
   const regionBackButton = root.querySelector<HTMLButtonElement>(
@@ -436,6 +499,9 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !resultRegionButton ||
     !gate ||
     !panelHost ||
+    !audioMuteButton ||
+    !audioSlider ||
+    !audioValue ||
     !startButton ||
     !regionSelect ||
     !regionBackButton
@@ -499,6 +565,9 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
       root.querySelectorAll<HTMLButtonElement>(`[data-action="${REGION_SELECT_ACTION}"]`),
     ),
     panelHost,
+    audioMuteButton,
+    audioSlider,
+    audioValue,
     speedButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-speed]')),
     towerButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tower]')),
     unitButtons: Array.from(root.querySelectorAll<HTMLButtonElement>('[data-unit]')),

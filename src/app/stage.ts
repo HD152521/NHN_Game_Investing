@@ -45,7 +45,7 @@ import {
   UNIT_COST,
   UNIT_HOLD_LINE,
 } from '../combat';
-import type { SkillId, StageId, TowerKind, UnitKind } from '../combat';
+import type { CombatState, SkillId, StageId, TowerKind, UnitKind } from '../combat';
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
 import type { SkillFxField, SkillFxViewport } from '../fx';
 import { changePercent } from '../market';
@@ -70,6 +70,8 @@ import type {
   TradePanel,
   TradePanelViewModel,
 } from '../ui';
+import { audioControlView, createGameAudio, diffCombatEvents, percentToVolume, prepTickIndex } from '../audio';
+import type { AudioSettings, CombatAudioFrame, GameAudio } from '../audio';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
 import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
 import { clearedCount, loadProgress, markTutorialSeen, recordCleared } from './progress';
@@ -129,6 +131,22 @@ import {
   formatSessionClock,
   formatSignedPercent,
 } from './stage-dom';
+
+/**
+ * 전투 상태에서 **소리 판정에 필요한 것만** 뽑는다.
+ *
+ * `src/audio`는 `src/combat`을 import하지 않으므로(§17-2 경계 규칙) 여기가 두 세계를
+ * 잇는 유일한 지점이다. 참조를 그대로 넘긴다 — `towers` 배열은 전투가 불변으로 다루므로
+ * 복사할 이유가 없고, 매 프레임 복사하면 "프레임당 할당 0"이 깨진다.
+ */
+function audioFrameOf(state: CombatState): CombatAudioFrame {
+  return {
+    towers: state.towers,
+    hasBoss: state.boss != null,
+    baseHp: state.baseHp,
+    wave: state.wave,
+  };
+}
 
 const DEFAULT_STAKE_RATIO: StakeRatio = 0.25;
 
@@ -241,6 +259,35 @@ export function mountStage(root: HTMLElement): () => void {
   };
 
   /**
+   * ── 사운드 (PRD §3.1 ⑬) ──────────────────────────────────────
+   *
+   * **앱 수명 동안 하나만 만든다.** `AudioContext`는 브라우저당 개수 제한이 있어
+   * 판마다 새로 만들면 몇 판 뒤에 소리가 통째로 사라진다.
+   *
+   * ⚠️ 이 시점의 컨텍스트는 **`suspended`**다 — 브라우저 자동재생 정책은 첫 사용자
+   * 제스처 전에는 소리를 내주지 않는다. 그래서 시작 게이트의 버튼들이 `audio.resume()`을
+   * 부른다(아래 배선). 여기서 미리 부르면 브라우저가 거부하고 경고만 남는다.
+   *
+   * 소리를 못 만드는 환경(테스트·구형 브라우저)에서는 `available === false`인 무음
+   * 엔진이 되며, **아래의 어떤 호출도 던지지 않는다.**
+   */
+  const audio: GameAudio = createGameAudio({
+    onSettingsChange: (settings) => syncAudioControls(settings),
+  });
+
+  /**
+   * 직전 프레임의 전투 상태(소리 판정용). `null`이면 아직 기준이 없다는 뜻이라
+   * 이번 프레임은 **기록만 하고 아무 소리도 내지 않는다.**
+   *
+   * 세션이 새로 만들어질 때마다 `null`로 되돌린다 — 그러지 않으면 지난 판의 마지막
+   * 상태(웨이브 13 · HP 12)와 새 판의 첫 상태(웨이브 0 · HP 100)를 비교하게 된다.
+   */
+  let previousCombatFrame: CombatAudioFrame | null = null;
+
+  /** 직전 프레임의 준비 카운트다운 눈금. 바뀔 때만 틱이 울린다(초당 1회). */
+  let previousPrepTick = 0;
+
+  /**
    * 골드 HUD 숫자의 소유자. 청산 골드는 차트에서 출발해 이 숫자로 날아와 꽂히고,
    * 도착 시점에 카운트업된다 (즉시 치환 금지).
    */
@@ -263,9 +310,23 @@ export function mountStage(root: HTMLElement): () => void {
 
   const panel: TradePanel = createTradePanel(
     {
-      onOpen: (direction: Direction) => session?.openTrade(direction, stakeRatio, elapsedMs),
+      /*
+       * ★ 진입·추가매수 소리는 여기서 낸다 ★ 청산은 `announceClose`가 소유하므로
+       * `onClose`에는 소리가 없다 — 두 곳에서 울리면 청산음이 두 번 난다.
+       *
+       * ⚠️ 성공 여부를 모르는 자리다(`openTrade`는 `void`다). 그래서 진입음은 "버튼을
+       * 눌렀다"는 사실에 붙는다. 패널이 이미 `canOpen`으로 버튼을 잠그고 있어 실패
+       * 경로가 거의 없고, 소리는 보조 채널이라 여기서 판정을 새로 만들지 않는다.
+       */
+      onOpen: (direction: Direction) => {
+        session?.openTrade(direction, stakeRatio, elapsedMs);
+        audio.emit({ kind: 'trade-open' }, lastFrameMs);
+      },
       onClose: () => session?.closeTrade(elapsedMs),
-      onAdd: (ratio) => session?.addTrade(ratio, elapsedMs),
+      onAdd: (ratio) => {
+        session?.addTrade(ratio, elapsedMs);
+        audio.emit({ kind: 'trade-add' }, lastFrameMs);
+      },
       onStakeRatioChange: (ratio) => {
         stakeRatio = ratio;
       },
@@ -340,8 +401,29 @@ export function mountStage(root: HTMLElement): () => void {
     overtimeRemainingMs = 0;
     tutorialHoldMs = 0;
     armedSpeed = null;
+    // 소리 기준을 함께 갈아 끼운다 — 지난 판의 마지막 상태와 비교하면 판이 시작되는
+    // 순간 피격음·웨이브음이 가짜로 터진다.
+    previousCombatFrame = null;
+    previousPrepTick = 0;
     refs!.volume.textContent = `거래량 ${session.set.volumeMultiple.toFixed(1)}×`;
     hideResult();
+  }
+
+  /**
+   * 사운드 설정 UI를 현재 설정에 맞춘다. **표시는 전부 `src/audio`에서 온다** — 여기서
+   * 문구를 만들면 §19-4의 이중 출처가 된다.
+   *
+   * `aria-pressed`와 화면 표시가 같은 값을 쓰므로 스크린리더와 눈이 보는 사실이 갈리지 않는다.
+   */
+  function syncAudioControls(settings: AudioSettings): void {
+    const view = audioControlView(settings);
+    refs!.audioMuteButton.setAttribute('aria-pressed', view.pressed);
+    refs!.audioMuteButton.title = view.label;
+    const description = refs!.audioMuteButton.querySelector('.sr-only');
+    if (description) description.textContent = view.label;
+    // 슬라이더는 음소거 중에도 조작할 수 있다 — 끄기 전 크기를 미리 맞춰 두는 사용이 있다.
+    refs!.audioSlider.value = view.sliderValue;
+    refs!.audioValue.textContent = view.valueText;
   }
 
   /** 결과 화면을 닫고 다음 세션이 만들어질 수 있는 상태로 되돌린다. */
@@ -381,6 +463,8 @@ export function mountStage(root: HTMLElement): () => void {
 
     const anchor = skillAnchor(id, BATTLE_WIDTH, BATTLE_HEIGHT, castIndex);
     triggerSkillEffect(skillFx, id, anchor.x, anchor.y, nowMs);
+    // 이펙트와 같은 조건에서만 울린다 — 거부된 시전에 소리가 나면 화면이 거짓말을 한다.
+    audio.emit({ kind: 'skill-cast', skill: id }, nowMs);
 
     const spec = SKILL_SPECS[id];
     refs!.log.textContent = `${spec.displayName} 시전 — ${spec.cost} ${spec.currency === 'aum' ? 'AUM' : 'G'} 소모`;
@@ -566,6 +650,15 @@ export function mountStage(root: HTMLElement): () => void {
     const label = notice.position.reason === 'liquidated' ? '강제 청산' : '청산';
     const sign = notice.position.pnl > 0 ? '+' : '';
     refs!.log.textContent = `${label} — 손익 ${sign}${notice.position.pnl} / 골드 +${notice.goldGained}`;
+    /*
+     * ★ 소리도 여기서 낸다 ★ 청산이 확정된 유일한 지점이라 강제 청산·수동 청산·장 마감
+     * 청산이 전부 이 함수를 지난다. 판정(이익/손실/강제)은 `soundForEvent`가 하고
+     * 셸은 사실만 넘긴다 — `reason` 문자열이 `src/position`과 같아서 변환이 없다.
+     */
+    audio.emit(
+      { kind: 'trade-close', pnl: notice.position.pnl, reason: notice.position.reason },
+      lastFrameMs,
+    );
     goldMeter.launch({
       goldGained: notice.goldGained,
       pnl: notice.position.pnl,
@@ -620,6 +713,35 @@ export function mountStage(root: HTMLElement): () => void {
 
     const snap = session.snapshot(elapsedMs);
     const combat = session.combatState;
+
+    /*
+     * ── 전투 소리 (PRD §3.1 ⑬) ──────────────────────────────────
+     *
+     * 판정은 전부 `src/audio`의 순수 함수가 한다. 셸이 하는 일은 ① 전투 상태를
+     * `CombatAudioFrame`으로 **좁혀** 넘기고 ② 돌아온 이벤트 목록을 그대로 흘리는 것뿐이다
+     * (튜토리얼·날씨 배선과 같은 모양이다).
+     *
+     * ⚠️ **연타 억제는 여기서 하지 않는다.** 타워 6기가 초당 10회 넘게 쏘므로 억제가
+     * 없으면 소리 벽이 되는데, 그 판정은 `throttle.ts`가 소유한다 — 셸이 미리 줄이면
+     * 두 곳에 규칙이 생기고 테스트가 붙지 않는다.
+     *
+     * 첫 프레임(`previousCombatFrame === null`)은 기준만 잡고 아무 소리도 내지 않는다.
+     */
+    const audioFrame = audioFrameOf(combat);
+    if (previousCombatFrame !== null) {
+      audio.emitAll(
+        diffCombatEvents(previousCombatFrame, audioFrame, session.lastCombatDeaths),
+        nowMs,
+      );
+    }
+    previousCombatFrame = audioFrame;
+
+    // 준비 카운트다운 — 초 눈금이 바뀔 때만. 프레임마다 울리면 초당 60회다.
+    const prepTick = prepTickIndex(combat.phase === 'running' ? combat.prepRemainingMs : 0);
+    if (prepTick !== previousPrepTick && prepTick > 0) {
+      audio.emit({ kind: 'prep-tick' }, nowMs);
+    }
+    previousPrepTick = prepTick;
 
     drawChart(refs!.chartCtx, {
       bars: session.set.bars,
@@ -743,6 +865,8 @@ export function mountStage(root: HTMLElement): () => void {
       const current = session;
       const outcome = decision.outcome;
       pendingOutcome = outcome;
+      // 결말은 공개 연출 **앞**에서 울린다 — 연출이 시작되는 순간이 결과를 안 순간이다.
+      audio.emit({ kind: 'stage-end', outcome }, nowMs);
       showReveal(current, () => showResult(current, outcome));
     }
   }
@@ -1088,6 +1212,7 @@ export function mountStage(root: HTMLElement): () => void {
 
   /** 지역을 확정하고 스테이지를 시작한다. **여기서 처음으로 프레임 루프가 돈다.** */
   function beginStage(id: StageId): void {
+    audio.resume();
     stageId = id;
     session = null; // 다음 프레임이 고른 지역 설정으로 세션을 새로 만든다.
     refs!.regionSelect.hidden = true;
@@ -1096,7 +1221,37 @@ export function mountStage(root: HTMLElement): () => void {
     loop.start();
   }
 
+  /**
+   * ── 사운드 설정 배선 (PRD §3.1 ⑬) ────────────────────────────
+   *
+   * 판정은 전부 `src/audio`가 소유한다 — 여기서는 값을 옮기기만 한다.
+   * 설정이 바뀌면 `onSettingsChange` → `syncAudioControls`로 표시가 되돌아온다
+   * (한 방향 흐름이라 슬라이더와 저장값이 어긋날 자리가 없다).
+   */
+  refs.audioMuteButton.addEventListener('click', () => {
+    // 사용자 제스처다 — 자동재생 정책 해제의 기회를 놓치지 않는다.
+    audio.resume();
+    audio.toggleMuted();
+  });
+
+  refs.audioSlider.addEventListener('input', () => {
+    audio.resume();
+    audio.setVolume(percentToVolume(Number(refs.audioSlider.value)));
+  });
+
+  // 저장된 설정을 화면에 처음으로 반영한다. 마크업의 기본값은 자리표시자일 뿐이다.
+  syncAudioControls(audio.settings);
+
+  /**
+   * ★ 브라우저 자동재생 정책 ★
+   *
+   * 첫 사용자 제스처 전에는 `AudioContext`가 `suspended`라 소리가 나지 않는다. 시작
+   * 게이트의 버튼 넷(자유 플레이 · 일일 챌린지 · 시드 입력 · 지역 카드)이 게임에 들어가는
+   * 모든 경로이므로 **거기서 깨운다.** `resume`은 여러 번 불러도 무해하고, 소리를 못 내는
+   * 환경에서는 조용한 no-op이다.
+   */
   refs.startButton.addEventListener('click', () => {
+    audio.resume();
     // 자유 플레이 — 시드는 지금 값 그대로, 챌린지 규칙을 걸지 않는다.
     seedPicked = false;
     challengeRun = false;
@@ -1111,6 +1266,7 @@ export function mountStage(root: HTMLElement): () => void {
    * **언제 판인지 사람이 바로 읽는다**.
    */
   refs.dailyButton.addEventListener('click', () => {
+    audio.resume();
     seed = dailySeedFor(new Date());
     seedPicked = true;
     challengeRun = true;
@@ -1120,6 +1276,7 @@ export function mountStage(root: HTMLElement): () => void {
 
   /** 시드 직접 입력 — 결과 카드에 찍힌 값을 그대로 붙여넣는 것이 가장 흔한 사용법이다. */
   function startWithSeedInput(): void {
+    audio.resume();
     const parsed = parseSeedInput(refs!.seedInput.value);
     if (parsed === null) {
       // 실패를 조용히 넘기지 않는다 — 왜 안 되는지 말한다.
@@ -1203,6 +1360,9 @@ export function mountStage(root: HTMLElement): () => void {
       }
       const identity = ALLY_IDENTITY[kind];
       if (current.summon(kind)) {
+        // 성공한 소환에만 소리를 낸다 — 골드 부족으로 거부된 클릭에 소리가 나면
+        // 화면이 있지도 않은 지출을 사실로 말하게 된다(CLICK-PATH-003과 같은 규율).
+        audio.emit({ kind: 'unit-summon' }, lastFrameMs);
         refs.log.textContent = formatActionLog({
           ok: true,
           verb: '소환',
@@ -1250,8 +1410,11 @@ export function mountStage(root: HTMLElement): () => void {
     const existing = current.combatState.towers.find((tower) => tower.slot === slot);
     if (!existing) {
       // 건설 실패(골드 부족)도 화면에 남긴다 — 예전에는 아무 피드백이 없었다.
+      const built = current.build(slot, selectedTower);
+      // 소리는 **성공한 건설에만** 붙는다(로그와 같은 불리언을 쓴다).
+      if (built) audio.emit({ kind: 'tower-build' }, lastFrameMs);
       refs.log.textContent = formatActionLog({
-        ok: current.build(slot, selectedTower),
+        ok: built,
         verb: '건설',
         displayName: TOWER_IDENTITY[selectedTower].displayName,
         cost: TOWER_BUILD_COST[selectedTower],
@@ -1261,8 +1424,10 @@ export function mountStage(root: HTMLElement): () => void {
     if (existing.level === 1) {
       // ★ 성공 여부를 확인한 뒤에 로그를 찍는다 (CLICK-PATH-003) ★
       // 예전에는 `upgrade`가 `void`라 골드 부족으로 조용히 실패해도 성공 로그가 나갔다.
+      const upgraded = current.upgrade(slot);
+      if (upgraded) audio.emit({ kind: 'tower-upgrade' }, lastFrameMs);
       refs.log.textContent = formatActionLog({
-        ok: current.upgrade(slot),
+        ok: upgraded,
         verb: '업그레이드',
         displayName: TOWER_IDENTITY[existing.kind].displayName,
         cost: TOWER_UPGRADE_COST[existing.kind],
@@ -1421,5 +1586,7 @@ export function mountStage(root: HTMLElement): () => void {
     skillTooltip.destroy();
     goldMeter.destroy();
     panel.destroy();
+    // AudioContext는 브라우저당 개수 제한이 있다 — 마운트를 풀면 반드시 닫는다.
+    audio.destroy();
   };
 }

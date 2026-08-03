@@ -469,6 +469,72 @@ body {
 }
 
 /*
+ * ── 사운드 설정 (PRD §3.1 ⑬) ────────────────────────────────────
+ *
+ * 컨트롤 바 맨 오른쪽. 소리는 **보조 채널**이라 시선을 끌면 안 되므로 기본 상태는
+ * `--tf-muted`로 죽여 두고, 조작할 때만 `--tf-aum`으로 살아난다.
+ * 배속 버튼과 같은 줄이지만 시각적으로 한 덩이로 묶어 "설정"임을 드러낸다.
+ */
+.controls__audio {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-left: 12px;
+  border-left: 1px solid var(--tf-bg-2);
+}
+
+/* 음소거 토글은 아이콘 하나라 정사각에 가깝게 좁힌다. */
+.btn--audio {
+  padding: 6px 9px;
+  color: var(--tf-muted);
+  line-height: 1;
+}
+
+.btn--audio:hover:not(:disabled) {
+  color: var(--tf-text);
+}
+
+/*
+ * 음소거 상태 — `aria-pressed`를 그대로 선택자로 쓴다. 별도 클래스를 두면 스크린리더가
+ * 읽는 사실과 화면이 보여주는 사실이 갈라질 수 있다(둘은 같은 상태여야 한다).
+ */
+.btn--audio[aria-pressed='true'] {
+  border-color: var(--tf-enemy-down);
+  color: var(--tf-enemy-down);
+  text-decoration: line-through;
+}
+
+.controls__volume {
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * 슬라이더 — 브라우저 기본 위젯을 그대로 쓰되 색만 팔레트에 맞춘다.
+ * `accent-color`는 크롬·파이어폭스·사파리가 전부 지원하고, 미지원 환경에서는
+ * 기본 색으로 그려질 뿐 기능이 죽지 않는다(점진적 향상).
+ */
+.controls__volume input[type='range'] {
+  width: 92px;
+  height: 18px;
+  accent-color: var(--tf-aum);
+  cursor: pointer;
+}
+
+.controls__volume input[type='range']:focus-visible {
+  outline: 2px solid var(--tf-aum);
+  outline-offset: 3px;
+}
+
+/* 숫자 표시. 자릿수가 바뀌어도 슬라이더가 밀리지 않게 폭을 고정한다. */
+.controls__volume-value {
+  min-width: 42px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--tf-muted);
+}
+
+/*
  * ── 튜토리얼 오버레이 (가이드 모드, GAME.md §15-1) ──────────────────
  *
  * 별도 씬이 아니라 실제 세션 위에 얹힌다. 그래서 규칙이 둘이다:
