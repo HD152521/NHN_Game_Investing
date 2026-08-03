@@ -289,7 +289,7 @@ export function buildStageMarkup(): string {
           <dl class="stage__reveal-summary" data-ref="reveal-summary"></dl>
           <p class="stage__reveal-pending" data-ref="reveal-pending"></p>
           <button class="btn stage__reveal-skip" type="button"
-                  data-action="">다음 ▸</button>
+                  data-action="${REVEAL_SKIP_ACTION}">다음 ▸</button>
         </div>
 
         <div class="stage__result" data-ref="result" role="dialog" aria-live="polite"
