@@ -75,7 +75,13 @@ import type {
 import { audioControlView, createGameAudio, diffCombatEvents, percentToVolume, prepTickIndex } from '../audio';
 import type { AudioSettings, CombatAudioFrame, GameAudio } from '../audio';
 import { createFrameLoop, createRafScheduler } from './frame-loop';
-import { mountRegionArt, regionNameOf, stageIdFor, syncRegionLocks } from './region-select';
+import {
+  mountRegionArt,
+  regionNameOf,
+  stageIdFor,
+  syncCountryMap,
+  syncRegionLocks,
+} from './region-select';
 import {
   addCapital,
   clearedCount,
@@ -1442,6 +1448,8 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.regionSelect.hidden = false;
     // 마크업은 앱 시작 시 1회만 지어지므로, 그 사이 클리어로 열린 지역을 여기서 되맞춘다.
     syncRegionLocks(refs!.regionSelect, progress);
+    // 지도·브리핑도 **같은 진행도로 같은 시점에** 맞춘다 — 어긋나면 두 화면이 다른 말을 한다.
+    syncCountryMap(refs!.regionSelect, progress, theme.palette);
     // 키보드·스크린리더 사용자가 오버레이 안에서 바로 이어갈 수 있게 첫 카드로 포커스를 옮긴다.
     // ⚠️ 잠긴 카드는 `disabled`라 포커스를 받지 못한다 — 열려 있는 첫 카드를 고른다.
     (refs!.regionButtons.find((button) => !button.disabled) ?? refs!.regionButtons[0])?.focus();

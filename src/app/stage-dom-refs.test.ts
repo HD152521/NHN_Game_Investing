@@ -60,6 +60,9 @@ const REQUIRED_REFS: readonly string[] = [
   'gate',
   'panel-host',
   'region-select',
+  // 한반도 전선 지도 (목업 `countrymap`).
+  'country-map',
+  'country-brief',
   'seed-input',
   // 사운드 설정 (PRD §3.1 ⑬). HUD의 `volume`(거래량)과 **다른 이름이어야 한다** —
   // `[data-ref="volume"]`는 접두사 일치가 아니라 정확 일치라 서로를 가리지 않는다.

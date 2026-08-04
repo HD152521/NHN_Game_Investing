@@ -27,6 +27,17 @@ import { spriteRasters } from '../sprites/render';
 import type { SpriteRasterCache } from '../sprites/render';
 import type { ColorMode } from '../design';
 import { formatAmount, paintRasterToCanvas } from '../ui';
+import {
+  COUNTRY_CANVAS_HEIGHT,
+  COUNTRY_CANVAS_WIDTH,
+  COUNTRY_EYEBROW,
+  COUNTRY_TITLE,
+  FRONT_NODES,
+  briefingFor,
+  nodeStatusOf,
+  paintCountryMap,
+  NODE_STATUS_LABEL,
+} from './country-map';
 import { emptyProgress, hasCleared } from './progress';
 import type { GameProgress } from './progress';
 
@@ -36,6 +47,10 @@ export const REGION_SELECT_ACTION = 'select-region';
 export const REGION_BACK_ACTION = 'region-back';
 /** 카드 배경 씬이 꽂히는 자리 표시자 속성. */
 export const REGION_ART_ATTR = 'data-region-art';
+/** 한반도 지도 캔버스 (목업 `countrymap`). */
+export const COUNTRY_MAP_REF = 'country-map';
+/** 브리핑 패널 — 노드를 가리키면 채워진다. */
+export const COUNTRY_BRIEF_REF = 'country-brief';
 
 /**
  * 윗줄 — **어느 챕터 안에 있는지**를 말한다 (목업 `countrymap`의 "CHAPTER 1 — 국내 시장").
@@ -279,9 +294,16 @@ export function buildRegionSelectMarkup(): string {
     <div class="region" data-ref="region-select" role="dialog" aria-modal="true"
          aria-labelledby="${TITLE_ID}" hidden>
       <div class="region__panel">
-        <p class="region__eyebrow">${REGION_SELECT_EYEBROW}</p>
+        <p class="region__eyebrow">${COUNTRY_EYEBROW}</p>
+        <p class="region__chapter">${COUNTRY_TITLE}</p>
         <h2 class="region__title" id="${TITLE_ID}">${REGION_SELECT_TITLE}</h2>
         <p class="region__lede">${REGION_SELECT_LEDE}</p>
+        <div class="region__theater">
+          <canvas class="region__map" data-ref="${COUNTRY_MAP_REF}"
+                  width="${COUNTRY_CANVAS_WIDTH}" height="${COUNTRY_CANVAS_HEIGHT}"
+                  role="img" aria-label="한반도 전선 지도"></canvas>
+          <div class="region__brief" data-ref="${COUNTRY_BRIEF_REF}"></div>
+        </div>
         <ul class="region__grid">${cards}</ul>
         <button class="region__back" type="button" data-action="${REGION_BACK_ACTION}">
           ${REGION_BACK_LABEL}
@@ -340,4 +362,54 @@ export function mountRegionArt(root: ParentNode, options: RegionArtOptions = {})
   }
 
   return painted;
+}
+
+/**
+ * 지도와 브리핑을 진행도에 맞춰 그린다.
+ *
+ * `syncRegionLocks`와 **같은 시점에 같은 진행도로** 부른다 — 카드 잠금과 지도 노드가
+ * 서로 다른 순간의 진행도를 보면 두 화면이 다른 말을 하게 된다.
+ *
+ * 캔버스를 못 얻는 환경에서는 조용히 넘어간다(카드 그리드가 그대로 남는다). 지도 하나
+ * 때문에 지역을 못 고르게 되면 안 된다.
+ */
+export function syncCountryMap(
+  root: ParentNode,
+  progress: GameProgress,
+  palette: Readonly<Record<string, string>>,
+  focusedId: string | null = null,
+): void {
+  const canvas = root.querySelector<HTMLCanvasElement>(`[data-ref="${COUNTRY_MAP_REF}"]`);
+  const ctx = canvas?.getContext('2d') ?? null;
+  if (ctx !== null) {
+    paintCountryMap(ctx, { progress, isLocked: isRegionLocked, palette, focusedId });
+  }
+
+  const brief = root.querySelector<HTMLElement>(`[data-ref="${COUNTRY_BRIEF_REF}"]`);
+  if (!brief) {
+    return;
+  }
+  // 가리키는 노드가 없으면 **지금 갈 수 있는 곳**을 보여준다 — 빈 패널을 내지 않는다.
+  const node =
+    FRONT_NODES.find((candidate) => candidate.id === focusedId) ??
+    FRONT_NODES.find(
+      (candidate) => nodeStatusOf(candidate, progress, isRegionLocked) === 'available',
+    ) ??
+    FRONT_NODES[0];
+  if (!node) {
+    return;
+  }
+  const status = nodeStatusOf(node, progress, isRegionLocked);
+  const timeOfDay = node.stageId === null ? '—' : REGION_IDENTITY[node.stageId].timeOfDay;
+  const rows = briefingFor(node, timeOfDay)
+    .map(
+      (line) =>
+        `<div class="region__brief-row"><dt>${line.label}</dt><dd>${line.value}</dd></div>`,
+    )
+    .join('');
+  brief.innerHTML =
+    `<p class="region__brief-eyebrow">REGION BRIEFING · ${NODE_STATUS_LABEL[status]}</p>` +
+    `<h3 class="region__brief-name">${node.id} ${node.name}</h3>` +
+    `<p class="region__brief-sector">${node.sector}</p>` +
+    `<dl class="region__brief-rows">${rows}</dl>`;
 }

@@ -343,3 +343,95 @@
     filter: none;
   }
 }
+
+/*
+ * ── 한반도 전선 지도 (목업 `countrymap`) ────────────────────────
+ *
+ * 좌: 지도 · 우: 브리핑. 아래에 기존 카드 그리드가 남는다 — 지도는 "어디로 가는가"를
+ * 보여주고, 카드는 "무엇을 걸고 가는가"(수치)를 보여준다. 둘은 대체가 아니라 층위다.
+ */
+.region__chapter {
+  margin: 0 0 0.5rem;
+  color: var(--tf-gold);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+}
+
+.region__theater {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.region__map {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 32%, transparent);
+  border-radius: 0.3rem;
+  background: var(--tf-bg-0);
+  image-rendering: pixelated;
+}
+
+.region__brief {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 22rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--tf-gold) 35%, transparent);
+  border-radius: 0.35rem;
+  background: color-mix(in srgb, var(--tf-bg-1) 88%, transparent);
+  text-align: left;
+}
+
+.region__brief-eyebrow {
+  margin: 0;
+  color: var(--tf-gold);
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+}
+
+.region__brief-name {
+  margin: 0.2rem 0 0;
+  font-size: 1.05rem;
+}
+
+.region__brief-sector {
+  margin: 0 0 0.5rem;
+  color: var(--tf-muted);
+  font-size: 0.75rem;
+}
+
+.region__brief-rows {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+}
+
+.region__brief-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.region__brief-row dt {
+  color: var(--tf-muted);
+}
+
+.region__brief-row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 좁은 화면에서는 지도 아래로 브리핑이 내려간다. */
+@media (max-width: 720px) {
+  .region__theater {
+    flex-direction: column;
+    align-items: center;
+  }
+  .region__brief {
+    max-width: none;
+    width: 100%;
+  }
+}
