@@ -8,6 +8,7 @@
  * `createCombat`/`step`이 만든 상태만 서로 주고받는다는 전제 하에 안전한 캐스팅이다.
  */
 
+import { ENEMY_BASE_HP } from './constants';
 import { bossViewOf } from './boss';
 import { MAX_SUBSTEP_MS, MAX_TOTAL_DT_MS, WAVE_PREP_MS } from './constants';
 import { applyEngagement, applyTowerFire, collectDeaths, collectLeaks, moveEnemies, moveUnits } from './mechanics';
@@ -92,6 +93,8 @@ export function createCombat(params: CombatParams): CombatState {
     towers: [],
     baseHp: params.maxBaseHp,
     maxBaseHp: params.maxBaseHp,
+    enemyBaseHp: params.maxEnemyBaseHp ?? ENEMY_BASE_HP,
+    maxEnemyBaseHp: params.maxEnemyBaseHp ?? ENEMY_BASE_HP,
     towerSlots: params.towerSlots,
     skillCooldownMs: 0,
     skillCooldowns: createSkillCooldowns(),
@@ -219,6 +222,9 @@ function substep(
   const movedEnemies = moveEnemies(engagement.enemies, engagement.blockedEnemyIds, dtSec);
   const movedUnits = moveUnits(engagement.units, engagement.blockedUnitIds, dtSec);
 
+  // 전선을 뚫은 유닛이 적 본진을 깎는다. 0 밑으로는 내려가지 않는다.
+  const enemyBaseHp = Math.max(0, state.enemyBaseHp - engagement.enemyBaseDamage);
+
   const leakResult = collectLeaks(movedEnemies);
   const aumPerKill = aumDropPerKill(clock.wave, params);
   const deathResult = collectDeaths(leakResult.survivors, aumPerKill);
@@ -259,6 +265,14 @@ function substep(
   let phase = state.phase;
   if (baseHp <= 0) {
     phase = 'defeated';
+  } else if (enemyBaseHp <= 0) {
+    /*
+     * ★ 적 본진 파괴 = 즉시 승리 ★ 13웨이브를 기다리지 않는다.
+     * 패배가 `baseHp <= 0`인 것과 정확히 대칭인 조건이다 — 방어만이 아니라 **공격으로도**
+     * 판을 끝낼 수 있어야 전선을 밀어 올리는 플레이에 의미가 생긴다.
+     * 패배 판정을 먼저 보는 이유: 같은 틱에 둘 다 0이 되면 사옥이 무너진 쪽을 택한다(보수적).
+     */
+    phase = 'cleared';
   } else if (
     clock.wave >= params.waveCount &&
     // 마지막 웨이브는 더 이상 전이하지 않고 waveElapsedMs만 쌓이므로, 교전 구간
@@ -281,6 +295,8 @@ function substep(
     units: survivingUnits,
     towers: fireResult.towers,
     baseHp,
+    enemyBaseHp,
+    maxEnemyBaseHp: state.maxEnemyBaseHp,
     maxBaseHp: state.maxBaseHp,
     towerSlots: state.towerSlots,
     skillCooldownMs: skillCooldowns['S-01'],

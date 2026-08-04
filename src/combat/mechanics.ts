@@ -5,6 +5,7 @@
  * DOM·타이머·전역 상태는 참조하지 않으며, 경과 시간(dtMs)은 전부 호출자가 주입한다.
  */
 
+import { ENEMY_BASE_DPS, ENEMY_BASE_X } from './constants';
 import {
   BASE_DAMAGE_PER_LEAK,
   TOWER_COOLDOWN_MS,
@@ -97,6 +98,8 @@ export interface EngagementResult {
   readonly units: readonly Unit[];
   readonly blockedEnemyIds: ReadonlySet<number>;
   readonly blockedUnitIds: ReadonlySet<number>;
+  /** 이번 틱에 적 본진이 받은 피해 총량. 전선을 뚫은 유닛만 만들 수 있다. */
+  readonly enemyBaseDamage: number;
 }
 
 /** id별 피해량을 누적한다. 여러 개체가 같은 표적을 때릴 수 있으므로 덮어쓰기가 아니라 합산이다. */
@@ -174,10 +177,33 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
   const blockedEnemyIds = new Set<number>();
   const blockedUnitIds = new Set<number>();
 
+  let enemyBaseDamage = 0;
+  /** 이번 틱에 적 본진 사거리 안에 들어와 반격을 받는 유닛들. */
+  const baseRetaliationTargets: number[] = [];
+
   // 유닛 → 적: 사거리 안에 지상 적이 있으면 전진을 멈추고 가장 가까운 적을 때린다.
   for (const unit of units) {
     const target = nearestInRange(groundEnemies, unit.x, unit.range);
     if (target === null) {
+      /*
+       * ★ 때릴 적이 없고 적 본진이 사거리 안이면 본진을 친다 ★
+       *
+       * 적이 우선이라는 순서가 중요하다 — 눈앞의 적을 무시하고 본진만 때리면 유닛이
+       * 그대로 갈려 나간다. 즉 이 경로는 **전선을 실제로 뚫었을 때만** 열린다.
+       */
+      if (ENEMY_BASE_X - unit.x <= unit.range) {
+        blockedUnitIds.add(unit.id);
+        const cooled = tickCooldown(unit.cooldownMs, dtMs);
+        if (cooled <= 0) {
+          enemyBaseDamage += unit.damage;
+          unitCooldownOverride.set(unit.id, unit.attackCooldownMs);
+        } else {
+          unitCooldownOverride.set(unit.id, cooled);
+        }
+        // ★ 본진은 반격한다 ★ 이게 없으면 웨이브 사이에 유닛이 무저항으로 본진을 깎아
+        // '매매 없이 클리어'가 성립한다(`ENEMY_BASE_DAMAGE` 주석 · economy-floor 검산 4).
+        baseRetaliationTargets.push(unit.id);
+      }
       continue;
     }
 
@@ -216,13 +242,35 @@ export function applyEngagement(enemies: readonly Enemy[], units: readonly Unit[
     return { ...enemy, hp: enemy.hp + hpDelta, cooldownMs };
   });
 
+  /*
+   * 본진 반격은 **틱당 한 번**만 나간다(가장 앞선 유닛 하나). 사거리 안 전원을 때리면
+   * 광역기가 되어 밀어붙이기가 원천 봉쇄된다 — 막으려는 것은 소수의 상시 압박이지
+   * 자금을 들인 다수 돌격이 아니다.
+   */
+  /*
+   * 본진 반격은 **사거리 안 전원**에게 나간다.
+   *
+   * 처음에는 선두 1기만 때렸는데, 그러면 뒤에 선 유닛이 무저항으로 본진을 깎아
+   * 경제 하한이 그대로 뚫렸다(인턴 2기로 클리어). 자기 기지가 눈앞의 적 하나만
+   * 상대한다는 것도 부자연스럽다.
+   *
+   * ⚠️ 여기만 **연속 피해**다 (다른 교전은 전부 쿨다운 기반 이산 공격).
+   * 이산으로 하려면 본진의 재장전 시각을 `CombatState`에 들고 있어야 하고, 그러면
+   * 렌더러까지 계약이 번진다. 이 함수는 순수해야 한다 — 모듈 전역 쿨다운을 두면
+   * 테스트 간 상태가 샌다.
+   */
+  const retaliation = (ENEMY_BASE_DPS * dtMs) / 1000;
+  for (const unitId of baseRetaliationTargets) {
+    addDelta(unitHpDelta, unitId, -retaliation);
+  }
+
   const nextUnits = units.map((unit) => {
     const hpDelta = unitHpDelta.get(unit.id) ?? 0;
     const cooldownMs = unitCooldownOverride.get(unit.id) ?? tickCooldown(unit.cooldownMs, dtMs);
     return { ...unit, hp: unit.hp + hpDelta, cooldownMs };
   });
 
-  return { enemies: nextEnemies, units: nextUnits, blockedEnemyIds, blockedUnitIds };
+  return { enemies: nextEnemies, units: nextUnits, blockedEnemyIds, blockedUnitIds, enemyBaseDamage };
 }
 
 /** 교전 중이 아닌 적을 전진(x 감소)시킨다. x는 0 밑으로 내려가지 않는다(누출 판정은 별도). */

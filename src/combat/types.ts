@@ -230,6 +230,14 @@ export interface CombatState {
   readonly towers: readonly Tower[];
   readonly baseHp: number;
   readonly maxBaseHp: number;
+  /**
+   * 적 본진 체력 (FR-8.2). 0이 되면 **즉시 승리**다 — 13웨이브를 기다리지 않는다.
+   *
+   * 아군 유닛이 x=1까지 밀고 올라가 사거리 안에 들면 때린다(`applyEngagement`).
+   * 지상 적이 사거리에 있으면 그쪽이 우선이므로, 전선을 뚫어야만 닿는다.
+   */
+  readonly enemyBaseHp: number;
+  readonly maxEnemyBaseHp: number;
   readonly towerSlots: number;
   /**
    * `S-01`(공시 폭탄) 남은 쿨다운(ms) — **`skillCooldowns['S-01']`의 별칭**이다.
@@ -309,4 +317,6 @@ export interface CombatParams {
   readonly aumDropPerWave: number;
   /** 스테이지 전체 기본 수입 총액 (FR-6.8). */
   readonly totalBaseIncome: number;
+  /** 적 본진 체력. 생략하면 `ENEMY_BASE_HP`. */
+  readonly maxEnemyBaseHp?: number;
 }

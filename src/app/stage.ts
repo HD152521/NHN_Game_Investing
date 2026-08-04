@@ -1325,8 +1325,8 @@ export function mountStage(root: HTMLElement): () => void {
       profitCloseCount: facts.profitCloseCount,
       baseHp: combat.baseHp,
       maxBaseHp: combat.maxBaseHp,
-      // 전투 시뮬레이션에 적 본진 개념이 아직 없다 (`CombatState` 참고).
-      enemyBaseDestroyed: false,
+      // 적 본진이 생겼다 — 더 이상 하드코딩 false가 아니다 (FR-8.2).
+      enemyBaseDestroyed: combat.enemyBaseHp <= 0,
       // IR팀 (FR-11.2). 세션이 물고 있는 스냅샷이 아니라 진행도를 쓰는 이유: 정산은
       // 판이 끝난 뒤의 계산이라 '진입 시점 고정'이 적용되는 대상이 아니다.
       departmentBonus: settlementBonusFor(progress.departments),
