@@ -95,6 +95,8 @@ const REQUIRED_ACTIONS: readonly string[] = [
   'start-daily',
   'start-seed',
   'audio-mute',
+  'exit-stage',
+  'toggle-colorblind',
   'open-codex',
   'codex-back',
   'world-back',

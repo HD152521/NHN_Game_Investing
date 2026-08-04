@@ -6,6 +6,8 @@ import {
   formatActionLog,
   resolveSpeedChange,
   shouldSkipPrep,
+  EXIT_WARNING,
+  resolveExitRequest,
 } from './stage-flow';
 
 /**
@@ -208,5 +210,51 @@ describe('formatActionLog — 실패를 성공이라 말하지 않는다 (CLICK-
     expect(formatActionLog({ ...args, ok: true })).not.toBe(
       formatActionLog({ ...args, ok: false }),
     );
+  });
+});
+
+/**
+ * ★ 나가기는 두 번 눌러야 한다 ★
+ *
+ * 무음 리셋은 이 프로젝트에서 CLICK-PATH-001 **CRITICAL**이었다. 진행 중인 판이 아무 말
+ * 없이 사라지는 경로를 전부 없애고 "정산 화면이 스테이지가 끝나는 유일한 경로"로
+ * 못박았는데, 나가기 버튼은 그 경로를 다시 여는 일이다. 확인 없이 나가면 같은 결함이 부활한다.
+ */
+describe('resolveExitRequest — 스테이지 이탈', () => {
+  test('진행 중이면 첫 클릭은 나가지 않고 경고만 한다', () => {
+    const r = resolveExitRequest({ hasSession: true, armed: false, resultShown: false });
+    expect(r.exit).toBe(false);
+    expect(r.armed).toBe(true);
+    expect(r.message).toBe(EXIT_WARNING);
+  });
+
+  test('두 번째 클릭이 동의다', () => {
+    const r = resolveExitRequest({ hasSession: true, armed: true, resultShown: false });
+    expect(r.exit).toBe(true);
+    expect(r.armed).toBe(false);
+  });
+
+  test('★ 경고가 무엇을 잃는지 말한다 — "나가시겠습니까?"만으로는 모른다', () => {
+    expect(EXIT_WARNING).toMatch(/정산|도감/);
+    expect(EXIT_WARNING).toContain('사라집');
+  });
+
+  test('세션이 없으면 바로 나간다 — 버릴 진행이 없다', () => {
+    const r = resolveExitRequest({ hasSession: false, armed: false, resultShown: false });
+    expect(r.exit).toBe(true);
+    expect(r.armed).toBe(false);
+    expect(r.message).toBe('');
+  });
+
+  test('결과 화면이 떠 있으면 바로 나간다 — 이미 정산이 끝났다', () => {
+    const r = resolveExitRequest({ hasSession: true, armed: false, resultShown: true });
+    expect(r.exit).toBe(true);
+  });
+
+  test('확인을 남발하지 않는다 — 잃을 것이 없을 때는 묻지 않는다', () => {
+    // 확인이 잦으면 사용자가 읽지 않게 되고, 그 순간 확인은 보호 장치가 아니게 된다.
+    for (const resultShown of [true, false]) {
+      expect(resolveExitRequest({ hasSession: false, armed: false, resultShown }).exit).toBe(true);
+    }
   });
 });

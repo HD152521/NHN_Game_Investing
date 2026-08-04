@@ -188,3 +188,49 @@ export function formatActionLog(input: {
   }
   return `골드 부족 — ${input.displayName} ${input.verb}에 ${input.cost}G 필요`;
 }
+
+/**
+ * ── 스테이지 이탈 요청 (나가기) ──────────────────────────────────
+ *
+ * ★★ 왜 두 번 눌러야 하는가 ★★
+ * 이 프로젝트에서 **무음 리셋은 CLICK-PATH-001 CRITICAL 결함**이었다. 진행 중인 판이
+ * 아무 말 없이 사라지는 경로를 전부 없애고 *"정산 화면이 스테이지가 끝나는 유일한 경로"*로
+ * 못박았다. 나가기 버튼은 그 경로를 **다시 여는 일**이므로, 그냥 달면 같은 결함이 부활한다.
+ *
+ * 그래서 배속 변경(CLICK-PATH-002)과 **같은 2단계 확인**을 쓴다: 첫 클릭은 경고만 띄우고
+ * 두 번째 클릭이 동의다. 이미 이 코드베이스가 쓰는 관습이라 사용자가 새로 배울 것이 없다.
+ *
+ * ⚠️ 이탈은 **정산을 남기지 않는다** — 진행도·도감·자본금이 기록되지 않는다.
+ * 그 사실을 경고 문구가 반드시 말해야 한다. "나가시겠습니까?"만으로는 무엇을 잃는지 모른다.
+ */
+export interface ExitRequestInput {
+  /** 굴러가는 세션이 있는가. 없으면 버릴 것도 없다. */
+  readonly hasSession: boolean;
+  /** 직전 클릭으로 이미 경고를 띄웠는가. */
+  readonly armed: boolean;
+  /** 결과 화면이 떠 있는가 — 이미 정산이 끝났으므로 잃을 것이 없다. */
+  readonly resultShown: boolean;
+}
+
+export interface ExitRequestResult {
+  /** 지금 나가는가. */
+  readonly exit: boolean;
+  /** 다음 클릭을 위해 경고 상태를 유지하는가. */
+  readonly armed: boolean;
+  readonly message: string;
+}
+
+/** 이탈 경고 — **무엇을 잃는지** 말한다. */
+export const EXIT_WARNING = '진행 중인 판이 사라집니다 (정산·도감 없음). 다시 누르면 나갑니다';
+export const EXIT_LABEL = '나가기';
+
+export function resolveExitRequest(input: ExitRequestInput): ExitRequestResult {
+  // 버릴 진행이 없으면 확인을 물을 이유가 없다 — 확인이 잦으면 사용자가 읽지 않게 된다.
+  if (!input.hasSession || input.resultShown) {
+    return { exit: true, armed: false, message: '' };
+  }
+  if (!input.armed) {
+    return { exit: false, armed: true, message: EXIT_WARNING };
+  }
+  return { exit: true, armed: false, message: '' };
+}

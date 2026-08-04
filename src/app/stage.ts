@@ -56,7 +56,7 @@ import type { CombatState, SkillId, StageId, TowerKind, UnitKind } from '../comb
 import { createSkillFxField, drawSkillFx, skillAnchor, triggerSkillEffect } from '../fx';
 import type { SkillFxField, SkillFxViewport } from '../fx';
 import { changePercent } from '../market';
-import { applyPalette, createTheme } from '../design';
+import { applyPalette, createTheme, toggleColorblind } from '../design';
 import type { ColorTheme } from '../design';
 import type { Direction } from '../position';
 import {
@@ -141,6 +141,8 @@ import {
 import type { RevealInput } from './reveal';
 import {
   CHALLENGE_TERRITORIES,
+  MAX_SEED,
+  MIN_SEED,
   challengeModeOf,
   dailyLabelFor,
   dailySeedFor,
@@ -163,6 +165,7 @@ import {
 import {
   decideFrame,
   formatActionLog,
+  resolveExitRequest,
   resolveSpeedChange,
   shouldSkipPrep,
 } from './stage-flow';
@@ -219,7 +222,7 @@ const MARKET_CLOSE_LOG = '장 마감 — 매매 종료. 남은 적을 정리하�
 
 /** 스테이지를 마운트하고 정리 함수를 돌려준다 (HMR 대비). */
 export function mountStage(root: HTMLElement): () => void {
-  const theme: ColorTheme = createTheme();
+  let theme: ColorTheme = createTheme();
   applyPalette(document.documentElement, theme.palette);
 
   root.innerHTML = buildStageMarkup();
@@ -230,6 +233,27 @@ export function mountStage(root: HTMLElement): () => void {
   }
 
   let seed = 1;
+
+  /**
+   * ★ 자유 플레이는 매번 다른 차트를 준다 ★
+   *
+   * 예전에는 `seed`가 1로 시작해 "새 스테이지"에서만 +1 됐다. 그래서 **지역 선택에서 같은
+   * 스테이지를 다시 고르면 완전히 같은 차트**가 나왔다 — 두 번째부터는 예측이 아니라
+   * **암기**가 되고, 블라인드 차트를 읽는다는 코어가 통째로 무너진다.
+   *
+   * ⚠️ **챌린지에는 쓰지 않는다.** 일일 챌린지·시드 공유는 재현성이 목적이다 — 전 유저가
+   * 같은 판을 풀어야 성적 비교가 성립한다(`challenge.ts`). 그래서 `challengeRun`일 때는
+   * 시드를 건드리지 않는다.
+   *
+   * 시계를 쓰는 것은 **셸이라서 허용된다** — 판정 모듈은 `Date.now()`를 참조하지 않는다(§17-2).
+   * 같은 밀리초에 두 번 시작해도 갈리도록 카운터를 섞는다.
+   */
+  let seedTick = 0;
+  function freshSeed(): number {
+    seedTick += 1;
+    const mixed = (Date.now() + seedTick * 7919) % MAX_SEED;
+    return Math.max(MIN_SEED, mixed);
+  }
   /**
    * 사용자가 시드를 직접 골랐는가 (일일 챌린지 · 시드 입력).
    *
@@ -1334,7 +1358,10 @@ export function mountStage(root: HTMLElement): () => void {
 
   /** 결과 화면에서 같은 지역을 새 시드로 다시 시작한다. */
   function restartStage(): void {
-    seed += 1;
+    // 챌린지 재도전은 **같은 판**이어야 한다 — 시드를 바꾸면 그건 다른 챌린지다.
+    if (!challengeRun) {
+      seed = freshSeed();
+    }
     session = null;
     hideResult();
     loop.start(); // 이미 돌고 있으면 아무 일도 하지 않는다.
@@ -1464,6 +1491,10 @@ export function mountStage(root: HTMLElement): () => void {
   function beginStage(id: StageId): void {
     audio.resume();
     stageId = id;
+    // 자유 플레이는 고를 때마다 새 차트다. 챌린지는 고정 시드를 지킨다.
+    if (!challengeRun) {
+      seed = freshSeed();
+    }
     session = null; // 다음 프레임이 고른 지역 설정으로 세션을 새로 만든다.
     refs!.regionSelect.hidden = true;
     refs!.gate.hidden = true;
@@ -1780,6 +1811,64 @@ export function mountStage(root: HTMLElement): () => void {
    * 튜토리얼 건너뛰기. **첫 회차에는 거부된다** — `skipTutorial`이 그 판정을 소유하므로
    * 여기서 다시 검사하지 않는다(버튼 `disabled`는 표시일 뿐, 판정의 출처가 아니다).
    */
+  /**
+   * ── 스테이지 나가기 ──
+   *
+   * 진행 중인 판을 버리는 유일한 경로다. 무음 리셋(CLICK-PATH-001 CRITICAL)이 되지 않도록
+   * **두 번 눌러야** 나간다 — 판정은 `resolveExitRequest`가 소유한다.
+   * 첫 클릭은 **무엇을 잃는지**(정산·도감 없음) 말하고, 두 번째가 동의다.
+   */
+  let exitArmed = false;
+  refs.exitButton.addEventListener('click', () => {
+    const decision = resolveExitRequest({
+      hasSession: session !== null,
+      armed: exitArmed,
+      resultShown,
+    });
+    exitArmed = decision.armed;
+    refs.exitButton.classList.toggle('btn--armed', decision.armed);
+    if (decision.message !== '') {
+      refs.log.textContent = decision.message;
+    }
+    if (!decision.exit) {
+      return;
+    }
+    // 판을 버린다 — 진행도·도감·자본금 어느 것도 기록하지 않는다.
+    loop.stop();
+    session = null;
+    hideResult();
+    finishReveal();
+    refs.stage.classList.add('stage--gated');
+    showRegionSelect();
+  });
+
+  /**
+   * ── 색약 모드 토글 (PRD §3.1 ⑬) ──
+   *
+   * `toggleColorblind`는 `src/design`에 이미 있었는데 **어떤 UI에도 연결돼 있지 않았다.**
+   * 설정 3종(배속·볼륨·색약) 중 색약만 사용자가 바꿀 수 없는 상태였다.
+   *
+   * CSS 변수는 `applyPalette`가 즉시 갱신하고, 캔버스는 매 프레임 `theme.palette`를 받으므로
+   * 함께 바뀐다. 다만 **마운트 시 1회 구운 스프라이트**(HUD 아이콘·지역 카드 배경)는
+   * 옛 모드로 구워져 있으므로 다시 굽는다 — 그러지 않으면 그 부분만 색이 튄다(§19-2).
+   */
+  refs.colorblindButton.addEventListener('click', () => {
+    theme = toggleColorblind(theme);
+    applyPalette(document.documentElement, theme.palette);
+    refs.colorblindButton.setAttribute('aria-pressed', String(theme.mode === 'colorblind'));
+    refs.colorblindButton.classList.toggle('btn--armed', theme.mode === 'colorblind');
+    // 구운 스프라이트를 새 모드로 다시 굽는다. 실패해도 조용히 넘어간다.
+    mountHudIcons(root, { mode: theme.mode });
+    mountRegionArt(root, { mode: theme.mode });
+    // 지도·타이틀도 팔레트를 받아 그리므로 즉시 다시 그린다.
+    if (gateArtCtx) {
+      drawTitleArt(gateArtCtx, theme.palette);
+    }
+    syncCountryMap(refs.regionSelect, progress, theme.palette);
+    refs.log.textContent =
+      theme.mode === 'colorblind' ? '색약 모드 켜짐' : '색약 모드 꺼짐';
+  });
+
   refs.tutorialSkipButton.addEventListener('click', () => {
     tutorialState = skipTutorial(tutorialState);
     // 건너뛴 것도 "봤다"로 친다 — 명시적으로 끈 사람에게 다시 띄우면 같은 조작을 반복시킨다.

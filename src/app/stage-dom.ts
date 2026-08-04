@@ -14,6 +14,7 @@ import {
 } from '../audio';
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import type { SettlementRow } from './settlement';
+import { EXIT_LABEL } from './stage-flow';
 import {
   GATE_ART_REF,
   GATE_DAILY_ACTION,
@@ -70,6 +71,17 @@ export const RESULT_REGION_ACTION = 'result-region';
  * (`effectiveVolume` 주석), 끄기 전 볼륨을 기억해야 다시 켤 때 원래 크기로 돌아온다.
  */
 export const AUDIO_MUTE_ACTION = 'audio-mute';
+
+/**
+ * 스테이지 이탈 — 지역 선택으로 돌아간다.
+ *
+ * ⚠️ 진행 중인 판을 버리는 유일한 버튼이다. 무음 리셋이 CLICK-PATH-001 CRITICAL이었으므로
+ * **두 번 눌러야 한다**(`resolveExitRequest`). 배속 버튼과 같은 관습이다.
+ */
+export const EXIT_STAGE_ACTION = 'exit-stage';
+
+/** 색약 모드 토글 (PRD §3.1 ⑬ 설정 — 배속·볼륨·색약 중 색약). */
+export const COLORBLIND_ACTION = 'toggle-colorblind';
 
 /** 볼륨 슬라이더의 `data-ref`. HUD의 `volume`(거래량)과 **다른 이름이어야 한다.** */
 export const AUDIO_SLIDER_REF = 'volume-slider';
@@ -213,6 +225,10 @@ export interface StageRefs {
   readonly audioMuteButton: HTMLButtonElement;
   readonly audioSlider: HTMLInputElement;
   readonly audioValue: HTMLElement;
+  /** 스테이지 이탈. 두 번 눌러야 나간다(진행이 사라지기 때문). */
+  readonly exitButton: HTMLButtonElement;
+  /** 색약 모드 토글. `aria-pressed`가 상태의 단일 출처다. */
+  readonly colorblindButton: HTMLButtonElement;
   readonly speedButtons: readonly HTMLButtonElement[];
   readonly towerButtons: readonly HTMLButtonElement[];
   /** 유닛 소환 3종. 골드 부족이면 셸이 매 프레임 비활성으로 만든다(CLICK-PATH-004). */
@@ -415,6 +431,9 @@ export function buildStageMarkup(): string {
 
       <div class="controls">
         <button class="btn" type="button" data-action="restart">새 스테이지</button>
+        <button class="btn" type="button" data-action="${EXIT_STAGE_ACTION}">${EXIT_LABEL}</button>
+        <button class="btn controls__cb" type="button" data-action="${COLORBLIND_ACTION}"
+                aria-pressed="false">색약</button>
         ${speeds}
         <span class="controls__note" data-ref="log">타워를 고르고 아래 빈 슬롯을 클릭하세요</span>
         ${audio}
@@ -487,6 +506,12 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     `[data-action="${GATE_SEED_ACTION}"]`,
   );
   const seedInput = root.querySelector<HTMLInputElement>(`[data-ref="${GATE_SEED_INPUT}"]`);
+  const exitButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${EXIT_STAGE_ACTION}"]`,
+  );
+  const colorblindButton = root.querySelector<HTMLButtonElement>(
+    `[data-action="${COLORBLIND_ACTION}"]`,
+  );
   const gateArt = pick<HTMLCanvasElement>(GATE_ART_REF);
   const gateTicker = pick(GATE_TICKER_REF);
   const resultRegionButton = root.querySelector<HTMLButtonElement>(
@@ -570,6 +595,8 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !dailyButton ||
     !seedButton ||
     !seedInput ||
+    !exitButton ||
+    !colorblindButton ||
     !gateArt ||
     !gateTicker ||
     !resultRegionButton ||
@@ -647,6 +674,8 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     dailyButton,
     seedButton,
     seedInput,
+    exitButton,
+    colorblindButton,
     gateArt,
     gateTicker,
     resultRegionButton,
