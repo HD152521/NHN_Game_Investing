@@ -136,6 +136,8 @@ export interface StageRefs {
   readonly revealTitle: HTMLElement;
   readonly revealSubtitle: HTMLElement;
   readonly revealCanvas: HTMLCanvasElement;
+  /** DISCLOSURE 카드 (목업 `result`). 그 단계에서만 보인다. */
+  readonly revealDisclosure: HTMLElement;
   readonly revealSummary: HTMLElement;
   readonly revealPending: HTMLElement;
   readonly revealSkipButton: HTMLButtonElement;
@@ -383,6 +385,7 @@ export function buildStageMarkup(): string {
           <canvas class="stage__reveal-canvas" data-ref="reveal-canvas"
                   width="" height=""
                   role="img" aria-label="차트 위에 되짚은 내 매매"></canvas>
+          <div class="stage__reveal-disclosure" data-ref="reveal-disclosure" hidden></div>
           <dl class="stage__reveal-summary" data-ref="reveal-summary"></dl>
           <p class="stage__reveal-pending" data-ref="reveal-pending"></p>
           <button class="btn stage__reveal-skip" type="button"
@@ -461,6 +464,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
   const revealTitle = pick('reveal-title');
   const revealSubtitle = pick('reveal-subtitle');
   const revealCanvas = pick<HTMLCanvasElement>('reveal-canvas');
+  const revealDisclosure = pick('reveal-disclosure');
   const revealSummary = pick('reveal-summary');
   const revealPending = pick('reveal-pending');
   const revealSkipButton = root.querySelector<HTMLButtonElement>(
@@ -553,6 +557,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !revealTitle ||
     !revealSubtitle ||
     !revealCanvas ||
+    !revealDisclosure ||
     !revealSummary ||
     !revealPending ||
     !revealSkipButton ||
@@ -622,6 +627,7 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     revealTitle,
     revealSubtitle,
     revealCanvas,
+    revealDisclosure,
     revealSummary,
     revealPending,
     revealSkipButton,

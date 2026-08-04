@@ -714,3 +714,99 @@ body {
 .stage__reveal-skip {
   min-width: 8rem;
 }
+
+/*
+ * ── DISCLOSURE 카드 (목업 `result`) ─────────────────────────────
+ *
+ * 공개 연출의 첫 단계. 예측 vs 실제를 나란히 두고 등급 인장을 찍는다.
+ * 목업 상단의 "정기공시" 자리는 **그날의 성격**이 대신한다 — 실데이터가 없어
+ * 공시 본문을 지어내지 않기로 한 결정이다(`disclosure.ts` 머리말).
+ */
+.stage__reveal-disclosure {
+  width: min(100%, 34rem);
+  padding: 1rem 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--tf-gold) 45%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--tf-bg-1) 92%, transparent);
+  text-align: center;
+}
+
+.stage__reveal-disclosure[hidden] {
+  display: none;
+}
+
+.stage__disc-eyebrow {
+  margin: 0;
+  color: var(--tf-gold);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.stage__disc-headline {
+  margin: 0.25rem 0 0.15rem;
+  font-size: 1.25rem;
+}
+
+/* 큰 수치 — 그날의 등락. 색은 판정이 정한 토큰을 인라인으로 받는다. */
+.stage__disc-figure {
+  margin: 0;
+  font-size: 2.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.stage__disc-note {
+  margin: 0.3rem 0 0.8rem;
+  color: var(--tf-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.stage__disc-rows {
+  display: grid;
+  gap: 0.3rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid color-mix(in srgb, var(--tf-muted) 25%, transparent);
+  text-align: left;
+}
+
+.stage__disc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.stage__disc-row span {
+  color: var(--tf-muted);
+}
+
+.stage__disc-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 등급 인장 — 패배한 판에는 아예 나오지 않는다(판정이 null을 준다). */
+.stage__disc-seal {
+  margin: 0.8rem auto 0;
+  width: 3.2rem;
+  height: 3.2rem;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 1.8rem;
+  font-weight: 700;
+  line-height: 3rem;
+}
+
+.stage__disc-rewards {
+  margin: 0.6rem 0 0;
+  color: var(--tf-gold);
+  font-size: 0.82rem;
+}
+
+.stage__disc-footer {
+  margin: 0.5rem 0 0;
+  color: var(--tf-muted);
+  font-size: 0.74rem;
+}

@@ -44,6 +44,7 @@ const REQUIRED_REFS: readonly string[] = [
   'reveal-title',
   'reveal-subtitle',
   'reveal-canvas',
+  'reveal-disclosure',
   'reveal-summary',
   'reveal-pending',
   'result',

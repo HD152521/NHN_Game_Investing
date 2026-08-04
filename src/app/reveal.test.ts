@@ -73,9 +73,34 @@ function input(overrides: Partial<RevealInput> = {}): RevealInput {
   };
 }
 
+/**
+ * 단계의 시작 시각을 **`PLAYABLE_STAGES`에서 파생**시킨다.
+ *
+ * ⚠️ 예전 테스트는 `revealFrame(input(), 1_600)`처럼 시각을 손으로 적었다. 그래서 시퀀스
+ * 앞에 단계를 하나 추가하자 11건이 한꺼번에 깨졌다 — 테스트가 "지금의 배치"를 고정하고
+ * 있었지 "단계가 순서대로 재생된다"는 규칙을 고정하지 않았기 때문이다(§19-13과 같은 계열:
+ * 테스트가 구현의 우연한 사실에 기대면 안 된다).
+ */
+function startOf(id: string): number {
+  let at = 0;
+  for (const stage of PLAYABLE_STAGES) {
+    if (stage.id === id) return at;
+    at += stage.durationMs;
+  }
+  throw new Error(`재생되지 않는 단계: ${id}`);
+}
+
+/** 그 단계 한가운데 시각 — 경계에 걸리지 않게. */
+function midOf(id: string): number {
+  const stage = PLAYABLE_STAGES.find((s) => s.id === id);
+  if (!stage) throw new Error(`재생되지 않는 단계: ${id}`);
+  return startOf(id) + stage.durationMs / 2;
+}
+
 describe('시퀀스 골격 — 6단계 자리를 잡되 만들 수 있는 것만 재생한다', () => {
-  test('FR-9.2의 6단계가 전부 정의돼 있다', () => {
+  test('FR-9.2의 6단계 + DISCLOSURE가 정의돼 있다', () => {
     expect(REVEAL_STAGES.map((s) => s.id)).toEqual([
+      'disclosure',
       'zoomout',
       'identity',
       'headlines',
@@ -85,9 +110,19 @@ describe('시퀀스 골격 — 6단계 자리를 잡되 만들 수 있는 것만
     ]);
   });
 
-  test('★ 지금 재생되는 것은 4·5·6단계다 — 남은 셋은 실데이터 선행', () => {
-    // 6단계(도감)는 도감이 구현되면서 열렸다. 나머지 셋은 여전히 실데이터가 없어 막혀 있다.
-    expect(PLAYABLE_STAGES.map((s) => s.id)).toEqual(['trades', 'summary', 'codex']);
+  test('★ 재생되는 것은 DISCLOSURE + 4·5·6단계다 — 남은 셋은 실데이터 선행', () => {
+    // 도감이 구현되며 6단계가 열렸고, DISCLOSURE(목업 result)가 판결로 맨 앞에 붙었다.
+    // ①②③(줌아웃·정체·헤드라인)은 여전히 실데이터가 없어 막혀 있다.
+    expect(PLAYABLE_STAGES.map((s) => s.id)).toEqual([
+      'disclosure',
+      'trades',
+      'summary',
+      'codex',
+    ]);
+  });
+
+  test('DISCLOSURE가 맨 앞이다 — 사람이 가장 먼저 알고 싶은 것이 판결이다', () => {
+    expect(PLAYABLE_STAGES[0]?.id).toBe('disclosure');
   });
 
   test('못 만드는 단계에는 이유가 적혀 있다 — 다음 사람이 다시 조사하지 않게', () => {
@@ -99,7 +134,9 @@ describe('시퀀스 골격 — 6단계 자리를 잡되 만들 수 있는 것만
   });
 
   test('건너뛰는 단계는 시간도 소비하지 않는다 — 빈 화면 1.5초는 버그로 읽힌다', () => {
-    expect(REVEAL_TOTAL_MS).toBe(1_500 + 2_000 + 1_500);
+    expect(REVEAL_TOTAL_MS).toBe(
+      PLAYABLE_STAGES.reduce((sum, stage) => sum + stage.durationMs, 0),
+    );
   });
 });
 
@@ -191,14 +228,14 @@ describe('⑤ 요약 — OHLCV + N번 중 M번 적중', () => {
 
 describe('재생 — 경과 시간 → 표시 내용', () => {
   test('시작 직후에는 ④단계이고 마커를 준다', () => {
-    const frame = revealFrame(input(), 0);
+    const frame = revealFrame(input(), midOf('trades'));
     expect(frame.stage).toBe('trades');
     expect(frame.markers).toHaveLength(1);
     expect(frame.summary).toEqual([]);
   });
 
   test('④가 끝나면 ⑤로 넘어가고 요약을 준다', () => {
-    const frame = revealFrame(input(), 1_600);
+    const frame = revealFrame(input(), midOf('summary'));
     expect(frame.stage).toBe('summary');
     expect(frame.summary.length).toBeGreaterThan(0);
     expect(frame.markers).toEqual([]);
@@ -212,7 +249,7 @@ describe('재생 — 경과 시간 → 표시 내용', () => {
   });
 
   test('진행도는 0에서 1로 단조 증가한다', () => {
-    const points = [0, 500, 1_500, 2_500, REVEAL_TOTAL_MS];
+    const points = [0, midOf('trades'), startOf('summary'), midOf('codex'), REVEAL_TOTAL_MS];
     const values = points.map((ms) => revealFrame(input(), ms).progress);
     for (let i = 1; i < values.length; i += 1) {
       expect(values[i]!).toBeGreaterThanOrEqual(values[i - 1]!);
@@ -222,14 +259,14 @@ describe('재생 — 경과 시간 → 표시 내용', () => {
   });
 
   test('음수·NaN 경과에도 던지지 않는다', () => {
-    expect(revealFrame(input(), -100).stage).toBe('trades');
-    expect(revealFrame(input(), Number.NaN).stage).toBe('trades');
+    expect(revealFrame(input(), -100).stage).toBe(PLAYABLE_STAGES[0]?.id);
+    expect(revealFrame(input(), Number.NaN).stage).toBe(PLAYABLE_STAGES[0]?.id);
   });
 });
 
 describe('★ FR-9.5 — 패배해도 공개 연출은 보여준다', () => {
   test('패배에서도 화면이 뜨고 마커가 나온다', () => {
-    const frame = revealFrame(input({ outcome: 'defeated' }), 0);
+    const frame = revealFrame(input({ outcome: 'defeated' }), midOf('trades'));
     expect(frame.stage).toBe('trades');
     expect(frame.markers).toHaveLength(1);
   });
@@ -243,20 +280,20 @@ describe('★ FR-9.5 — 패배해도 공개 연출은 보여준다', () => {
   });
 
   test('결론이 나지 않은 판에서도 요약이 나온다', () => {
-    const frame = revealFrame(input({ outcome: 'unresolved' }), 1_600);
+    const frame = revealFrame(input({ outcome: 'unresolved' }), midOf('summary'));
     expect(frame.summary.length).toBeGreaterThan(0);
   });
 });
 
 describe('단계 스킵 — 각 단계를 개별적으로 건너뛴다 (FR-9.2)', () => {
   test('④ 도중 스킵하면 ⑤의 시작으로 간다', () => {
-    expect(skipToNextStage(500)).toBe(1_500);
-    expect(revealFrame(input(), skipToNextStage(500)).stage).toBe('summary');
+    expect(skipToNextStage(midOf('trades'))).toBe(startOf('summary'));
+    expect(revealFrame(input(), skipToNextStage(midOf('trades'))).stage).toBe('summary');
   });
 
   test('마지막 단계에서 스킵하면 시퀀스가 끝난다', () => {
     // 마지막 단계(codex)는 3,500ms에서 시작한다 — 그 안의 시각에서 스킵해야 끝난다.
-    const at = skipToNextStage(4_000);
+    const at = skipToNextStage(midOf('codex'));
     expect(at).toBe(REVEAL_TOTAL_MS);
     expect(revealFrame(input(), at).finished).toBe(true);
   });
@@ -310,7 +347,7 @@ describe('⑥ 도감 — 이 판이 무엇으로 남는가', () => {
 
   test('마지막 단계의 프레임이 도감 내용을 싣는다', () => {
     // trades(1500) + summary(2000) 이후가 codex 구간이다.
-    const frame = revealFrame({ ...input(), card }, 4_000);
+    const frame = revealFrame({ ...input(), card }, midOf('codex'));
     expect(frame.stage).toBe('codex');
     expect(frame.summary.length).toBeGreaterThan(0);
     expect(frame.subtitle).toBe('이 판이 무엇으로 남는가');

@@ -30,12 +30,14 @@
 
 import type { PaletteToken } from '../design';
 import type { ClosedPosition } from '../position';
+import type { Disclosure } from './disclosure';
 import type { Settlement, StageOutcome } from './settlement';
 import type { CodexCard } from './codex';
 import { CODEX_CAPACITY, RARITY_LABEL, cardTitle, dateLabelFromSeed, rarityOf } from './codex';
 
 /** 시퀀스 단계. 순서는 PRD FR-9.2를 그대로 따른다. */
 export type RevealStageId =
+  | 'disclosure'
   | 'zoomout'
   | 'identity'
   | 'headlines'
@@ -65,6 +67,14 @@ export interface RevealStageSpec {
  * 되짚어 보여주는 것만으로 H2의 절반은 검증된다**는 판단이다.
  */
 export const REVEAL_STAGES: readonly RevealStageSpec[] = [
+  /**
+   * ★ 판결이 먼저 온다 ★ 목업 `result`(DISCLOSURE)가 규정한 화면이다.
+   * 예측 vs 실제를 나란히 두고 등급 인장과 보상을 찍는다 — 판이 끝난 직후 사람이 가장
+   * 먼저 알고 싶은 것이 "맞췄나 / 지켰나"이므로 되짚기(④)보다 앞에 둔다.
+   *
+   * 목업 상단의 종목·거래소·공시 본문은 **일부러 만들지 않았다** — `disclosure.ts` 머리말 참고.
+   */
+  { id: 'disclosure', durationMs: 2_500, available: true },
   {
     id: 'zoomout',
     durationMs: 1_500,
@@ -144,6 +154,13 @@ export interface RevealInput {
   readonly card?: CodexCard;
   /** 지금까지 모은 카드 수 — 6단계의 진척 표시. */
   readonly collected?: number;
+  /**
+   * DISCLOSURE 단계에 표시할 내용 (`disclosure.ts` `buildDisclosure`).
+   *
+   * 카드(`card`)와 **같은 이유로 받는다**: 셸이 이미 정산·도감 발행을 마친 뒤 한 번
+   * 만들었고, 연출이 두 번째로 만들면 두 결과가 어긋날 수 있다.
+   */
+  readonly disclosure?: Disclosure;
 }
 
 export interface RevealOhlcv {
@@ -269,6 +286,13 @@ export interface RevealFrame {
   readonly title: string;
   /** 부제 — 왜 이 화면을 보고 있는지. */
   readonly subtitle: string;
+  /**
+   * DISCLOSURE 단계에서 그릴 내용. 다른 단계에서는 `null`.
+   *
+   * 셸이 `input.disclosure`를 넘기지 않았으면 이 단계에서도 `null`이다 — 그때는
+   * 셸이 아무것도 그리지 않으면 된다(빈 화면이 아니라 다음 단계로 흘러간다).
+   */
+  readonly disclosure: Disclosure | null;
 }
 
 /**
@@ -290,6 +314,8 @@ export function revealTitleFor(outcome: StageOutcome): string {
 
 function revealSubtitleFor(stage: RevealStageId | null): string {
   switch (stage) {
+    case 'disclosure':
+      return '그날은 어떤 날이었고, 당신은 어떻게 했나';
     case 'trades':
       return '차트 위에 남은 당신의 매매';
     case 'summary':
@@ -358,6 +384,7 @@ export function revealFrame(input: RevealInput, elapsedMs: number): RevealFrame 
           stage.id === 'summary' ? summary : stage.id === 'codex' ? codexLines(input) : [],
         title,
         subtitle: revealSubtitleFor(stage.id),
+        disclosure: stage.id === 'disclosure' ? (input.disclosure ?? null) : null,
       };
     }
     remaining -= stage.durationMs;
@@ -372,6 +399,7 @@ export function revealFrame(input: RevealInput, elapsedMs: number): RevealFrame 
     summary: [],
     title,
     subtitle: '',
+    disclosure: null,
   };
 }
 

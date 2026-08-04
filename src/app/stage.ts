@@ -136,6 +136,7 @@ import {
   parseSeedInput,
 } from './challenge';
 import type { ChallengeMode } from './challenge';
+import { buildDisclosure } from './disclosure';
 import { buildResultCard } from './result-card';
 import { drawTitleArt, tickerLine } from './title-art';
 
@@ -1007,6 +1008,38 @@ export function mountStage(root: HTMLElement): () => void {
 
     drawRevealChart(current, frame.markers);
 
+    /*
+     * DISCLOSURE 카드 — 목업 `result`. 내용은 전부 `disclosure.ts`가 정했고 여기서는
+     * DOM으로 옮기기만 한다. 문구·색 판정을 여기 넣지 마라(§19-7 사각으로 들어간다).
+     */
+    const disclosure = frame.disclosure;
+    refs!.revealDisclosure.hidden = disclosure === null;
+    if (disclosure !== null) {
+      const rows = disclosure.rows
+        .map(
+          (row) =>
+            `<div class="stage__disc-row"><span>${row.label}</span>` +
+            `<strong${row.tone ? ` style="color:${theme.palette[row.tone]}"` : ''}>${row.value}</strong></div>`,
+        )
+        .join('');
+      const seal =
+        disclosure.seal === null
+          ? ''
+          : `<div class="stage__disc-seal" style="color:${theme.palette[disclosure.sealTone]}">${disclosure.seal}</div>`;
+      const rewards = disclosure.rewards.length
+        ? `<p class="stage__disc-rewards">${disclosure.rewards.join('  ·  ')}</p>`
+        : '';
+      refs!.revealDisclosure.innerHTML =
+        `<p class="stage__disc-eyebrow">${disclosure.character.eyebrow}</p>` +
+        `<h3 class="stage__disc-headline">${disclosure.character.headline}</h3>` +
+        `<p class="stage__disc-figure" style="color:${theme.palette[disclosure.character.figureTone]}">${disclosure.character.figure}</p>` +
+        `<p class="stage__disc-note">${disclosure.character.note}</p>` +
+        `<div class="stage__disc-rows">${rows}</div>` +
+        seal +
+        rewards +
+        `<p class="stage__disc-footer">${disclosure.footer}</p>`;
+    }
+
     refs!.revealSummary.innerHTML = frame.summary
       .map(
         (line) =>
@@ -1067,6 +1100,29 @@ export function mountStage(root: HTMLElement): () => void {
       },
       ...(pendingCard === null ? {} : { card: pendingCard }),
       collected: progress.codexCards.length + (pendingCard === null ? 0 : 1),
+      /*
+       * DISCLOSURE — 목업 `result`. **셸이 한 번만 만들어 넘긴다.**
+       * 도감 카드(`card`)와 같은 이유다: 정산·발행이 이미 끝난 뒤라 여기서 만든 것이
+       * 최종 진실이고, 연출이 두 번째로 계산하면 두 결과가 어긋날 수 있다.
+       *
+       * ⚠️ 종목·거래소·공시 본문은 넘기지 않는다. 합성 차트에는 그런 것이 없고,
+       * 지어내면 게이트가 약속한 정체 공개가 거짓이 된다 (`disclosure.ts` 머리말).
+       */
+      disclosure: buildDisclosure({
+        outcome: pendingOutcome ?? 'unresolved',
+        settlement,
+        closes: current.closedPositions,
+        archetype: current.set.archetype,
+        events: current.set.events.map((event) => event.kind),
+        dayChangePct:
+          first !== undefined && first.o > 0 && last !== undefined
+            ? ((last.c - first.o) / first.o) * 100
+            : 0,
+        // 방어한 웨이브 = 마지막으로 도달한 웨이브. 클리어면 전 웨이브다.
+        wavesHeld: pendingOutcome === 'cleared' ? combat.waveCount : Math.max(0, combat.wave - 1),
+        waveCount: combat.waveCount,
+        cardsEarned: pendingCard === null ? 0 : 1,
+      }),
     };
     revealElapsedMs = 0;
     revealLastMs = null;
