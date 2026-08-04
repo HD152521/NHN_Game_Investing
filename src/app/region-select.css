@@ -34,7 +34,7 @@
 
 .region__panel {
   position: relative;
-  width: min(920px, 100%);
+  width: min(1240px, 100%);
   display: flex;
   flex-direction: column;
   align-items: center;

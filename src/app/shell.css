@@ -820,3 +820,116 @@ body {
   color: var(--tf-gold);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tf-gold) 40%, transparent);
 }
+
+/* ══════════════════════════════════════════════════════════
+ * 넓은 화면 — 2열 배치
+ *
+ * ★ 무엇이 문제였나 ★
+ * `.stage`는 `width: min(1040px, 100%)`로 가로를 묶어 두고 `flex-direction: column`으로
+ * 모든 것을 세로로만 쌓았다. 그 결과 세로 합이
+ *   차트 200 + HUD 40 + 매매 패널 150 + 전장 360 + 빌드바 90 + 컨트롤 44 ≈ 900px
+ * 가 되어 **1080p 실사용 높이(~900px)에서 항상 스크롤이 났고**, 반대로 1920px 화면에서는
+ * 좌우로 440px씩 빈 공간이 남았다. "여백은 넘치는데 세로만 길다"는 이 두 줄의 결과였다.
+ *
+ * ★ 무엇을 바꿨나 ★
+ * 시선이 머무는 것(차트·전장)은 좌측 주열에 세로로 두고, **손이 가는 것**(HUD·매매 패널·
+ * 빌드바)을 우측 레일로 옮겼다. 주열 세로가 약 640px로 줄어 스크롤이 사라지고, 남던
+ * 가로 공간이 실제 UI로 채워진다.
+ *
+ * ⚠️ **좁은 화면은 건드리지 않는다.** 위의 1열 규칙이 그대로 기본값이고 여기서만 덮는다 —
+ * 태블릿·좁은 창에서 2열을 강제하면 차트가 읽을 수 없을 만큼 좁아진다.
+ *
+ * ⚠️ 오버레이 5종(게이트·세계지도·전선 선택·도감·회사)은 `position:absolute; inset:0`이라
+ * 이 그리드에 참여하지 않는다. `.stage`가 넓어지면 함께 넓어질 뿐이다.
+ */
+@media (min-width: 1180px) {
+  .stage {
+    /* 1040 → 1560. 주열이 차트 가독폭을 유지하면서 레일이 들어갈 자리를 만든다. */
+    width: min(1560px, 100%);
+    display: grid;
+    /* 레일 폭은 매매 패널이 두 줄로 접히지 않는 최소치(300)에서 출발한다. */
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 23vw, 380px);
+    grid-template-rows: auto auto auto auto 1fr;
+    gap: 10px 14px;
+    align-content: start;
+  }
+
+  .stage__tags {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .stage__chart {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  /*
+   * 전장이 레일 3칸(패널·빌드바·여백)과 나란히 선다. `span 3`으로 잡는 이유는
+   * 레일 항목이 늘어도 전장이 밀려나지 않게 하기 위해서다 — 마지막 칸(1fr)이 남는
+   * 세로를 흡수한다.
+   */
+  .stage__battle {
+    grid-column: 1;
+    grid-row: 3 / span 3;
+  }
+
+  /*
+   * HUD는 레일 폭에서 6항목이 한 줄에 못 들어간다(가로 flex + gap 20px).
+   * 2열 격자로 접어 두 줄에 3쌍씩 앉힌다 — 골드/AUM, 웨이브/본진이 짝으로 읽힌다.
+   */
+  .stage > .hud {
+    grid-column: 2;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 10px;
+    align-content: center;
+  }
+
+  .stage > [data-ref='panel-host'] {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  /*
+   * 빌드바는 레일에서 세로로 선다. 구분선(`__sep`)도 함께 눕혀야 하는데,
+   * 원래 규칙이 `width:1px; align-self:stretch`라 세로 배치에서는 보이지 않는다.
+   */
+  .stage > .buildbar {
+    grid-column: 2;
+    grid-row: 4;
+    flex-direction: column;
+    align-items: stretch;
+    align-content: start;
+  }
+
+  .stage > .buildbar .buildbar__group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .stage > .buildbar .buildbar__sep {
+    width: auto;
+    height: 1px;
+    align-self: auto;
+    margin: 3px 0;
+  }
+
+  /* 컨트롤은 전 폭을 쓴다 — 로그 문구가 `margin-left:auto`로 우측 끝에 붙는다. */
+  .stage > .controls {
+    grid-column: 1 / -1;
+    grid-row: 6;
+  }
+}
+
+/*
+ * 아주 넓은 화면(≥1700px)에서는 레일을 조금 더 준다. 매매 패널의 숫자가
+ * 두 줄로 접히지 않는 것이 이 화면에서 가장 중요한 가독성 조건이다.
+ */
+@media (min-width: 1700px) {
+  .stage {
+    grid-template-columns: minmax(0, 1fr) 400px;
+  }
+}

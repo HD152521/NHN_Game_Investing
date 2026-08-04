@@ -32,7 +32,7 @@
 }
 
 .codex__panel {
-  width: min(1180px, 100%);
+  width: min(1360px, 100%);
   display: flex;
   flex-direction: column;
   gap: 18px;
