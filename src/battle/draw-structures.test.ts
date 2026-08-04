@@ -282,11 +282,19 @@ describe('drawEnemyBase — 베어 요새(원본 baseEnemy)', () => {
     }
   });
 
-  test('요새에는 HP 바를 그리지 않는다(체력 데이터가 없다)', () => {
+  test('상태가 없으면 HP 바를 그리지 않는다 (게이트 화면 등)', () => {
     const ctx = createFakeBattleCtx();
     drawEnemyBase(ctx, palette, layout);
 
     expect(ctx.calls.some((call) => call.kind === 'fillRect')).toBe(false);
+  });
+
+  test('★ 상태가 있으면 적 본진 HP 바를 그린다 — 없으면 요새가 배경 그림이 된다', () => {
+    // 적 본진을 부수면 즉시 승리인데(FR-8.2), 깎이는 게 안 보이면 그 경로가 있는지조차 모른다.
+    const ctx = createFakeBattleCtx();
+    drawEnemyBase(ctx, palette, layout, combatState({}));
+
+    expect(ctx.calls.some((call) => call.kind === 'fillRect')).toBe(true);
   });
 });
 
@@ -308,8 +316,16 @@ describe('보스 B-03 — 기지 렌더러는 보스를 그리지 않는다 (이
     return hashRegion(target.surface, 700, 30, 95, 265);
   }
 
+  /*
+   * ⚠️ 기준선을 `null`이 아니라 **평범한 상태**로 잡는다.
+   * 적 본진 HP 바가 생기면서 `null`(바 없음)과 상태 있음(바 있음)은 당연히 달라졌다.
+   * 이 describe가 지키려는 명제는 "보스 때문에 달라지면 안 된다"이므로, 보스만 다른
+   * 두 상태를 비교해야 한다 — `null`과 비교하면 HP 바 유무를 보스 탓으로 오독한다.
+   */
+  const plain = (): string => baseRegion(combatState({}));
+
   test('등장 웨이브에도 요새 그림은 그대로다', () => {
-    expect(baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave }))).toBe(baseRegion(null));
+    expect(baseRegion(combatState({ wave: BOSS_IDENTITY.appearWave }))).toBe(plain());
   });
 
   test('보스 개체가 상태에 있어도 기지 렌더러는 반응하지 않는다', () => {
@@ -317,7 +333,7 @@ describe('보스 B-03 — 기지 렌더러는 보스를 그리지 않는다 (이
       wave: BOSS_IDENTITY.appearWave,
       boss: { hp: 450, maxHp: 900 },
     });
-    expect(baseRegion(withBoss)).toBe(baseRegion(null));
+    expect(baseRegion(withBoss)).toBe(plain());
   });
 
   test('교전 경과가 흘러도 기지 영역 픽셀은 변하지 않는다 (보스 모션이 여기 없다)', () => {

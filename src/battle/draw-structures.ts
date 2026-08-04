@@ -142,8 +142,31 @@ export function drawEnemyBase(
   ctx: BattleCtx,
   palette: Palette,
   layout: BattleLayout,
-  _state?: CombatState | null,
+  state?: CombatState | null,
 ): void {
   syncSpriteColorMode(palette);
-  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, enemyBaseSpriteRect(layout), layout.groundY);
+  const rect = enemyBaseSpriteRect(layout);
+  drawSpriteStanding(ctx, ENEMY_BASE_SPRITE.key, rect, layout.groundY);
+
+  /*
+   * ★ 체력 바가 없으면 이 요새는 배경 그림이다 ★
+   * 적 본진을 부수면 즉시 승리인데(FR-8.2), 깎이는 게 보이지 않으면 플레이어는 그 경로가
+   * 있는지조차 모른다. 아군 사옥과 **같은 자리·같은 규격**으로 그려 둘이 대칭으로 읽히게 한다.
+   *
+   * 색은 적 계열(`ENEMY_DOWN`)이다 — 사옥이 `UP_ALLY`인 것과 짝을 이룬다.
+   * `state`가 없으면(게이트 화면 등) 그리지 않는다.
+   */
+  if (!state) {
+    return;
+  }
+  drawHpBar(ctx, {
+    x: rect.x,
+    y: rect.y + HP_BAR_GAP,
+    w: rect.w,
+    h: HP_BAR_HEIGHT,
+    hp: state.enemyBaseHp,
+    maxHp: state.maxEnemyBaseHp,
+    color: palette.ENEMY_DOWN,
+    palette,
+  });
 }
