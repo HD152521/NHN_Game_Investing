@@ -8,6 +8,14 @@
  * DOM 배선과 정지 상태 보장은 `stage.ts` + `frame-loop.ts`가 맡는다.
  */
 
+import {
+  TITLE_ART_HEIGHT,
+  TITLE_ART_WIDTH,
+  TITLE_BUILD_LABEL,
+  TITLE_HEAD,
+  TITLE_SUBTITLE,
+  TITLE_TAIL,
+} from './title-art';
 import { CODEX_OPEN_ACTION } from './codex';
 import { COMPANY_BUTTON_LABEL, COMPANY_OPEN_ACTION } from './company';
 
@@ -51,6 +59,11 @@ export const GATE_DAILY_ACTION = 'start-daily';
 
 /** 시드를 직접 넣어 같은 판을 여는 입력. 결과 카드에 찍힌 시드를 그대로 붙여넣는 용도다. */
 export const GATE_SEED_INPUT = 'seed-input';
+
+/** 타이틀 배경 캔버스. 마운트 시 1회만 굽는다 — 정지 화면이라 매 프레임 그릴 이유가 없다. */
+export const GATE_ART_REF = 'gate-art';
+/** 하단 우측 티커. 문구는 `title-art.ts` `tickerLine()`이 만든다(가짜 지수 금지). */
+export const GATE_TICKER_REF = 'gate-ticker';
 export const GATE_SEED_ACTION = 'start-seed';
 
 /**
@@ -79,8 +92,11 @@ export function buildStartGateMarkup(): string {
     <div class="gate" data-ref="gate" role="dialog" aria-modal="true" aria-labelledby="${TITLE_ID}">
       <div class="gate__tape" aria-hidden="true"></div>
       <div class="gate__panel">
+        <canvas class="gate__art" data-ref="${GATE_ART_REF}"
+                width="${TITLE_ART_WIDTH}" height="${TITLE_ART_HEIGHT}" aria-hidden="true"></canvas>
         <p class="gate__eyebrow">${GATE_EYEBROW}</p>
-        <h1 class="gate__title" id="${TITLE_ID}">${GAME_TITLE}</h1>
+        <h1 class="gate__title" id="${TITLE_ID}"><span class="gate__title-head">${TITLE_HEAD}</span><span class="gate__title-tail">${TITLE_TAIL}</span></h1>
+        <p class="gate__subtitle">${TITLE_SUBTITLE}</p>
         <p class="gate__goal">${GATE_GOAL}</p>
         <ol class="gate__flow">${steps}</ol>
         <button class="gate__start" type="button" data-action="${GATE_START_ACTION}">
@@ -95,6 +111,11 @@ export function buildStartGateMarkup(): string {
           </button>
         </div>
         <p class="gate__hint">${GATE_HINT}</p>
+
+        <p class="gate__foot">
+          <span class="gate__build">${TITLE_BUILD_LABEL}</span>
+          <span class="gate__ticker" data-ref="${GATE_TICKER_REF}"></span>
+        </p>
 
         <div class="gate__challenge">
           <button class="btn gate__daily" type="button" data-action="${GATE_DAILY_ACTION}">

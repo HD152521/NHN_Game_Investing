@@ -275,3 +275,71 @@
   font-size: 0.72rem;
   line-height: 1.5;
 }
+
+/*
+ * ── 타이틀 배경 스카이라인 (목업 `home`) ─────────────────────────
+ *
+ * 캔버스는 실루엣만 그린다. 하늘 그라디언트와 페이드는 CSS가 얹는다 —
+ * 캔버스에 그라디언트를 넣으면 색약 모드 전환 때 다시 구워야 하지만,
+ * CSS 변수는 팔레트가 바뀌면 자동으로 따라온다.
+ */
+.gate__art {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 100%;
+  height: auto;
+  opacity: 0.5;
+  /* 아래는 선명하게, 위로 갈수록 사라진다 — 패널 글자를 방해하지 않는다. */
+  mask-image: linear-gradient(to top, #000 0%, #000 45%, transparent 100%);
+  pointer-events: none;
+}
+
+/* 패널 내용은 배경 위로. */
+.gate__panel > *:not(.gate__art) {
+  position: relative;
+  z-index: 1;
+}
+
+/* TICKER 는 기본색, FRONT 는 골드 — 목업 그대로다. */
+.gate__title-head {
+  color: var(--tf-text);
+}
+
+.gate__title-tail {
+  margin-left: 0.28em;
+  color: var(--tf-gold);
+}
+
+.gate__subtitle {
+  margin: 0.2rem 0 0.6rem;
+  color: var(--tf-muted);
+  font-size: 0.92rem;
+  letter-spacing: 0.01em;
+}
+
+/* 하단 줄 — 좌 빌드 표기 / 우 티커. */
+.gate__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  margin: 0.9rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid color-mix(in srgb, var(--tf-muted) 25%, transparent);
+  color: var(--tf-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.gate__ticker {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate__art {
+    opacity: 0.38;
+  }
+}

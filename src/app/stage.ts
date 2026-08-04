@@ -131,11 +131,13 @@ import type { RevealInput } from './reveal';
 import {
   CHALLENGE_TERRITORIES,
   challengeModeOf,
+  dailyLabelFor,
   dailySeedFor,
   parseSeedInput,
 } from './challenge';
 import type { ChallengeMode } from './challenge';
 import { buildResultCard } from './result-card';
+import { drawTitleArt, tickerLine } from './title-art';
 
 import type { GameProgress } from './progress';
 import { DEFAULT_STAGE_ID, StageSession } from './session';
@@ -340,6 +342,36 @@ export function mountStage(root: HTMLElement): () => void {
   // 지역 카드 배경(`tf-r1-dusk` 등)도 같은 이유로 마운트 시 1회만 굽는다.
   // 굽지 못하는 환경에서는 조용히 넘어가고 CSS 그라디언트가 그대로 남는다.
   mountRegionArt(root, { mode: theme.mode });
+
+  /**
+   * 타이틀 배경 스카이라인 — **마운트 시 1회만 굽는다.**
+   *
+   * 게이트는 프레임 루프가 한 번도 돌지 않는 정지 화면이라 매 프레임 그릴 이유가 없다.
+   * 캔버스 컨텍스트를 못 얻는 환경에서는 조용히 넘어간다(CSS 배경이 남는다) —
+   * 배경 그림 하나 때문에 게임이 시작되지 않으면 안 된다.
+   */
+  const gateArtCtx = refs.gateArt.getContext('2d');
+  if (gateArtCtx) {
+    drawTitleArt(gateArtCtx, theme.palette);
+  }
+
+  /**
+   * 타이틀 하단 티커 — **게임 안에서 실제로 참인 사실만** 싣는다.
+   *
+   * 목업은 `KOSPI 2,614.28 ▼ 1.24%`였지만 지어낸 지수를 띄우지 않는다. 이 게임의 훅이
+   * "그날이 진짜 어느 회사의 어떤 날이었는지"인데(`GATE_HINT`), 첫 화면에 가짜 시장
+   * 데이터를 걸면 그 약속을 스스로 깎는다 (`title-art.ts` 머리말).
+   *
+   * 게이트를 열 때마다 갱신한다 — 판을 깨고 돌아오면 점령·도감 수가 달라져 있다.
+   */
+  function syncGateTicker(): void {
+    refs!.gateTicker.textContent = tickerLine({
+      dailyLabel: dailyLabelFor(dailySeedFor(new Date())),
+      cleared: clearedCount(progress),
+      totalRegions: WORLD_REGIONS.length,
+      codexCount: progress.codexCards.length,
+    });
+  }
 
   const panel: TradePanel = createTradePanel(
     {
@@ -1257,6 +1289,8 @@ export function mountStage(root: HTMLElement): () => void {
     refs!.worldMap.hidden = true;
     refs!.company.hidden = true;
     refs!.gate.hidden = false;
+    // 판을 깨고 돌아오면 점령·도감 수가 달라져 있다 — 열 때마다 되맞춘다.
+    syncGateTicker();
     refs!.startButton.focus();
   }
 
@@ -1805,6 +1839,8 @@ export function mountStage(root: HTMLElement): () => void {
   window.addEventListener('keydown', onKeyDown);
 
   syncButtons();
+  // 게이트는 시작 시 이미 떠 있다 — 첫 화면의 티커도 채워 둔다.
+  syncGateTicker();
 
   return () => {
     loop.stop();

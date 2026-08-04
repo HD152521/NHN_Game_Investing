@@ -15,9 +15,11 @@ import {
 import { buildSkillBarMarkup, buildTowerRosterMarkup, buildUnitRosterMarkup } from '../ui';
 import type { SettlementRow } from './settlement';
 import {
+  GATE_ART_REF,
   GATE_DAILY_ACTION,
   GATE_SEED_ACTION,
   GATE_SEED_INPUT,
+  GATE_TICKER_REF,
   buildStartGateMarkup,
 } from './start-gate';
 import { REGION_BACK_ACTION, REGION_SELECT_ACTION, buildRegionSelectMarkup } from './region-select';
@@ -155,6 +157,10 @@ export interface StageRefs {
   /** 시드 직접 입력. 결과 카드의 시드를 그대로 붙여넣는 용도다. */
   readonly seedInput: HTMLInputElement;
   readonly seedButton: HTMLButtonElement;
+  /** 타이틀 배경 캔버스. 마운트 시 1회만 굽는다. */
+  readonly gateArt: HTMLCanvasElement;
+  /** 타이틀 하단 티커. 진행도를 읽어 채운다 — 가짜 시장 지수를 쓰지 않는다. */
+  readonly gateTicker: HTMLElement;
   readonly resultRegionButton: HTMLButtonElement;
   readonly gate: HTMLElement;
   readonly startButton: HTMLButtonElement;
@@ -477,6 +483,8 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     `[data-action="${GATE_SEED_ACTION}"]`,
   );
   const seedInput = root.querySelector<HTMLInputElement>(`[data-ref="${GATE_SEED_INPUT}"]`);
+  const gateArt = pick<HTMLCanvasElement>(GATE_ART_REF);
+  const gateTicker = pick(GATE_TICKER_REF);
   const resultRegionButton = root.querySelector<HTMLButtonElement>(
     `[data-action="${RESULT_REGION_ACTION}"]`,
   );
@@ -557,6 +565,8 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     !dailyButton ||
     !seedButton ||
     !seedInput ||
+    !gateArt ||
+    !gateTicker ||
     !resultRegionButton ||
     !gate ||
     !panelHost ||
@@ -631,6 +641,8 @@ export function collectStageRefs(root: HTMLElement): StageRefs | null {
     dailyButton,
     seedButton,
     seedInput,
+    gateArt,
+    gateTicker,
     resultRegionButton,
     gate,
     startButton,

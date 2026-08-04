@@ -14,6 +14,7 @@ import {
   START_BUTTON_LABEL,
   buildStartGateMarkup,
 } from './start-gate';
+import { TITLE_BUILD_LABEL, TITLE_HEAD, TITLE_SUBTITLE, TITLE_TAIL } from './title-art';
 
 describe('한 문장 목표 (GATE_GOAL)', () => {
   test('한 문장이다', () => {
@@ -38,8 +39,28 @@ describe('한 문장 목표 (GATE_GOAL)', () => {
 describe('buildStartGateMarkup', () => {
   const markup = buildStartGateMarkup();
 
-  test('게임 이름을 노출한다', () => {
-    expect(markup).toContain(GAME_TITLE);
+  /**
+   * 타이틀은 **두 조각으로 쪼개져 있다** — `TICKER`는 기본색, `FRONT`는 골드(목업 `home`).
+   * 그래서 `GAME_TITLE`('TICKER FRONT')이 연속 문자열로는 마크업에 없다.
+   * 두 조각이 다 있고 합치면 게임 이름이 된다는 것이 지금의 계약이다.
+   */
+  test('게임 이름을 두 조각으로 노출한다 (색이 다르다)', () => {
+    expect(markup).toContain(`>${TITLE_HEAD}<`);
+    expect(markup).toContain(`>${TITLE_TAIL}<`);
+    expect(`${TITLE_HEAD} ${TITLE_TAIL}`).toBe(GAME_TITLE);
+  });
+
+  test('목업이 규정한 부제를 노출한다', () => {
+    expect(markup).toContain(TITLE_SUBTITLE);
+  });
+
+  test('하단에 빌드 표기가 있다', () => {
+    expect(markup).toContain(TITLE_BUILD_LABEL);
+  });
+
+  test('★ 티커 자리는 비어 있다 — 문구는 셸이 진행도에서 채운다', () => {
+    // 마크업에 가짜 지수를 박아 두면 진행도와 무관한 거짓 정보가 화면에 고정된다.
+    expect(markup).not.toMatch(/KOSPI|코스피/);
   });
 
   test('한 문장 목표를 노출한다', () => {
