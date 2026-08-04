@@ -849,7 +849,8 @@ body {
     display: grid;
     /* 레일 폭은 매매 패널이 두 줄로 접히지 않는 최소치(300)에서 출발한다. */
     grid-template-columns: minmax(0, 1fr) clamp(300px, 23vw, 380px);
-    grid-template-rows: auto auto auto auto 1fr;
+    /* 태그 · 차트(2칸) · 전장 · 컨트롤 */
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
     gap: 10px 14px;
     align-content: start;
   }
@@ -859,19 +860,29 @@ body {
     grid-row: 1;
   }
 
+  /*
+   * ★ 짝을 맞춘다 — 행동과 그 대상은 나란히 있어야 한다 ★
+   *
+   * 이전 배치는 매매 패널이 **전장 옆에** 붙어 있었다. 그래서 실제 조작이 이랬다:
+   *   차트를 읽는다(좌상단) → LONG/SHORT를 누른다(우중단) → 눈이 화면을 가로지른다
+   *   전장을 본다(좌하단)  → 타워를 고른다(우중단)      → 또 가로지른다
+   *
+   * 차트는 200px, HUD(40) + 매매 패널(150)은 190px이라 **원래 같은 행에 맞출 수 있었다.**
+   * 차트가 두 행을 걸치게 해서 오른쪽에 HUD와 매매 패널이 차례로 앉고, 전장은 그 아래
+   * 행에서 빌드바와 나란히 선다.
+   *
+   *   [ 차트 ][ HUD    ]   ← 읽고 바로 산다
+   *   [ 차트 ][ 매매    ]
+   *   [ 전장 ][ 빌드바  ]   ← 보고 바로 짓는다
+   */
   .stage__chart {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 2 / span 2;
   }
 
-  /*
-   * 전장이 레일 3칸(패널·빌드바·여백)과 나란히 선다. `span 3`으로 잡는 이유는
-   * 레일 항목이 늘어도 전장이 밀려나지 않게 하기 위해서다 — 마지막 칸(1fr)이 남는
-   * 세로를 흡수한다.
-   */
   .stage__battle {
     grid-column: 1;
-    grid-row: 3 / span 3;
+    grid-row: 4;
   }
 
   /*
@@ -902,6 +913,8 @@ body {
     flex-direction: column;
     align-items: stretch;
     align-content: start;
+    /* 전장과 같은 행이라 세로가 남는다. 위에 붙여 두 칸의 윗변을 맞춘다. */
+    align-self: start;
   }
 
   .stage > .buildbar .buildbar__group {
@@ -920,7 +933,7 @@ body {
   /* 컨트롤은 전 폭을 쓴다 — 로그 문구가 `margin-left:auto`로 우측 끝에 붙는다. */
   .stage > .controls {
     grid-column: 1 / -1;
-    grid-row: 6;
+    grid-row: 5;
   }
 }
 
