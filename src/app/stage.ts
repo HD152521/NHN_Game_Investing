@@ -292,6 +292,19 @@ export function mountStage(root: HTMLElement): () => void {
    * 그래서 재생 종료를 **장 마감**으로만 해석한다 — 매매만 닫고(FR-8.1 강제 청산),
    * 전투는 `overtimeRemainingMs` 동안 스스로 결론에 도달할 때까지 계속 돈다.
    */
+  /**
+   * ★ 전장 시계 — 재생 시계와 분리한다 ★
+   *
+   * `Replay.tick`의 `elapsedMs`는 **390초에서 clamp 된다**(`replay.ts` `Math.min(..., STAGE_DURATION_MS)`).
+   * 그런데 전투는 장 마감 뒤 **연장 구간에서 계속 돈다.** 그 값을 전장 렌더의 시계로 쓰면
+   * 연장 동안 시간이 멈춰, 사망 연출이 진행되지 않아 **시체가 화면에 그대로 남는다**
+   * (실제 플레이 피드백: "후반쯤에는 죽은 애들이 안 사라지던데").
+   *
+   * 그래서 프레임 dt를 그대로 누적한 **멈추지 않는 시계**를 따로 둔다. 사망 연출·날씨처럼
+   * 시간으로 진행되는 전장 요소는 전부 이 시계를 봐야 한다.
+   */
+  let battleClockMs = 0;
+
   let marketClosed = false;
   let overtimeRemainingMs = 0;
   /** 결과 화면이 떠 있는가. 떠 있는 동안 프레임은 아무 것도 진행시키지 않는다. */
@@ -501,6 +514,7 @@ export function mountStage(root: HTMLElement): () => void {
     session = new StageSession(seed, speed, nowMs, stageId, territories, progress.departments);
     lastFrameMs = nowMs;
     marketClosed = false;
+    battleClockMs = 0;
     overtimeRemainingMs = 0;
     tutorialHoldMs = 0;
     armedSpeed = null;
@@ -785,6 +799,8 @@ export function mountStage(root: HTMLElement): () => void {
      * 차트는 계속 흘려야 한다 — ①이 "차트가 흐르는 것을 본다"이고 ②③은 실제 매매다.
      * 멈춘 만큼은 아래 장 마감에서 연장 시간으로 되돌려준다.
      */
+    battleClockMs += dt;
+
     if (shouldHoldCombat(tutorialState)) {
       tutorialHoldMs += dt;
     } else {
@@ -863,7 +879,7 @@ export function mountStage(root: HTMLElement): () => void {
       selectedTowerKind: selectedTower,
       // 슬롯 데칼이 '배치 가능/불가'를 가르는 기준. 살 돈이 없으면 불가로 보인다.
       gold: snap.wallet.gold,
-      timeMs: state.elapsedMs,
+      timeMs: battleClockMs,
       reducedMotion: prefersReducedMotion(),
       // 사망 연출 — 버퍼는 앱 수명 동안 하나, 이벤트는 직전 틱의 것만 넘긴다.
       deaths: { field: deathField, events: session.lastCombatDeaths },

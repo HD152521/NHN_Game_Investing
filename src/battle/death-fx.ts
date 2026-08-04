@@ -20,7 +20,32 @@
 
 import type { DeathEvent, DeathKind } from '../combat/types.js';
 import type { Palette } from '../design/index.js';
-import { ANIM_FRAMES, allyRookie, death, enemyRusher } from '../sprites/index.js';
+import {
+  ANIM_FRAMES,
+  allyRookie,
+  death,
+  enemyBlocker,
+  enemyKite,
+  enemyRusher,
+  enemySiren,
+  enemyTank,
+} from '../sprites/index.js';
+import { enemyKindForId } from './entity-sprites.js';
+import type { EnemyKind } from '../combat/types.js';
+
+/**
+ * 적 종류 → 사망 연출의 원본 드로잉.
+ *
+ * `ENEMY_SPRITES`(entity-sprites.ts)는 **시트 키**를 주지만 `death()`는 **원본 생성기**를
+ * 받는다. 그래서 여기 따로 둔다 — 다만 종류 판정은 `enemyKindForId` 하나만 쓴다.
+ */
+const DEATH_BASE_BY_ENEMY: Readonly<Record<EnemyKind, typeof enemyRusher>> = {
+  gapScout: enemyRusher,
+  marginEnforcer: enemyBlocker,
+  liquidationDigger: enemyTank,
+  rumorKite: enemyKite,
+  panicSiren: enemySiren,
+};
 import type { AnimFrame } from '../sprites/index.js';
 import { spriteRasters } from '../sprites/render/index.js';
 import type { SpriteRaster, SpriteSource } from '../sprites/render/index.js';
@@ -53,6 +78,8 @@ interface DeathSlot {
   x: number;
   y: number;
   kind: DeathKind;
+  /** 적일 때 어느 종류였는가. 산 모습과 같은 스프라이트로 죽기 위해 필요하다. */
+  enemyKind: EnemyKind;
   active: boolean;
 }
 
@@ -70,6 +97,7 @@ export function createDeathField(): DeathField {
       x: 0,
       y: 0,
       kind: 'enemy' as DeathKind,
+      enemyKind: 'gapScout' as EnemyKind,
       active: false,
     })),
     next: 0,
@@ -106,13 +134,22 @@ const SCALE_BY_KIND: Readonly<Record<DeathKind, number>> = {
  */
 const SOURCE_CACHE = new Map<string, SpriteSource>();
 
-function deathSource(kind: DeathKind, frame: AnimFrame): SpriteSource {
-  const id = `death:${kind}#${frame}`;
+/**
+ * ★ 사망 스프라이트는 **살아 있을 때와 같은 개체**여야 한다 ★
+ *
+ * 예전에는 `kind === 'unit' ? allyRookie : enemyRusher`였다 — 즉 **적 5종이 전부 같은
+ * 모습(E-01 갭하락 첨병)으로 죽었다.** 살아 있을 때는 `enemyKindForId(lane, id)`로 종류를
+ * 고르는데 사망 연출만 그 규칙을 안 따라, 화면에서 개체가 죽는 순간 다른 캐릭터로 바뀌었다.
+ *
+ * 같은 함수를 쓰면 산 모습과 죽은 모습이 어긋날 수 없다(§19-4 이중 출처 회피).
+ */
+function deathSource(kind: DeathKind, enemyKind: EnemyKind, frame: AnimFrame): SpriteSource {
+  const id = `death:${kind}:${enemyKind}#${frame}`;
   const memo = SOURCE_CACHE.get(id);
   if (memo !== undefined) {
     return memo;
   }
-  const base = kind === 'unit' ? allyRookie : enemyRusher;
+  const base = kind === 'unit' ? allyRookie : DEATH_BASE_BY_ENEMY[enemyKind];
   const created: SpriteSource = {
     id,
     grid: death(base, frame, TINT_BY_KIND[kind]),
@@ -152,6 +189,8 @@ export function pushDeaths(
     // 보스는 지면선 위에 서므로 죽을 때도 지면선이다. 나머지는 자기 레인.
     slot.y = event.kind === 'boss' ? layout.groundY : laneY(event.lane, layout);
     slot.kind = event.kind;
+    // 살아 있을 때 렌더러가 쓰는 것과 **같은 함수**로 종류를 정한다.
+    slot.enemyKind = enemyKindForId(event.lane, event.id);
     slot.active = true;
     field.next = (field.next + 1) % field.slots.length;
   }
@@ -179,7 +218,7 @@ export function drawDeaths(
       continue;
     }
     const raster: SpriteRaster | null = spriteRasters.raster(
-      deathSource(slot.kind, deathFrameAt(elapsed / DEATH_DURATION_MS)),
+      deathSource(slot.kind, slot.enemyKind, deathFrameAt(elapsed / DEATH_DURATION_MS)),
     );
     // 굽기에 실패하면 **이번 프레임만 건너뛴다** — 슬롯을 끄면 안 된다.
     // 래스터 캐시는 환경(캔버스 없음 등)에 따라 일시적으로 null을 줄 수 있고, 그때 연출을

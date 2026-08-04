@@ -13,6 +13,7 @@ import type { DeathEvent } from '../combat/types.js';
 import { createTheme } from '../design/index.js';
 import { DEATH_DURATION_MS, createDeathField, deathFrameAt, drawDeaths, pushDeaths } from './death-fx.js';
 import { computeBattleLayout, laneY, progressToX } from './layout.js';
+import { enemyKindForId } from './entity-sprites.js';
 import { createFakeBattleCtx } from './fake-ctx.js';
 
 const palette = createTheme('default').palette;
@@ -112,5 +113,60 @@ describe('drawDeaths — 스스로 끝난다', () => {
     const field = createDeathField();
     pushDeaths(field, [death(), death({ kind: 'unit' }), death({ kind: 'boss' })], layout, 0);
     expect(() => drawDeaths(createFakeBattleCtx(), palette, field, 10)).not.toThrow();
+  });
+});
+
+/**
+ * ★ 실제 플레이에서 나온 잔버그 2건 ★
+ * ① "적군이 죽으면 다 마법사(천 달린 애)로 죽는다"
+ * ② "후반쯤에는 죽은 애들이 안 사라지던데"
+ */
+describe('사망 연출 — 종류와 수명', () => {
+  test('★ 적 5종이 각자 다른 모습으로 죽는다 — 예전에는 전부 같았다', () => {
+    const layout = computeBattleLayout(1024, 360);
+    const field = createDeathField();
+    // 같은 레인에서 id만 다르면 `enemyKindForId`가 다른 종류를 준다.
+    const ids = [0, 1, 2, 3, 4, 5];
+    pushDeaths(
+      field,
+      ids.map((id) => ({ id, kind: 'enemy' as const, lane: 'ground' as const, x: 0.5 })),
+      layout,
+      0,
+    );
+    const kinds = new Set(
+      field.slots.filter((s) => s.active).map((s) => s.enemyKind),
+    );
+    // 지상 3종이 섞여 나와야 한다. 하나로 뭉치면 예전 버그다.
+    expect(kinds.size).toBeGreaterThan(1);
+  });
+
+  test('죽은 종류가 살아 있을 때와 같다 — enemyKindForId 하나만 쓴다', () => {
+    const layout = computeBattleLayout(1024, 360);
+    const field = createDeathField();
+    pushDeaths(field, [{ id: 7, kind: 'enemy', lane: 'ground', x: 0.4 }], layout, 0);
+    const slot = field.slots.find((s) => s.active);
+    expect(slot?.enemyKind).toBe(enemyKindForId('ground', 7));
+  });
+
+  test('공중 적은 공중 종류로 죽는다', () => {
+    const layout = computeBattleLayout(1024, 360);
+    const field = createDeathField();
+    pushDeaths(field, [{ id: 3, kind: 'enemy', lane: 'air', x: 0.6 }], layout, 0);
+    const slot = field.slots.find((s) => s.active);
+    expect(slot?.enemyKind).toBe(enemyKindForId('air', 3));
+  });
+
+  test('★ 시계가 흐르면 연출이 끝난다 — 멈춘 시계에서는 영원히 남는다', () => {
+    const layout = computeBattleLayout(1024, 360);
+    const field = createDeathField();
+    pushDeaths(field, [{ id: 1, kind: 'enemy', lane: 'ground', x: 0.5 }], layout, 1_000);
+    const slot = field.slots.find((s) => s.active)!;
+    // 시작 시각이 기록된다 — 이 값과 렌더 시계의 차이가 진행도다.
+    expect(slot.startedMs).toBe(1_000);
+    expect(slot.active).toBe(true);
+    // 연출 길이를 넘긴 시각이면 끝난 것으로 읽혀야 한다.
+    expect(1_000 + DEATH_DURATION_MS).toBeGreaterThan(slot.startedMs);
+    // ⚠️ 셸이 `Replay.elapsedMs`(390초에서 clamp)를 넘기면 연장 구간에서 이 차이가
+    //    영원히 0이라 시체가 남는다. 그래서 셸은 멈추지 않는 `battleClockMs`를 쓴다.
   });
 });
