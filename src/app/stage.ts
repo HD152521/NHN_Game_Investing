@@ -21,6 +21,11 @@ import './company.css';
 import '../ui/trade-panel.css';
 import '../ui/gold-flight.css';
 import '../ui/skill-tooltip.css';
+/*
+ * ★ 반드시 마지막이다 ★ 오버레이 4화면(세계지도·전선·도감·회사)을 하나의 콘솔로 묶는
+ * 스킨이다. 앞서 로드된 각 화면 시트를 덮어써야 하므로 순서를 바꾸면 먹지 않는다.
+ */
+import './overlay.css';
 
 import { createDeathField, drawBattle, computeBattleLayout, progressToX, slotAt } from '../battle';
 

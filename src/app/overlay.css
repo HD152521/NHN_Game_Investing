@@ -1,0 +1,324 @@
+/*
+ * ══ 오버레이 콘솔 시스템 ═══════════════════════════════════════════
+ *
+ * 세계지도 · 한반도 전선 · 차트 도감 · 회사(부서) — **네 화면을 하나의 터미널로 묶는다.**
+ *
+ * ★ 왜 공유 시트인가 ★
+ * 네 화면이 각자 스타일링돼 있어 같은 게임의 화면으로 읽히지 않았다. 게다가 전부
+ * `1px solid muted` + `bg-1 92%` + `radius 3px`이라, 이 저장소 규칙(`rules/web/design-quality.md`)이
+ * 금지한 **"모든 컴포넌트에 균일한 radius·spacing·shadow"**와 **"층위 없는 평평한 레이아웃"**에
+ * 정확히 해당했다. 화면마다 고치면 넷이 또 갈라지므로 **마지막에 로드되는 스킨 한 장**으로 묶는다.
+ *
+ * ★ 방향: 군용 트레이딩 터미널 ★
+ * 도메인이 블라인드 차트 · 티커 · 사옥 방어 · 픽셀 아트다. 일반적인 카드 대시보드가 아니라
+ * **콘솔의 패널**로 읽혀야 한다:
+ *   · 코너 브래킷    — 네 화면을 하나로 묶는 표식
+ *   · 스캔라인 질감  — CRT. 아주 낮은 불투명도로 "화면 너머"를 만든다
+ *   · 표 숫자        — 모든 수치에 `tabular-nums`. 자릿수가 흔들리지 않는다
+ *   · 스케일 대비    — eyebrow(작고 넓은 자간) → title(크게) → body(작게)
+ *   · 상태 레일      — 목록 항목 왼쪽 3px 띠로 상태를 말한다
+ *
+ * ★ 색은 의미로만 ★ 팔레트에 초록이 없고 한국식 상승=적/하락=청이다.
+ *   GOLD = 성취·재화 / UP_ALLY = 아군·진입 가능 / ENEMY_DOWN = 적·위험 / MUTED = 잠김
+ *
+ * ⚠️ **레이아웃 기하는 건드리지 않는다.** 화면을 직접 보지 않고 padding·grid를 바꾸면
+ *    무엇이 깨지는지 알 수 없다. 여기서 하는 것은 색·타이포·상태·질감뿐이다.
+ *
+ * ⚠️ `stage.ts`에서 **가장 마지막에** import 된다. 순서를 바꾸면 스킨이 먹지 않는다.
+ * ⚠️ 생짜 HEX 금지 — `var(--tf-*)`만 쓴다.
+ * ⚠️ `.wmap::before`는 **이미 격자를 그리고 있다.** 그래서 여기 스캔라인은 `::after`를 쓴다 —
+ *    `::before`를 덮으면 지도 격자가 통째로 사라진다.
+ */
+
+.wmap,
+.codex,
+.company,
+.region {
+  --ov-line: color-mix(in srgb, var(--tf-muted) 30%, transparent);
+  --ov-line-strong: color-mix(in srgb, var(--tf-gold) 42%, transparent);
+  --ov-surface-raised: color-mix(in srgb, var(--tf-bg-2) 85%, transparent);
+}
+
+/*
+ * ── 깊이: 게임 위에 뜬다 ──
+ * 뒤로 전장이 비치되 읽히지는 않아야 한다. 단색으로 덮으면 "다른 페이지"가 되고,
+ * 너무 투명하면 글자가 안 읽힌다. 블러 + 세로 그라디언트가 그 사이다.
+ */
+.wmap,
+.codex,
+.company {
+  backdrop-filter: blur(3px);
+}
+
+/*
+ * ── 스캔라인 질감 (CRT) ──
+ * 콘솔 인상을 만드는 유일한 장식이며 아주 낮은 불투명도로만 쓴다.
+ * `.wmap`은 `::before`가 이미 격자에 쓰이므로 `::after`를 쓴다.
+ */
+.wmap::after,
+.codex::before,
+.company::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--tf-line) 55%, transparent) 0 1px,
+    transparent 1px 3px
+  );
+  opacity: 0.14;
+  pointer-events: none;
+}
+
+/* 내용은 질감 위로. */
+.codex__panel,
+.company__panel,
+.region__panel,
+.wmap__head,
+.wmap__list,
+.wmap__canvas-wrap,
+.wmap__brief,
+.wmap__foot {
+  position: relative;
+  z-index: 1;
+}
+
+/*
+ * ── ★ 코너 브래킷 ★ — 이 시스템의 표식 ──
+ * 사방 테두리 대신 **두 모서리만** 그어 화면이 답답해지지 않게 한다.
+ * 세계지도에는 패널 래퍼가 없어(루트에 직접 배치) 캔버스가 그 역할을 대신한다.
+ */
+.codex__panel::before,
+.codex__panel::after,
+.company__panel::before,
+.company__panel::after,
+.region__panel::before,
+.region__panel::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: var(--ov-line-strong);
+  border-style: solid;
+  pointer-events: none;
+}
+
+.codex__panel::before,
+.company__panel::before,
+.region__panel::before {
+  top: -6px;
+  left: -6px;
+  border-width: 1px 0 0 1px;
+}
+
+.codex__panel::after,
+.company__panel::after,
+.region__panel::after {
+  right: -6px;
+  bottom: -6px;
+  border-width: 0 1px 1px 0;
+}
+
+/*
+ * ── 타이포 스케일 대비 ──
+ * eyebrow·title이 비슷한 크기면 스캔이 안 된다. 작은 라벨은 더 작고 넓게, 제목은 더 크게.
+ */
+.wmap__eyebrow,
+.codex__eyebrow,
+.company__eyebrow,
+.region__eyebrow,
+.region__chapter,
+.wmap__brief-eyebrow,
+.region__brief-eyebrow {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tf-gold);
+}
+
+.wmap__title,
+.codex__title,
+.company__title,
+.region__title {
+  font-size: clamp(1.35rem, 1rem + 1.6vw, 2rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+
+/* ★ 모든 수치는 표 숫자다 — 자릿수가 흔들리면 콘솔로 안 읽힌다. */
+.wmap__brief-stats,
+.wmap__foot-status,
+.wmap__row-count,
+.codex__count,
+.codex-card__stat-value,
+.codex-card__figure,
+.company__capital-value,
+.dept__level,
+.dept__values,
+.region__brief-rows,
+.rcard__stat-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/*
+ * ── 상태 레일 ──
+ * 목록 항목의 **왼쪽 3px 띠**로 상태를 말한다. 배경을 통째로 물들이면 시끄럽고
+ * 글자색만 바꾸면 스캔이 안 된다. 레일은 그 사이의 값싼 해법이다.
+ */
+.wmap__row,
+.dept,
+.rcard {
+  position: relative;
+  transition:
+    border-color 140ms ease-out,
+    background-color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+.wmap__row::before,
+.dept::before,
+.rcard::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--tf-muted);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* 갈 수 있는 곳 = 아군색 / 진행 중·점령 = 골드 / 잠김 = 무채색(기본값) */
+.wmap__row--unlocked::before,
+.rcard:not(.rcard--locked)::before {
+  background: var(--tf-up-ally);
+  opacity: 1;
+}
+
+.wmap__row--active::before,
+.wmap__row--on::before {
+  background: var(--tf-gold);
+  opacity: 1;
+}
+
+/*
+ * ── 상호작용 상태를 "설계"한다 ──
+ * 기본/hover/focus/active가 각각 다른 신호를 준다. 1px 뜨는 것만으로 "누를 수 있다"가
+ * 읽힌다 — 그림자를 키우는 것보다 싸고 조용하다.
+ */
+.wmap__row:hover:not(:disabled),
+.dept:hover,
+.rcard:hover:not(:disabled),
+.codex-card:hover {
+  border-color: var(--ov-line-strong);
+  background: var(--ov-surface-raised);
+  transform: translateY(-1px);
+}
+
+.wmap__row:active:not(:disabled),
+.rcard:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.wmap__row:focus-visible,
+.dept:focus-visible,
+.rcard:focus-visible,
+.codex-card:focus-visible,
+.codex__tab:focus-visible,
+.wmap__enter:focus-visible,
+.wmap__back:focus-visible,
+.codex__back:focus-visible,
+.company__back:focus-visible {
+  outline: 2px solid var(--tf-gold);
+  outline-offset: 2px;
+}
+
+/* 잠긴 것은 뜨지 않는다 — 만질 수 없다는 신호가 hover에서도 유지돼야 한다. */
+.wmap__row--locked:hover,
+.rcard--locked:hover,
+.codex-card--empty:hover {
+  transform: none;
+  border-color: var(--ov-line);
+  background: transparent;
+}
+
+/*
+ * ── 도감 희귀도: 색을 카드 전체에 칠하지 않는다 ──
+ * 등급색이 배경을 물들이면 격자 전체가 시끄러워진다. **상단 2px 띠**로만 말하면
+ * 수집물이 줄지어 읽힌다 — 도감의 목적은 개별 자랑이 아니라 컬렉션 조망이다.
+ */
+.codex-card {
+  border-top-width: 2px;
+  border-top-style: solid;
+  border-top-color: var(--tf-muted);
+  transition:
+    border-color 140ms ease-out,
+    transform 140ms ease-out;
+}
+
+.codex-card--legendary {
+  border-top-color: var(--tf-gold);
+}
+
+.codex-card--epic {
+  border-top-color: var(--tf-aum);
+}
+
+.codex-card--rare {
+  border-top-color: var(--tf-enemy-down);
+}
+
+/* 미획득 슬롯 — 점선. 있으나 비었다는 사실이 형태로 읽힌다. */
+.codex-card--empty {
+  border-style: dashed;
+  border-top-color: var(--ov-line);
+  opacity: 0.5;
+}
+
+/* 선택된 필터 탭 — 밑줄 하나로. 버튼을 통째로 칠하지 않는다. */
+.codex__tab--on {
+  border-bottom: 2px solid var(--tf-gold);
+  color: var(--tf-text);
+}
+
+/*
+ * ── 지도 캔버스: 화면의 주인공이다 ──
+ * 카드·패널보다 먼저 눈에 들어와야 한다. 안쪽 그림자로 "들어간 화면"을 만든다.
+ */
+.wmap__canvas-wrap,
+.region__map {
+  box-shadow: inset 0 0 26px color-mix(in srgb, var(--tf-line) 70%, transparent);
+}
+
+/* 픽셀 지도는 보간하지 않는다 — 흐려지면 격자가 죽는다. */
+.wmap__canvas,
+.region__map {
+  image-rendering: pixelated;
+}
+
+/* ── 하단 상태줄 — 콘솔의 마지막 조각 ── */
+.wmap__foot {
+  color: var(--tf-muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wmap__row,
+  .dept,
+  .rcard,
+  .codex-card {
+    transition: none;
+  }
+  .wmap__row:hover,
+  .dept:hover,
+  .rcard:hover,
+  .codex-card:hover {
+    transform: none;
+  }
+}

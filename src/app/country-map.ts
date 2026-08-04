@@ -58,20 +58,51 @@ export interface LandRect {
  * `cityview`가 도시에 요구하는 것과 같다), 8px 격자에서는 사각형 몇 개면 그 형태가 선다.
  * 위에서 아래로: 북부(넓다) → 허리(잘록) → 남부(넓어짐) → 남해안 → 제주.
  */
+/**
+ * 위도 한 줄을 경도 구간으로 칠한다 — `world-map.ts`의 `band`와 같은 개념이다.
+ *
+ * ★ 왜 밴드인가 ★ 사각형 몇 개로 근사하면 지도가 아니라 색 블록으로 보인다. 저해상도
+ * 격자에서 해안선을 세우는 방법은 **위도별로 동서 끝을 찍는 것**이다(스캔라인 래스터화).
+ * 0.14° 격자에서는 0.4° 간격이면 서해안의 들쭉날쭉함까지 잡힌다.
+ */
+const band = (latTop: number, lonWest: number, lonEast: number, latSpan = 0.4): LandRect => ({
+  lon: lonWest,
+  lat: latTop,
+  lonSpan: lonEast - lonWest,
+  latSpan,
+});
+
+/**
+ * 한반도 실루엣.
+ *
+ * 정밀 해안선이 목적이 아니라 **한 컷에 어느 나라인지 읽히는 것**이 기준이다.
+ * 한반도의 서명은 셋이다:
+ *   ① 북쪽이 잘록하고 중부에서 넓어진다
+ *   ② **서해안은 들쭉날쭉, 동해안은 곧다** — 이 비대칭이 한반도를 한반도로 만든다
+ *   ③ 남쪽 끝에서 급히 좁아지고, 제주가 떨어져 있다
+ */
 export const PENINSULA_LAND: readonly LandRect[] = [
-  // 북부 — DMZ 위쪽. 플레이 대상은 아니지만 반도 형태에 필요하다.
-  { lon: 125.0, lat: 39.2, lonSpan: 4.6, latSpan: 1.2 },
-  { lon: 125.4, lat: 38.0, lonSpan: 4.4, latSpan: 0.9 },
-  // 허리 — 서울·경기. 서쪽으로 넓다.
-  { lon: 126.2, lat: 38.1, lonSpan: 3.2, latSpan: 1.3 },
-  // 중부 — 충청·강원.
-  { lon: 126.3, lat: 36.8, lonSpan: 3.4, latSpan: 1.3 },
-  // 남부 — 영남·호남. 가장 넓다.
-  { lon: 126.1, lat: 35.5, lonSpan: 3.4, latSpan: 1.4 },
-  // 남해안 — 아래로 좁아진다.
-  { lon: 126.4, lat: 34.9, lonSpan: 2.6, latSpan: 0.9 },
-  // 제주 — 떨어진 섬. 반도 형태를 완성한다.
-  { lon: 126.2, lat: 33.6, lonSpan: 0.8, latSpan: 0.35 },
+  // ── 북부: DMZ 위. 플레이 대상은 아니지만 반도 형태에 필요하다 ──
+  band(39.2, 125.0, 128.2),
+  band(38.8, 124.9, 128.4),
+  band(38.4, 124.8, 128.6),
+  // ── DMZ(38°N) 아래: 여기서부터가 전장이다 ──
+  band(38.0, 126.0, 128.9),
+  band(37.6, 126.1, 129.1),
+  band(37.2, 126.2, 129.3),
+  // ── 중부: 가장 넓다 ──
+  band(36.8, 126.3, 129.4),
+  band(36.4, 126.2, 129.4),
+  band(36.0, 126.2, 129.5),
+  band(35.6, 126.3, 129.5),
+  // ── 남부: 서서히 좁아진다 ──
+  band(35.2, 126.3, 129.4),
+  band(34.8, 126.3, 129.2),
+  // ── 남해안: 급히 좁아지며 끝난다 ──
+  band(34.4, 126.4, 128.6),
+  band(34.0, 126.5, 127.9, 0.3),
+  // ── 제주: 떨어진 섬. 이것이 있어야 남쪽이 완성된다 ──
+  band(33.6, 126.15, 126.95, 0.35),
 ];
 
 export interface CountryCell {
@@ -301,7 +332,9 @@ export function paintCountryMap(ctx: CountryMapCtx, opts: CountryMapPaint): void
     const [x, y] = pixelOf(node);
     ctx.fillStyle = palette[nodeToneOf(status)] ?? '';
     ctx.beginPath();
-    ctx.arc(x, y, opts.focusedId === node.id ? 6 : 4, 0, Math.PI * 2);
+    // ⚠️ 사옥(R0)과 여의도(R1)는 **인접 셀**이다(실제로 5km 거리). 반경이 크면 두 원이
+    // 겹쳐 하나로 보인다 — 셀 간격 8px 안에서 갈라지도록 작게 유지한다.
+    ctx.arc(x, y, opts.focusedId === node.id ? 5 : 3, 0, Math.PI * 2);
     ctx.fill();
   }
 

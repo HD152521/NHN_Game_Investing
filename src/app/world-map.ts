@@ -74,6 +74,19 @@ const box = (lon: number, lat: number, lonSpan: number, latSpan: number): LandBo
   latSpan,
 });
 
+/**
+ * 위도 한 줄(밴드)을 경도 구간으로 칠한다.
+ *
+ * ★ 왜 밴드인가 ★ 예전에는 대륙 하나를 사각형 1~4개로 근사했는데, 그러면 지도가 아니라
+ * **색 블록**으로 보인다("세계지도면 세계지도처럼 보여야 한다"는 지적이 이것이다).
+ * 저해상도 격자에서 대륙 실루엣을 세우는 표준적인 방법은 **위도별로 해안선을 훑는 것**이다 —
+ * 스캔라인 래스터화와 같은 원리다.
+ *
+ * `latTop`에서 아래로 `latSpan`만큼, 경도 `lonWest`~`lonEast`를 채운다.
+ */
+const band = (latTop: number, lonWest: number, lonEast: number, latSpan = 2.5): LandBox =>
+  box(lonWest, latTop, lonEast - lonWest, latSpan);
+
 export interface WorldRegion {
   readonly id: WorldRegionId;
   readonly name: string;
@@ -110,7 +123,13 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 3,
     flavor: '홈 그라운드. 개인 투자자의 전장.',
     playableStages: ['R1', 'R2', 'R3'],
-    land: [box(125, 38.5, 5, 7)],
+    land: [
+      // 한반도 — 세계 격자(2.5°)에서는 3밴드가 한계다. 자세한 형태는 전선 지도가 맡는다.
+      band(43, 126, 130.5),
+      band(40.5, 124.5, 130),
+      band(38, 126, 129.5),
+      band(35.5, 126, 129.5, 1.5),
+    ],
   },
   {
     id: 'japan',
@@ -119,7 +138,17 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 3,
     flavor: '엔 캐리와 상사(商社)의 나라. 준비 중.',
     playableStages: [],
-    land: [box(130, 34, 5, 6), box(138, 40, 7, 6), box(141, 45, 4, 4)],
+    land: [
+      // 홋카이도 → 혼슈 → 규슈. 호(弧)를 이루며 남서로 흐른다.
+      band(45.5, 140.5, 145.5),
+      band(43, 140, 145),
+      band(40.5, 139.5, 142),
+      band(38, 137.5, 141.5),
+      band(35.5, 132.5, 140.5),
+      band(33, 129.5, 136),
+      band(31.5, 129.5, 132, 1.5),
+      band(28, 127, 129.5, 2),
+    ],
   },
   {
     id: 'china',
@@ -128,7 +157,23 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 4,
     flavor: '국가가 시장을 겸하는 곳. 준비 중.',
     playableStages: [],
-    land: [box(75, 45, 50, 22), box(105, 23, 15, 12)],
+    land: [
+      // 북동(만주) → 화북 → 화남. 동해안이 계단처럼 내려간다.
+      band(53, 118, 135),
+      band(50.5, 85, 135),
+      band(48, 75, 134),
+      band(45.5, 73, 133),
+      band(43, 73, 131),
+      band(40.5, 74, 126),
+      band(38, 75, 123),
+      band(35.5, 76, 122),
+      band(33, 78, 122),
+      band(30.5, 82, 122),
+      band(28, 85, 121),
+      band(25.5, 88, 120),
+      band(23, 97, 117),
+      band(20.5, 99, 111, 2),
+    ],
   },
   {
     id: 'india',
@@ -137,7 +182,21 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 3,
     flavor: '인구가 곧 수요인 시장. 준비 중.',
     playableStages: [],
-    land: [box(70, 33, 20, 15), box(74, 18, 10, 8)],
+    land: [
+      // 히말라야 아래로 넓다가 데칸 고원에서 뾰족해진다 — 역삼각형이 인도의 서명이다.
+      band(35, 74, 79),
+      band(32.5, 71, 81),
+      band(30, 69, 89),
+      band(27.5, 68, 92),
+      band(25, 68, 93),
+      band(22.5, 69, 93),
+      band(20, 70, 87),
+      band(17.5, 72, 85),
+      band(15, 73, 82),
+      band(12.5, 74, 80),
+      band(10, 75, 79),
+      band(7.5, 76, 79, 1.5),
+    ],
   },
   {
     id: 'europe',
@@ -146,7 +205,24 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 5,
     flavor: '오래된 자본과 규제의 대륙. 준비 중.',
     playableStages: [],
-    land: [box(-10, 60, 40, 18), box(0, 42, 30, 12), box(-8, 44, 12, 8)],
+    land: [
+      // 스칸디나비아(북) → 서유럽 → 이베리아·이탈리아(남). 서쪽 해안이 들쭉날쭉하다.
+      band(71, 20, 31),
+      band(68.5, 14, 33),
+      band(66, 12, 34),
+      band(63.5, 5, 33),
+      band(61, 4, 32),
+      band(58.5, -8, 32),
+      band(56, -10, 30),
+      band(53.5, -10, 30),
+      band(51, -10, 30),
+      band(48.5, -5, 28),
+      band(46, -2, 28),
+      band(43.5, -9, 27),
+      band(41, -9, 26),
+      band(38.5, -9, 24),
+      band(36, -8, 16, 2),
+    ],
   },
   {
     id: 'namerica',
@@ -155,7 +231,34 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 6,
     flavor: '세계 유동성의 진앙. 준비 중.',
     playableStages: [],
-    land: [box(-165, 70, 90, 12), box(-130, 58, 70, 16), box(-125, 42, 60, 18), box(-105, 24, 20, 8)],
+    land: [
+      // 알래스카·캐나다(넓다) → 미국 본토 → 멕시코·중미(가늘어진다).
+      band(71, -160, -68),
+      band(68.5, -165, -62),
+      band(66, -163, -60),
+      band(63.5, -160, -58),
+      band(61, -150, -56),
+      band(58.5, -140, -55),
+      band(56, -135, -56),
+      band(53.5, -132, -56),
+      band(51, -130, -55),
+      band(48.5, -127, -60),
+      band(46, -125, -66),
+      band(43.5, -124, -68),
+      band(41, -124, -70),
+      band(38.5, -123, -74),
+      band(36, -122, -76),
+      band(33.5, -120, -78),
+      band(31, -117, -81),
+      band(28.5, -115, -82),
+      band(26, -113, -80),
+      band(23.5, -110, -86),
+      band(21, -106, -86),
+      band(18.5, -104, -87),
+      band(16, -99, -86),
+      band(13.5, -93, -83),
+      band(11, -87, -82, 2),
+    ],
   },
   {
     id: 'samerica',
@@ -164,7 +267,36 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 3,
     flavor: '원자재와 초인플레의 대륙. 준비 중.',
     playableStages: [],
-    land: [box(-80, 10, 35, 25), box(-72, -15, 25, 25), box(-70, -40, 12, 15)],
+    land: [
+      // 북쪽이 가장 넓고 남으로 갈수록 뾰족해진다 — 남미의 서명은 그 삼각형이다.
+      band(12, -74, -60),
+      band(9.5, -78, -57),
+      band(7, -79, -50),
+      band(4.5, -79, -46),
+      band(2, -80, -44),
+      band(-0.5, -80, -42),
+      band(-3, -80, -36),
+      band(-5.5, -80, -34),
+      band(-8, -79, -34),
+      band(-10.5, -77, -35),
+      band(-13, -76, -37),
+      band(-15.5, -74, -38),
+      band(-18, -72, -39),
+      band(-20.5, -71, -40),
+      band(-23, -70, -41),
+      band(-25.5, -71, -47),
+      band(-28, -71, -49),
+      band(-30.5, -72, -51),
+      band(-33, -72, -53),
+      band(-35.5, -73, -56),
+      band(-38, -73, -57),
+      band(-40.5, -73, -62),
+      band(-43, -74, -64),
+      band(-45.5, -75, -66),
+      band(-48, -75, -67),
+      band(-50.5, -75, -68),
+      band(-53, -74, -68, 2),
+    ],
   },
   {
     id: 'africa',
@@ -173,7 +305,38 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 4,
     flavor: '프런티어. 준비 중.',
     playableStages: [],
-    land: [box(-18, 35, 55, 20), box(8, 15, 35, 30), box(15, -15, 25, 20)],
+    land: [
+      // 북(사하라)이 가장 넓고 적도 아래로 좁아진다. 서아프리카 돌출부가 서명이다.
+      band(37, -6, 11),
+      band(34.5, -8, 25),
+      band(32, -9, 32),
+      band(29.5, -11, 34),
+      band(27, -13, 35),
+      band(24.5, -14, 36),
+      band(22, -16, 37),
+      band(19.5, -16, 38),
+      band(17, -17, 39),
+      band(14.5, -17, 42),
+      band(12, -17, 44),
+      band(9.5, -15, 47),
+      band(7, -13, 47),
+      band(4.5, -9, 45),
+      band(2, 8, 43),
+      band(-0.5, 9, 42),
+      band(-3, 11, 41),
+      band(-5.5, 12, 40),
+      band(-8, 12, 40),
+      band(-10.5, 13, 40),
+      band(-13, 13, 40),
+      band(-15.5, 12, 40),
+      band(-18, 12, 37),
+      band(-20.5, 13, 35),
+      band(-23, 14, 35),
+      band(-25.5, 15, 33),
+      band(-28, 16, 32),
+      band(-30.5, 17, 31),
+      band(-33, 18, 28, 2),
+    ],
   },
   {
     id: 'russia',
@@ -182,7 +345,26 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 3,
     flavor: '자원과 제재 사이. 준비 중.',
     playableStages: [],
-    land: [box(30, 75, 150, 12), box(35, 63, 145, 15)],
+    land: [
+      // 유라시아 북부를 가로지르는 띠. 유럽·중국이 먼저 칠한 칸은 자동으로 비켜간다
+      // (`worldCells`가 먼저 claim 한 지역을 이긴다).
+      band(78, 55, 105),
+      band(75.5, 40, 145),
+      band(73, 35, 150),
+      band(70.5, 30, 175),
+      band(68, 28, 180),
+      band(65.5, 26, 180),
+      band(63, 25, 180),
+      band(60.5, 22, 175),
+      band(58, 22, 165),
+      band(55.5, 22, 160),
+      band(53, 25, 145),
+      band(50.5, 28, 143),
+      band(48, 30, 140),
+      band(45.5, 35, 90),
+      band(43, 40, 85),
+      band(40.5, 45, 80, 2),
+    ],
   },
   {
     id: 'oceania',
@@ -191,7 +373,27 @@ export const WORLD_REGIONS: readonly WorldRegion[] = [
     stageCount: 2,
     flavor: '자원 통화의 남쪽 끝. 준비 중.',
     playableStages: [],
-    land: [box(113, -12, 40, 26), box(166, -34, 8, 10)],
+    land: [
+      // 호주 본토 + 태즈메이니아 + 뉴질랜드. 셋이 떨어져 있는 것이 이 지역의 서명이다.
+      band(-10.5, 131, 143),
+      band(-13, 126, 144),
+      band(-15.5, 122, 146),
+      band(-18, 118, 147),
+      band(-20.5, 115, 149),
+      band(-23, 113, 151),
+      band(-25.5, 113, 153),
+      band(-28, 114, 153),
+      band(-30.5, 115, 153),
+      band(-33, 115, 152),
+      band(-35.5, 117, 150),
+      band(-38, 140, 148, 1.5),
+      // 태즈메이니아
+      band(-41, 144.5, 148, 2.5),
+      // 뉴질랜드 — 북섬·남섬
+      band(-35, 172.5, 178.5, 3),
+      band(-40, 172, 176, 3),
+      band(-43, 167, 174, 3),
+    ],
   },
 ];
 
