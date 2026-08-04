@@ -924,6 +924,7 @@ export function mountStage(root: HTMLElement): () => void {
       replayFinished: state.finished,
       marketClosed,
       overtimeRemainingMs,
+      baseHp: session.combatState.baseHp,
     });
 
     if (decision.kind === 'close-market') {

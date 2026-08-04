@@ -30,6 +30,7 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
       replayFinished: true,
       marketClosed: false,
       overtimeRemainingMs: 0,
+      baseHp: 100,
     });
     expect(decision.kind).toBe('close-market');
   });
@@ -44,6 +45,7 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
               replayFinished,
               marketClosed,
               overtimeRemainingMs,
+              baseHp: 100,
             });
             expect(['run', 'close-market', 'overtime', 'finish']).toContain(decision.kind);
             // 재생이 끝났는데 '평소 프레임'으로 흘려보내는 경로가 없어야 한다.
@@ -63,6 +65,7 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
         replayFinished: true,
         marketClosed: true,
         overtimeRemainingMs: 15_000,
+      baseHp: 100,
       }).kind,
     ).toBe('overtime');
   });
@@ -73,8 +76,10 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
       replayFinished: true,
       marketClosed: true,
       overtimeRemainingMs: 0,
+      baseHp: 100,
     });
-    expect(decision).toEqual({ kind: 'finish', outcome: 'unresolved' });
+    // 사옥이 서 있으면 승리다 (`resolveStageOutcome` 주석 참고).
+    expect(decision).toEqual({ kind: 'finish', outcome: 'cleared' });
   });
 
   test('전투가 먼저 끝나면 재생이 남아 있어도 결과 화면으로 간다', () => {
@@ -84,6 +89,7 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
         replayFinished: false,
         marketClosed: false,
         overtimeRemainingMs: 0,
+      baseHp: 100,
       }),
     ).toEqual({ kind: 'finish', outcome: 'cleared' });
 
@@ -93,6 +99,7 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
         replayFinished: false,
         marketClosed: false,
         overtimeRemainingMs: 0,
+      baseHp: 100,
       }),
     ).toEqual({ kind: 'finish', outcome: 'defeated' });
   });
@@ -104,6 +111,7 @@ describe('decideFrame — 재생 종료가 판을 지우지 않는다 (CLICK-PAT
         replayFinished: false,
         marketClosed: false,
         overtimeRemainingMs: 0,
+      baseHp: 100,
       }).kind,
     ).toBe('run');
   });

@@ -19,9 +19,12 @@ import { aumCapitalCredit } from '../position';
  *
  * - `cleared` — 13웨이브 방어 완료 (FR-6.10). 전투가 스스로 `cleared`를 선언했을 때만이다.
  * - `defeated` — 본진 HP 0 (FR-6.9). 정산 없음·자본금 0이 PRD에 명시돼 있다.
- * - `unresolved` — **장은 마감됐는데 전투가 끝나지 않았다.**
- *   PRD 에 이름이 없는 상태다. FR-6.10 이 승리를 "13웨이브 방어 완료"로 못박으므로
- *   `baseHp > 0`만으로 클리어를 선언하지 않는다 — 가장 보수적인 해석이다.
+ * - `unresolved` — 장은 마감됐고 전투도 결론이 안 났는데 사옥마저 판정 불가인 경우.
+ *   ⚠️ **`resolveStageOutcome`은 더 이상 이 값을 만들지 않는다.** 예전에는 "연장이
+ *   끝났는데 잔적이 남음"을 전부 여기로 보냈는데, 그 경로가 **정상적인 승리에서 밟혀**
+ *   사옥 체력 100인 판에도 "방어 미완료"가 떴다(해당 함수 주석 참고). 지금은 사옥이
+ *   서 있으면 `cleared`, 무너졌으면 `defeated`다. 타입과 표시 문구는 남겨 둔다 —
+ *   저장된 옛 결과나 외부 호출부가 이 값을 넘길 수 있다.
  */
 export type StageOutcome = 'cleared' | 'defeated' | 'unresolved';
 
@@ -205,10 +208,32 @@ export function resolveStageOutcome(input: {
   readonly phase: CombatPhase;
   readonly marketClosed: boolean;
   readonly overtimeRemainingMs: number;
+  /**
+   * 지금 사옥 체력. **연장이 끝났을 때 승패를 가르는 값이다.**
+   *
+   * 생략하면 0으로 본다 — 옛 호출부가 남아 있어도 예전과 같은(보수적인) 결과가 나온다.
+   */
+  readonly baseHp?: number;
 }): StageOutcome | null {
   if (input.phase === 'cleared') return 'cleared';
   if (input.phase === 'defeated') return 'defeated';
-  if (input.marketClosed && input.overtimeRemainingMs <= 0) return 'unresolved';
+  if (input.marketClosed && input.overtimeRemainingMs <= 0) {
+    /*
+     * ★ 사옥이 서 있으면 막아낸 것이다 ★
+     *
+     * 예전에는 여기서 무조건 `unresolved`(자본금 0)를 돌려줬다. 그런데 실제 플레이에서
+     * 이 경로가 **정상적인 승리에서 밟힌다**:
+     *   · 재생 390초와 전투 13웨이브(13×30초)가 **정확히 같은 길이**라, 장이 마감되는
+     *     시점에 13웨이브는 아직 돌고 있다 (`stage.ts`의 시계 비대칭 주석이 인정한다)
+     *   · 연장은 딱 한 주기(30초)뿐이라, 그 안에 잔적을 못 정리하면 실패로 떨어졌다
+     *   · 그래서 **사옥 체력 100으로 13웨이브를 다 버텨도 "방어 미완료"**가 떴다
+     *
+     * 승리 조건의 본질은 "적을 한 마리도 남기지 않는 것"이 아니라 **"사옥을 지키는 것"**이다
+     * (FR-6.9가 패배를 `본진 HP 0`으로 정의하는 것과 대칭이다). 연장까지 끝났는데 사옥이
+     * 남아 있다면 그것은 막아낸 것이다.
+     */
+    return (input.baseHp ?? 0) > 0 ? 'cleared' : 'defeated';
+  }
   return null;
 }
 

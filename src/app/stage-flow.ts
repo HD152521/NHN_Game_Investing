@@ -39,6 +39,8 @@ export interface FrameInput {
   readonly marketClosed: boolean;
   /** 장 마감 후 전투에 허용된 잔여 연장 시간(ms). */
   readonly overtimeRemainingMs: number;
+  /** 지금 사옥 체력. 연장이 끝났을 때 승패를 가르는 값이다(`resolveStageOutcome` 주석). */
+  readonly baseHp: number;
 }
 
 /**
@@ -55,6 +57,7 @@ export function decideFrame(input: FrameInput): FrameDecision {
     phase: input.phase,
     marketClosed: input.marketClosed,
     overtimeRemainingMs: input.overtimeRemainingMs,
+    baseHp: input.baseHp,
   });
   if (outcome !== null) {
     return { kind: 'finish', outcome };

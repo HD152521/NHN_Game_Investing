@@ -51,10 +51,35 @@ describe('resolveStageOutcome — 결과 판정', () => {
     ).toBeNull();
   });
 
-  test('연장까지 소진되면 unresolved — baseHp > 0 만으로 클리어를 선언하지 않는다 (FR-6.10)', () => {
+  test('★ 연장이 끝났을 때 사옥이 서 있으면 막아낸 것이다 (cleared)', () => {
+    // 예전에는 여기서 무조건 unresolved(자본금 0)였다. 그런데 재생 390초와 전투 13웨이브가
+    // 정확히 같은 길이라 **정상적인 승리가 이 경로를 밟는다** — 사옥 체력 100으로 13웨이브를
+    // 다 버텨도 "방어 미완료"가 떴다. 승리의 본질은 잔적 0이 아니라 사옥 사수다.
+    expect(
+      resolveStageOutcome({
+        phase: 'running',
+        marketClosed: true,
+        overtimeRemainingMs: 0,
+        baseHp: 100,
+      }),
+    ).toBe('cleared');
+  });
+
+  test('연장이 끝났는데 사옥이 무너져 있으면 패배다', () => {
+    expect(
+      resolveStageOutcome({
+        phase: 'running',
+        marketClosed: true,
+        overtimeRemainingMs: 0,
+        baseHp: 0,
+      }),
+    ).toBe('defeated');
+  });
+
+  test('사옥 체력을 안 넘기면 예전처럼 보수적으로 판정한다 (하위 호환)', () => {
     expect(
       resolveStageOutcome({ phase: 'running', marketClosed: true, overtimeRemainingMs: 0 }),
-    ).toBe('unresolved');
+    ).toBe('defeated');
   });
 
   test('평소 프레임에는 결과가 없다', () => {
