@@ -129,7 +129,17 @@ export const TOWER_UPGRADE_COST: Record<TowerKind, number> = {
 export const TOWER_RANGE: Record<TowerKind, number> = {
   basic: 0.38,
   antiair: 0.46,
-  splash: 0.32,
+  /*
+   * ★ 0.32 → 0.44 (2026-08-04 밸런스) ★
+   * 광역 포탑이 **완전히 지배당하고 있었다**: 건설비가 basic보다 33% 비싼데(160 vs 120),
+   * 표적당 DPS는 39%(5.8 vs 15.0)이고 **사거리마저 짧았다**(0.32 vs 0.38).
+   * 적 2.6체가 겹쳐야 겨우 본전인데 사거리가 좁아 겹칠 기회 자체가 적었다 —
+   * 실측에서 광역 로드아웃이 전 지역·전 예산에서 패배한 이유다.
+   *
+   * 지상 **최장 사거리**를 줘서 정체성을 만든다: 광역은 "일찍부터 오래 긁는" 포탑이다.
+   * 대공(0.46)보다는 짧게 둬 레인 구분을 유지한다.
+   */
+  splash: 0.44,
 };
 
 /**
@@ -224,7 +234,9 @@ export const TOWER_COOLDOWN_MS: Record<TowerKind, number> = {
 export const TOWER_DAMAGE: Record<TowerKind, Record<1 | 2, number>> = {
   basic: { 1: 12, 2: 26 },
   antiair: { 1: 20, 2: 42 },
-  splash: { 1: 7, 2: 16 },
+  // 7/16 → 9/20. 사거리 상향(위)만으로는 표적당 DPS 격차(basic의 39%)가 너무 커서
+  // 적이 3체 이상 겹치는 후반 웨이브에만 값을 했다. 겹침 2체에서 본전이 되도록 올린다.
+  splash: { 1: 9, 2: 20 },
 };
 
 // ── 유닛 3종 (FR-6.5, PRD 명시값: 소환 비용) ─────────────────────
@@ -300,7 +312,18 @@ export const UNIT_HP: Record<UnitKind, number> = {
  */
 export const UNIT_DAMAGE: Record<UnitKind, number> = {
   intern: 10,
-  analyst: 18,
+  /*
+   * ★ 18 → 24 (2026-08-04 밸런스) ★
+   * 통신원이 **사환에게 두 지표 모두 지고 있었다**:
+   *   HP/G  2.25 < 3.67   ·   DPS/G  0.429 < 0.476
+   * 둘 다 열세면 고를 이유가 없다 — 시뮬레이터가 말하는 "죽은 결정"(§12-4)이다.
+   * 원거리(0.20)라는 이점이 있었지만 전진 한계선이 폐지되면서 그마저 옅어졌다.
+   *
+   * 24로 올리면 DPS 34.3 · DPS/G 0.571이 되어 **DPS 담당**이라는 자리가 생긴다.
+   * 세 유닛의 역할이 그제야 갈린다: 사환=값싼 물량 / 통신원=DPS / 반장=탱커(HP/G 5.22).
+   * HP는 올리지 않는다 — 물러서면 약하다는 성질이 통신원의 대가다.
+   */
+  analyst: 24,
   trader: 17,
 };
 

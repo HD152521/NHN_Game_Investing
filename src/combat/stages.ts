@@ -303,7 +303,7 @@ export const STAGES: Readonly<Record<StageId, StageConfig>> = {
        *
        * R3가 가장 어렵다는 근거는 ① 총 적 HP 최대(26,226) ② 실측 클리어율 최소(0.158)다.
        */
-      baseHp: scaleWaveHp(WAVE_BASE_HP_R1, 1.30),
+      baseHp: scaleWaveHp(WAVE_BASE_HP_R1, 1.38),
       airWaves: AIR_WAVES_ALL,
     },
     /** 6,700 → 4,340 `[v1.4]`. `265 + 8,850 × 0.92 × 0.50 = 4,336 → 4,340`. */

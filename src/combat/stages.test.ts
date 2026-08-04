@@ -165,7 +165,7 @@ describe('웨이브 HP 곡선', () => {
   });
 
   /**
-   * ★ `[v1.5]` ×1.62 / ×2.68 → **×1.20 / ×1.30**. 비율 계산이 아니라 실측으로 정했다 ★
+   * ★ `[v1.5]` ×1.62 / ×2.68 → **×1.20 / ×1.38**. 비율 계산이 아니라 실측으로 정했다 ★
    *
    * v1.4의 계수는 `combatLoadPerGold`(골드당 적 HP)가 단조 증가하도록 **비율만 보고** 정한
    * 값이었다. 그 지표는 골드가 방어로 **선형** 변환된다고 가정하는데, 실제로는 타워 슬롯이
@@ -176,16 +176,16 @@ describe('웨이브 HP 곡선', () => {
    * ×2.68의 R3는 **모든 예산 · 모든 로드아웃에서 클리어율 0%**였다. 지역 계수는 이제
    * `tools/combat-sim/sweep.ts`의 배율 스윕에서 읽은 값이다(라운드 기록은 작업 보고 참고).
    */
-  test('R2는 기준 × 1.20, R3는 기준 × 1.30을 반올림한 값이다 (v1.5: 실측 스윕으로 재산출)', () => {
+  test('R2는 기준 × 1.20, R3는 기준 × 1.38을 반올림한 값이다 (2026-08-04: R3 램프 역전 수정)', () => {
     expect(STAGES.R2.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.2));
-    expect(STAGES.R3.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.3));
+    expect(STAGES.R3.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.38));
 
     // 반올림 규칙(Math.round) 고정 — 내림/올림으로 바꾸면 지역 간 실효 난이도 비율이 흔들린다.
     expect(STAGES.R2.waveTable.baseHp).toEqual([
       84, 102, 120, 138, 150, 162, 180, 198, 222, 246, 276, 312, 360,
     ]);
     expect(STAGES.R3.waveTable.baseHp).toEqual([
-      91, 111, 130, 150, 163, 176, 195, 215, 241, 267, 299, 338, 390,
+      97, 117, 138, 159, 173, 186, 207, 228, 255, 283, 317, 359, 414,
     ]);
   });
 
@@ -310,10 +310,10 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
     expect(STAGES.R2.targetReturnRate).toBe(STAGES.R3.targetReturnRate);
   });
 
-  test('총 적 HP는 R1 20,155 / R2 24,186 / R3 26,226이다 (보스 포함)', () => {
+  test('총 적 HP는 R1 20,155 / R2 24,186 / R3 27,815이다 (보스 포함)', () => {
     expect(totalEnemyHp(STAGES.R1)).toBe(20_155);
     expect(totalEnemyHp(STAGES.R2)).toBe(24_186);
-    expect(totalEnemyHp(STAGES.R3)).toBe(26_226);
+    expect(totalEnemyHp(STAGES.R3)).toBe(27_815);
   });
 
   test('보스 HP는 그 지역 마지막 웨이브 HP의 3배다 — 지역 계수를 자동으로 탄다', () => {
@@ -322,7 +322,7 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
       const baseHp = STAGES[id].waveTable.baseHp;
       expect(bossHpOf(STAGES[id])).toBe((baseHp[baseHp.length - 1] as number) * 3);
     }
-    expect([bossHpOf(STAGES.R1), bossHpOf(STAGES.R2), bossHpOf(STAGES.R3)]).toEqual([900, 1080, 1170]);
+    expect([bossHpOf(STAGES.R1), bossHpOf(STAGES.R2), bossHpOf(STAGES.R3)]).toEqual([900, 1080, 1242]);
   });
 
   test('총 적 HP는 R1 < R2 < R3로 단조 증가한다 — 이것이 남은 램프의 정의다', () => {
@@ -357,7 +357,7 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
     const load = STAGE_IDS.map((id) => combatLoadPerGold(STAGES[id]));
     expect(load[0]).toBeCloseTo(8.8, 1);
     expect(load[1]).toBeCloseTo(7.35, 1);
-    expect(load[2]).toBeCloseTo(5.59, 1);
+    expect(load[2]).toBeCloseTo(5.93, 1);
 
     // ⚠️ 이 방향을 "고치지" 마라 — 증가로 되돌리면 R3 클리어율이 0%가 된다(위 주석).
     for (let i = 1; i < load.length; i += 1) {
