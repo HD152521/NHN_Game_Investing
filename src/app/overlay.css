@@ -663,3 +663,134 @@
     gap: 6px;
   }
 }
+
+
+/*
+ * ── 전선 노드 — 지도를 눌러서 고른다 ──
+ *
+ * 예전에는 지도가 장식이고 선택은 아래 카드 3장에서만 됐다. 화면에서 가장 큰 면적이
+ * 아무 일도 안 하니 "이게 꼭 필요한가"로 읽혔다. 이제 지도가 선택 UI다.
+ *
+ * 카드는 **넓은 화면에서만 숨긴다** — 좁은 화면에서는 노드가 서로 겹칠 만큼 지도가
+ * 작아지므로 카드가 유일한 선택 수단으로 남아야 한다.
+ */
+.region__mapwrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-inline: auto;
+}
+
+.region__mapwrap .region__map {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+
+.fnode {
+  position: absolute;
+  /* left/top은 %로 인라인 지정된다 — 캔버스가 커지든 작아지든 따라간다. */
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid color-mix(in srgb, var(--tf-muted) 50%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tf-bg-0) 82%, transparent);
+  color: var(--tf-muted);
+  font: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.fnode:hover {
+  color: var(--tf-text);
+  border-color: var(--tf-text);
+}
+
+.fnode:focus-visible {
+  outline: 2px solid var(--tf-up-ally);
+  outline-offset: 2px;
+}
+
+.fnode__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+/* 상태 색 — 지도 캔버스가 노드를 칠하는 규칙과 같은 토큰을 쓴다. */
+.fnode--status-cleared {
+  color: var(--tf-gold);
+  border-color: color-mix(in srgb, var(--tf-gold) 55%, transparent);
+}
+
+.fnode--status-available {
+  color: var(--tf-up-ally);
+  border-color: color-mix(in srgb, var(--tf-up-ally) 60%, transparent);
+}
+
+.fnode--status-locked,
+.fnode--status-nostage {
+  color: color-mix(in srgb, var(--tf-muted) 70%, transparent);
+}
+
+/* 선택된 노드는 테두리를 채워 어디를 보고 있는지 못 놓치게 한다. */
+.fnode--on {
+  background: color-mix(in srgb, var(--tf-bg-2) 92%, transparent);
+  border-color: currentcolor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentcolor 28%, transparent);
+}
+
+.region__go {
+  margin-top: 10px;
+  padding: 11px;
+  width: 100%;
+  border: 0;
+  border-radius: 3px;
+  background: var(--tf-up-ally);
+  color: var(--tf-bg-0);
+  font: inherit;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.region__go:hover {
+  background: color-mix(in srgb, var(--tf-up-ally) 82%, var(--tf-text));
+}
+
+.region__go:focus-visible {
+  outline: 2px solid var(--tf-text);
+  outline-offset: 2px;
+}
+
+.region__brief-locked {
+  margin: 10px 0 0;
+  padding: 10px;
+  border: 1px dashed color-mix(in srgb, var(--tf-muted) 40%, transparent);
+  border-radius: 3px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--tf-muted);
+}
+
+@media (min-width: 1100px) {
+  /* 지도가 선택 UI가 됐으므로 카드는 중복이다. 마크업은 남겨 좁은 화면이 계속 쓴다. */
+  .region__grid {
+    display: none;
+  }
+
+  .region__mapwrap {
+    grid-area: 5 / 2 / 6 / 3;
+    align-self: center;
+  }
+}

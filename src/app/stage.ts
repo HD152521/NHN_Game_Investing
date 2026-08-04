@@ -84,6 +84,9 @@ import {
   mountRegionArt,
   regionNameOf,
   stageIdFor,
+  FRONT_NODE_ACTION,
+  FRONT_START_ACTION,
+  isRegionLocked,
   syncCountryMap,
   syncRegionLocks,
 } from './region-select';
@@ -1600,6 +1603,32 @@ export function mountStage(root: HTMLElement): () => void {
   });
   // 전선 선택에서 뒤로 = 한 층 위(세계지도)로. 목업의 "← 세계지도"가 이 동선이다.
   refs.regionBackButton.addEventListener('click', showWorldMap);
+
+  /**
+   * 지도 위 노드와 [작전 개시]는 **위임으로 받는다** — 브리핑은 `syncCountryMap`이
+   * 매번 새로 그리므로 버튼별 리스너는 첫 렌더에서만 살아 있다(도감 필터와 같은 함정).
+   */
+  let focusedFront: string | null = null;
+  refs.regionSelect.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const node = target.closest<HTMLElement>(`[data-action="${FRONT_NODE_ACTION}"]`);
+    if (node) {
+      focusedFront = node.dataset['node'] ?? null;
+      syncCountryMap(refs!.regionSelect, progress, theme.palette, focusedFront);
+      return;
+    }
+
+    const go = target.closest<HTMLElement>(`[data-action="${FRONT_START_ACTION}"]`);
+    if (go) {
+      const id = stageIdFor(go.dataset['region']);
+      // 잠긴 노드에는 이 버튼이 아예 없지만, 한 번 더 막는다 — 못 가는 곳으로 보내면 빈 판이 뜬다.
+      if (id !== null && !isRegionLocked(id, progress)) {
+        beginStage(id);
+      }
+    }
+  });
   refs.worldBackButton.addEventListener('click', showGate);
 
   /**

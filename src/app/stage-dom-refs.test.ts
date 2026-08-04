@@ -102,6 +102,8 @@ const REQUIRED_ACTIONS: readonly string[] = [
   'world-back',
   'open-company',
   'company-back',
+  // 전선 지도 노드 — 지도를 눌러서 스테이지를 고른다.
+  'front-node',
 ];
 
 const MARKUP = buildStageMarkup();

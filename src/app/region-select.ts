@@ -31,8 +31,12 @@ import {
   COUNTRY_CANVAS_HEIGHT,
   COUNTRY_CANVAS_WIDTH,
   COUNTRY_EYEBROW,
+  COUNTRY_GRID_HEIGHT,
+  COUNTRY_GRID_WIDTH,
   COUNTRY_TITLE,
   FRONT_NODES,
+  latToCountryCell,
+  lonToCountryCell,
   briefingFor,
   nodeStatusOf,
   paintCountryMap,
@@ -51,6 +55,17 @@ export const REGION_ART_ATTR = 'data-region-art';
 export const COUNTRY_MAP_REF = 'country-map';
 /** 브리핑 패널 — 노드를 가리키면 채워진다. */
 export const COUNTRY_BRIEF_REF = 'country-brief';
+/**
+ * 지도 위 전선 노드 버튼 (목업 `countrymap`).
+ *
+ * ★ 왜 캔버스 히트테스트가 아니라 HTML 버튼인가 ★
+ * 캔버스 클릭 좌표를 셀로 역변환하는 방식은 마우스에서만 동작한다 — 키보드로 Tab 이동도,
+ * 스크린리더 읽기도 안 된다. 노드는 4개뿐이라 버튼을 얹는 편이 훨씬 싸고, 캔버스 크기가
+ * 바뀌어도 %로 따라간다(절대 px 좌표를 들고 있지 않아도 된다).
+ */
+export const FRONT_NODE_ACTION = 'front-node';
+/** 브리핑의 [작전 개시] — 실제로 스테이지를 시작한다. */
+export const FRONT_START_ACTION = 'front-start';
 
 /**
  * 윗줄 — **어느 챕터 안에 있는지**를 말한다 (목업 `countrymap`의 "CHAPTER 1 — 국내 시장").
@@ -174,6 +189,26 @@ function cardOf(id: StageId, progress: GameProgress): RegionCard {
  * 진행도를 생략하면 **아무것도 클리어하지 않은 상태**로 본다(= R1만 열림). 마크업은
  * 앱 시작 시 1회만 지어지므로, 플레이 중 잠금이 풀리는 것은 `syncRegionLocks`가 맡는다.
  */
+/**
+ * 지도 위 노드 버튼들. 위치는 **%**라 캔버스가 커지든 작아지든 따라간다.
+ *
+ * 잠금 상태는 여기서 굽지 않는다 — 마크업은 앱 시작 시 1회만 지어지는데 잠금은 플레이 중에
+ * 바뀌기 때문이다(`syncRegionLocks`와 같은 이유). 상태는 `syncCountryMap`이 입힌다.
+ */
+export function buildFrontNodeMarkup(): string {
+  return FRONT_NODES.map((node) => {
+    const left = ((lonToCountryCell(node.lon) + 0.5) / COUNTRY_GRID_WIDTH) * 100;
+    const top = ((latToCountryCell(node.lat) + 0.5) / COUNTRY_GRID_HEIGHT) * 100;
+    return `
+            <button class="fnode" type="button" data-action="${FRONT_NODE_ACTION}"
+                    data-node="${node.id}"
+                    style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%">
+              <span class="fnode__dot" aria-hidden="true"></span>
+              <span class="fnode__label">${node.id} ${node.name}</span>
+            </button>`;
+  }).join('');
+}
+
 export function regionCards(
   progress: GameProgress = emptyProgress(),
 ): readonly RegionCard[] {
@@ -299,9 +334,12 @@ export function buildRegionSelectMarkup(): string {
         <h2 class="region__title" id="${TITLE_ID}">${REGION_SELECT_TITLE}</h2>
         <p class="region__lede">${REGION_SELECT_LEDE}</p>
         <div class="region__theater">
-          <canvas class="region__map" data-ref="${COUNTRY_MAP_REF}"
-                  width="${COUNTRY_CANVAS_WIDTH}" height="${COUNTRY_CANVAS_HEIGHT}"
-                  role="img" aria-label="한반도 전선 지도"></canvas>
+          <div class="region__mapwrap">
+            <canvas class="region__map" data-ref="${COUNTRY_MAP_REF}"
+                    width="${COUNTRY_CANVAS_WIDTH}" height="${COUNTRY_CANVAS_HEIGHT}"
+                    role="img" aria-label="한반도 전선 지도"></canvas>
+            ${buildFrontNodeMarkup()}
+          </div>
           <div class="region__brief" data-ref="${COUNTRY_BRIEF_REF}"></div>
         </div>
         <ul class="region__grid">${cards}</ul>
@@ -407,9 +445,33 @@ export function syncCountryMap(
         `<div class="region__brief-row"><dt>${line.label}</dt><dd>${line.value}</dd></div>`,
     )
     .join('');
+  /*
+   * [작전 개시]는 **브리핑 안에** 둔다. 지도에서 고르고 오른쪽에서 확인한 뒤 시작하는
+   * 동선이 세계지도(지역 선택 → 진입)와 같아야 화면을 옮길 때 눈이 길을 다시 찾지 않는다.
+   * 갈 수 없는 노드(잠김·튜토리얼)는 버튼 대신 이유를 적는다.
+   */
+  const action =
+    node.stageId !== null && status === 'available'
+      ? `<button class="region__go" type="button" data-action="${FRONT_START_ACTION}"` +
+        ` data-region="${node.stageId}">작전 개시</button>`
+      : `<p class="region__brief-locked">${NODE_STATUS_LABEL[status]}</p>`;
+
   brief.innerHTML =
     `<p class="region__brief-eyebrow">REGION BRIEFING · ${NODE_STATUS_LABEL[status]}</p>` +
     `<h3 class="region__brief-name">${node.id} ${node.name}</h3>` +
     `<p class="region__brief-sector">${node.sector}</p>` +
-    `<dl class="region__brief-rows">${rows}</dl>`;
+    `<dl class="region__brief-rows">${rows}</dl>` +
+    action;
+
+  // 지도 위 노드에 선택·상태 표시를 입힌다. 마크업은 1회만 지어지므로 여기서 되맞춘다.
+  for (const button of root.querySelectorAll<HTMLButtonElement>(`[data-action="${FRONT_NODE_ACTION}"]`)) {
+    const id = button.dataset['node'];
+    const target = FRONT_NODES.find((candidate) => candidate.id === id);
+    if (!target) continue;
+    const nodeStatus = nodeStatusOf(target, progress, isRegionLocked);
+    button.classList.toggle('fnode--on', target.id === node.id);
+    button.className = button.className.replace(/ fnode--status-\w+/g, '');
+    button.classList.add(`fnode--status-${nodeStatus}`);
+    button.setAttribute('aria-pressed', String(target.id === node.id));
+  }
 }
