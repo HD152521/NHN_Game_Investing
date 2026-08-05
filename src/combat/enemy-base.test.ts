@@ -76,13 +76,20 @@ describe('초기 상태', () => {
 });
 
 describe('① 뚫려야 한다 — 자금을 들인 돌격', () => {
-  test('★ 탱커 6기를 붙이면 적 본진이 무너지고 즉시 승리한다', () => {
+  /**
+   * ★ 계약 변경 (2026-08-05) ★ 파괴는 **즉시 승리가 아니다.**
+   * 실측에서 유닛 러시가 480 G·무피해로 이겨 13웨이브 방어라는 코어가 우회됐다
+   * (`simulate.ts`의 막아 둔 분기 주석 참고). 파괴 자체는 그대로 가능하고,
+   * 성취는 정산 `enemyBaseDestroyed` +1점으로 받는다(PRD FR-8.2 원안).
+   */
+  test('★ 탱커 6기를 붙이면 적 본진이 무너진다 — 다만 판은 계속된다', () => {
     const after = run(withUnitsAtEnemyBase(6, 'trader'), 40_000);
     expect(after.enemyBaseHp).toBe(0);
-    expect(after.phase).toBe('cleared');
+    // 부수는 것은 되지만 그것으로 판이 끝나지는 않는다 — 웨이브는 계속 온다.
+    expect(after.phase).toBe('running');
   });
 
-  test('13웨이브를 기다리지 않는다 — 웨이브가 남아 있어도 끝난다', () => {
+  test('본진을 부숴도 13웨이브는 그대로 남는다 — 방어를 우회할 수 없다', () => {
     const after = run(withUnitsAtEnemyBase(6, 'trader'), 40_000);
     expect(after.wave).toBeLessThan(WAVE_COUNT);
   });
