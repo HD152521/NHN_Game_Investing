@@ -1122,7 +1122,15 @@ export function mountStage(root: HTMLElement): () => void {
       profitCloseCount: facts.profitCloseCount,
       baseHp: combat.baseHp,
       maxBaseHp: combat.maxBaseHp,
-      enemyBaseDestroyed: false,
+      /*
+       * ★ 정산과 **같은 입력**이어야 한다 ★
+       * 여기서 `false`를 박고 `departmentBonus`를 빠뜨려서, 적 본진을 부순 판이나 IR팀을
+       * 올린 판에서 **판결 화면의 등급 인장·자본금이 뒤이어 뜨는 정산보다 낮게** 나왔다.
+       * 바로 위 주석이 "셸이 한 번만 만들어 넘긴다"고 적어 놓고 실제로는 두 번 계산했다.
+       * 두 화면이 다른 숫자를 말하면 어느 쪽도 못 믿는다 — 입력을 `showResult`와 맞춘다.
+       */
+      enemyBaseDestroyed: combat.enemyBaseHp <= 0,
+      departmentBonus: settlementBonusFor(progress.departments),
     });
     const bars = current.set.bars;
     const first = bars[0];
