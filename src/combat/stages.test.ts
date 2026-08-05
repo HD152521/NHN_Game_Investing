@@ -176,16 +176,27 @@ describe('웨이브 HP 곡선', () => {
    * ×2.68의 R3는 **모든 예산 · 모든 로드아웃에서 클리어율 0%**였다. 지역 계수는 이제
    * `tools/combat-sim/sweep.ts`의 배율 스윕에서 읽은 값이다(라운드 기록은 작업 보고 참고).
    */
-  test('R2는 기준 × 1.20, R3는 기준 × 1.38을 반올림한 값이다 (2026-08-04: R3 램프 역전 수정)', () => {
-    expect(STAGES.R2.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.2));
-    expect(STAGES.R3.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.38));
+  /**
+   * ★ 2026-08-05: ×1.20 / ×1.38 → **×1.15 / ×1.30**. 계수가 틀려서가 아니라 **분모가 바뀌었다** ★
+   *
+   * 같은 회차에 타워 Lv2 피해량을 −15% 내렸다(`constants.ts TOWER_DAMAGE`). 플레이어 산출을
+   * 깎으면 같은 계수는 더 이상 같은 난이도가 아니므로, §19-9 규칙대로 계수를 실측 스윕에서
+   * 다시 뽑았다. 하향 후 옛 계수의 실측 클리어율은 R2 0.053 · R3 **0.000**이었다 —
+   * R3는 v1.4 ×2.68과 같은 "아무도 못 깨는" 상태였다.
+   *
+   * 새 계수의 실측(예산 100%): R1 0.211 / R2 0.158 / R3 0.053, 평균 잔여 HP 6.9 / 3.8 / 2.3.
+   * 클리어율·잔여 HP 모두 단조 감소한다(램프 정의 ②).
+   */
+  test('R2는 기준 × 1.15, R3는 기준 × 1.30을 반올림한 값이다 (2026-08-05: 타워 하향에 맞춰 재도출)', () => {
+    expect(STAGES.R2.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.15));
+    expect(STAGES.R3.waveTable.baseHp).toEqual(scaleWaveHp(WAVE_BASE_HP_R1, 1.3));
 
     // 반올림 규칙(Math.round) 고정 — 내림/올림으로 바꾸면 지역 간 실효 난이도 비율이 흔들린다.
     expect(STAGES.R2.waveTable.baseHp).toEqual([
-      84, 102, 120, 138, 150, 162, 180, 198, 222, 246, 276, 312, 360,
+      81, 98, 115, 132, 144, 155, 173, 190, 213, 236, 265, 299, 345,
     ]);
     expect(STAGES.R3.waveTable.baseHp).toEqual([
-      97, 117, 138, 159, 173, 186, 207, 228, 255, 283, 317, 359, 414,
+      91, 111, 130, 150, 163, 176, 195, 215, 241, 267, 299, 338, 390,
     ]);
   });
 
@@ -310,10 +321,12 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
     expect(STAGES.R2.targetReturnRate).toBe(STAGES.R3.targetReturnRate);
   });
 
-  test('총 적 HP는 R1 20,155 / R2 24,186 / R3 27,815이다 (보스 포함)', () => {
+  // 2026-08-05: 24,186 / 27,815 → 23,195 / 26,226. 타워 Lv2 −15%에 맞춰 지역 계수를
+  // 재도출한 결과다(위 웨이브 HP 곡선 테스트 주석). R1은 앵커라 그대로 20,155다.
+  test('총 적 HP는 R1 20,155 / R2 23,195 / R3 26,226이다 (보스 포함)', () => {
     expect(totalEnemyHp(STAGES.R1)).toBe(20_155);
-    expect(totalEnemyHp(STAGES.R2)).toBe(24_186);
-    expect(totalEnemyHp(STAGES.R3)).toBe(27_815);
+    expect(totalEnemyHp(STAGES.R2)).toBe(23_195);
+    expect(totalEnemyHp(STAGES.R3)).toBe(26_226);
   });
 
   test('보스 HP는 그 지역 마지막 웨이브 HP의 3배다 — 지역 계수를 자동으로 탄다', () => {
@@ -322,7 +335,8 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
       const baseHp = STAGES[id].waveTable.baseHp;
       expect(bossHpOf(STAGES[id])).toBe((baseHp[baseHp.length - 1] as number) * 3);
     }
-    expect([bossHpOf(STAGES.R1), bossHpOf(STAGES.R2), bossHpOf(STAGES.R3)]).toEqual([900, 1080, 1242]);
+    // 2026-08-05: 지역 계수 ×1.15 / ×1.30 재도출을 보스가 자동으로 따라간 결과다.
+    expect([bossHpOf(STAGES.R1), bossHpOf(STAGES.R2), bossHpOf(STAGES.R3)]).toEqual([900, 1035, 1170]);
   });
 
   test('총 적 HP는 R1 < R2 < R3로 단조 증가한다 — 이것이 남은 램프의 정의다', () => {
@@ -348,16 +362,19 @@ describe('지역 난이도 램프 — 이제 전투가 진다', () => {
    * 그래서 지금 램프의 정의는 두 가지다:
    *   ① **총 적 HP 단조 증가** (위 테스트) — 지역이 올라가면 깎아야 할 총량이 실제로 는다.
    *   ② **실측 클리어율 단조 감소** (`npx tsx tools/combat-sim/bin.ts`)
-   *      — R1 0.368 · R2 0.211 · R3 0.158 (예산 100%, 로드아웃 19종).
+   *      — 2026-08-05 실측 R1 **0.211** · R2 **0.158** · R3 **0.053** (예산 100%, 로드아웃 19종),
+   *        평균 잔여 HP 6.9 / 3.8 / 2.3.
    *
    * 이 테스트는 그 결과로 `combatLoadPerGold`가 **감소**한다는 사실을 회귀 방어선으로 남긴다.
    * 다시 증가하도록 계수를 올리면 R3가 클리어 불가로 되돌아간다.
    */
   test('골드당 적 HP는 이제 R1 → R3로 감소한다 — 슬롯 상한 때문에 이 지표가 난이도가 아니다', () => {
+    // 2026-08-05: 8.80 / 7.35 / 5.93 → 8.80 / **7.05** / **5.59**. 지역 계수 재도출로 분자(적 HP)만
+    // 내려갔고 분모(예산)는 그대로다 — 감소 방향이라는 성질 자체는 바뀌지 않는다.
     const load = STAGE_IDS.map((id) => combatLoadPerGold(STAGES[id]));
     expect(load[0]).toBeCloseTo(8.8, 1);
-    expect(load[1]).toBeCloseTo(7.35, 1);
-    expect(load[2]).toBeCloseTo(5.93, 1);
+    expect(load[1]).toBeCloseTo(7.05, 1);
+    expect(load[2]).toBeCloseTo(5.59, 1);
 
     // ⚠️ 이 방향을 "고치지" 마라 — 증가로 되돌리면 R3 클리어율이 0%가 된다(위 주석).
     for (let i = 1; i < load.length; i += 1) {

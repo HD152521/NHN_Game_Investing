@@ -220,12 +220,25 @@ describe('보스 — 전 구간 시뮬레이션 (spawnDue 필드 누락 회귀 �
     };
   }
 
-  /** 실측으로 클리어가 확인된 로드아웃(기본4 + 대공2, 전부 Lv2)으로 R1을 끝까지 돌린다. */
+  /**
+   * 실측으로 클리어가 확인된 로드아웃(기본5 + 대공1, 전부 Lv2)으로 R1을 끝까지 돌린다.
+   *
+   * ★ 2026-08-05: 기본4+대공2 → **기본5+대공1**로 바꿨다 ★
+   * 타워 Lv2 피해량 −15%(`constants.ts TOWER_DAMAGE`) 이후 기본4+대공2는 **보스를 못 잡는다** —
+   * 클리어는 하지만(잔여 HP 42) 보스 HP를 218까지만 깎고 본진에 흘려보낸다. 이 describe는
+   * 밸런스가 아니라 **`spawnDue`의 `isBoss` 누락 회귀**를 지키는 자리이므로, 보스를 실제로
+   * 죽이는 조합으로 옮겼다. 기본 포탑을 한 기 더 쓰면(대공은 1기로 충분) 보스 최저 HP가
+   * 218 → 20이 되어 처치가 성립한다(잔여 HP 44로 클리어도 유지).
+   *
+   * ⚠️ **`combat-sim`의 `보스 ○` 열을 이 판정의 근거로 쓰지 마라.** 그 열은
+   * `bossSeen && state.boss == null`이라 **보스가 누출돼 사라진 경우도 ○로 센다.**
+   * "실제로 죽였는가"는 여기처럼 `events.deaths`의 `kind === 'boss'`로만 알 수 있다.
+   */
   function runR1() {
     const params = r1Params();
     let state = createCombat(params);
     let gold = 2290;
-    const kinds = ['basic', 'basic', 'basic', 'basic', 'antiair', 'antiair'] as const;
+    const kinds = ['basic', 'basic', 'basic', 'basic', 'basic', 'antiair'] as const;
     kinds.forEach((kind, slot) => {
       const built = buildTower(state, slot, kind, gold, params);
       state = built.state;
