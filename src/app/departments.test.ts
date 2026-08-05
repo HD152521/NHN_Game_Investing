@@ -8,8 +8,9 @@ import { describe, expect, test } from 'vitest';
  * ② 표시 문자열과 실제 효과가 **같은 값을 말하는가** — 이 파일에서 유일하게 이중 출처가
  *    될 수 있는 자리다.
  * ③ 수용 기준(FR-11.2 하단)이 실제로 성립하는가.
+ * ④ **법무팀이 숙련자에게도 0이 아닌가** (GAME.md §16-6 실측이 남긴 계약) — 맨 아래 블록.
  */
-import { DEFAULT_POSITION_PARAMS } from '../position';
+import { DEFAULT_POSITION_PARAMS, GOLD_CONVERSION } from '../position';
 import { STAGES } from '../combat';
 import {
   DEPARTMENTS,
@@ -19,6 +20,7 @@ import {
   baseDepartments,
   canUpgrade,
   companyRank,
+  departmentSpec,
   liquidationLineFor,
   normalizeDepartments,
   settlementBonusFor,
@@ -26,6 +28,7 @@ import {
   startingAumFor,
   totalLevels,
   towerDamageMultiplier,
+  tradeFeeRateFor,
   unitHpMultiplier,
   upgradeCost,
 } from './departments';
@@ -96,6 +99,99 @@ describe('★ 표시 문자열과 실제 효과가 같은 값을 말한다', () 
 
   test('법무팀 Lv1은 기본 상수를 그대로 따른다 (표에 적힌 1.00을 다시 적지 않는다)', () => {
     expect(liquidationLineFor(baseDepartments())).toBe(DEFAULT_POSITION_PARAMS.liquidationLine);
+  });
+
+  test('법무팀 Lv1의 수수료도 기본 상수 그대로다', () => {
+    expect(tradeFeeRateFor(baseDepartments())).toBe(DEFAULT_POSITION_PARAMS.feeRate);
+  });
+
+  test('법무팀 수수료가 1.0% / 0.6% / 0.2%다', () => {
+    expect(tradeFeeRateFor(at('legal', 1))).toBeCloseTo(0.01);
+    expect(tradeFeeRateFor(at('legal', 2))).toBeCloseTo(0.006);
+    expect(tradeFeeRateFor(at('legal', 3))).toBeCloseTo(0.002);
+  });
+
+  test('★ 화면이 부서의 절반을 숨기지 않는다 — 효과 문구가 두 축을 다 말한다', () => {
+    // 청산선만 적어 두면 "왜 이걸 사지?"에 대한 답이 조건부 보험 하나로 보인다(§16-6).
+    const effect = departmentSpec('legal').effect;
+    expect(effect).toContain('청산선');
+    expect(effect).toContain('수수료');
+  });
+});
+
+/**
+ * ★★ 이 파일의 핵심 계약 — 법무팀은 숙련자에게도 0이 아니다 (GAME.md §16-6) ★★
+ *
+ * 실측: 손절 규율을 쓰면 강제청산율이 0.1% → 0.0%이고 ρ는 청산선 1.00/1.15/1.30에서
+ * 전부 +2.2%로 **완전히 동일**했다. 청산선 완화는 강제청산이 일어나야만 지불되는
+ * 조건부 보험이라, 손절을 익힌 플레이어에게는 효과가 정확히 0이다.
+ *
+ * 아래 테스트는 **강제청산이 한 번도 없는 세션**을 모형화한다. 그 세션에서 청산선은
+ * 손익식에 한 번도 등장하지 않으므로, 남아서 값을 하는 것은 상시 비용(수수료)뿐이다.
+ * 이 블록이 깨진다면 법무팀이 다시 "잘하면 죽는 부서"로 돌아간 것이다 —
+ * **수치를 맞추려 테스트를 지우지 말고 부서 효과를 다시 설계해라.**
+ */
+describe('★★ 법무팀 — 숙련자 가치 0 문제 (§16-6)', () => {
+  /**
+   * 강제청산 0회 세션의 총 투입액. R1 기준 `S = 시작 AUM 2,000 + 150 × 13 = 3,950`,
+   * 봇 실측 소진율 93% → 3,674. AUM은 일방통행 파이프라 `Σstake ≤ S`가 못 박혀 있고,
+   * **손절을 하든 안 하든 이 총액은 같다** — 그래서 수수료 절감은 전략과 무관하다.
+   */
+  const SESSION_STAKE = 3674;
+
+  /** 청산선이 한 번도 닿지 않은 세션에서 법무팀이 만들어내는 골드 이득. */
+  function goldGainWithoutAnyLiquidation(level: DepartmentLevel): number {
+    const feeSaved =
+      SESSION_STAKE * (tradeFeeRateFor(at('legal', 1)) - tradeFeeRateFor(at('legal', level)));
+    // 청산 대금은 `GOLD_CONVERSION` 비율로만 골드가 된다 — 아낀 수수료도 같은 파이프를 탄다.
+    return feeSaved * GOLD_CONVERSION;
+  }
+
+  test('★ 강제청산이 0회여도 레벨을 올리면 이득이 남는다 (이것이 계약이다)', () => {
+    expect(goldGainWithoutAnyLiquidation(1)).toBe(0);
+    expect(goldGainWithoutAnyLiquidation(2)).toBeGreaterThan(0);
+    expect(goldGainWithoutAnyLiquidation(3)).toBeGreaterThan(goldGainWithoutAnyLiquidation(2));
+  });
+
+  test('상시 이득의 크기가 "소액"이되 눈에 띄는 자리에 있다 (Lv3 ≈ +15 G/판)', () => {
+    // 아래로 새면 사실상 0이고, 위로 새면 조건부 보험이 아니라 이쪽이 본체가 된다.
+    expect(goldGainWithoutAnyLiquidation(3)).toBeGreaterThan(10);
+    expect(goldGainWithoutAnyLiquidation(3)).toBeLessThan(40);
+  });
+
+  test('★ 수수료는 어떤 레벨에서도 0보다 크다 — `E[ρ] ≤ −feeRate` 정리를 지킨다', () => {
+    // 0이 되면 "마팅게일 경로에서 매매는 기대적으로 손해"(§19-11)가 무너진다.
+    for (const level of [1, 2, 3] as const) {
+      expect(tradeFeeRateFor(at('legal', level))).toBeGreaterThan(0);
+    }
+  });
+
+  test('레벨이 오를수록 수수료가 엄격히 낮아진다 (역전·정체 없음)', () => {
+    expect(tradeFeeRateFor(at('legal', 2))).toBeLessThan(tradeFeeRateFor(at('legal', 1)));
+    expect(tradeFeeRateFor(at('legal', 3))).toBeLessThan(tradeFeeRateFor(at('legal', 2)));
+  });
+
+  test('수수료 감면 폭이 레벨마다 일정하다 (FR-11.3 곱연산 금지)', () => {
+    const step1 = tradeFeeRateFor(at('legal', 1)) - tradeFeeRateFor(at('legal', 2));
+    const step2 = tradeFeeRateFor(at('legal', 2)) - tradeFeeRateFor(at('legal', 3));
+    expect(step1).toBeCloseTo(step2);
+  });
+
+  test('청산선 완화는 그대로 살아 있다 — 초보 보험을 없애 바꾼 것이 아니다', () => {
+    // 실측에서 강제청산율 28.4% → 17.5%, 총골드 2,118 → 2,171을 만든 효과다.
+    expect(liquidationLineFor(at('legal', 3))).toBeGreaterThan(liquidationLineFor(at('legal', 1)));
+  });
+
+  test('수수료 효과는 법무팀에만 붙는다 — 다른 부서를 올려도 요율이 그대로다', () => {
+    for (const id of ['desk', 'rnd', 'hr', 'ir'] as const) {
+      expect(tradeFeeRateFor(at(id, 3))).toBe(tradeFeeRateFor(baseDepartments()));
+    }
+  });
+
+  test('손상된 저장값에서도 요율이 유한하고 양수다', () => {
+    const levels = normalizeDepartments({ legal: 99 });
+    expect(Number.isFinite(tradeFeeRateFor(levels))).toBe(true);
+    expect(tradeFeeRateFor(levels)).toBeGreaterThan(0);
   });
 });
 

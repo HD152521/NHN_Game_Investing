@@ -43,6 +43,7 @@ import type { DepartmentLevels } from './departments';
 import {
   baseDepartments,
   liquidationLineFor,
+  tradeFeeRateFor,
   startingAumFor,
   towerDamageMultiplier,
   unitHpMultiplier,
@@ -209,6 +210,14 @@ export class StageSession {
       ...DEFAULT_POSITION_PARAMS,
       sigma: this.set.sigma30,
       liquidationLine: liquidationLineFor(departments),
+      /*
+       * ★ 법무팀의 두 번째 축 — 수수료 감면 (§16-6) ★
+       * 청산선 완화만으로는 **손절을 익힌 플레이어에게 효과가 정확히 0**이었다(실측:
+       * 강제청산율 0%면 청산선이 손익식에 등장하지 않는다). 수수료는 `Σstake × feeRate`라
+       * 손절 여부와 무관하게 발생하므로, 실력이 늘어도 값이 남는다.
+       * ⚠️ 이 줄이 없으면 `tradeFeeRateFor`가 트리셰이킹으로 통째로 빠진다(§19-5).
+       */
+      feeRate: tradeFeeRateFor(departments),
     };
     // 트레이딩 데스크가 시작 AUM을 더한다 (지역 기본값 위에 얹힌다).
     this.wallet = { gold: stage.startingGold, aum: startingAumFor(stageId, departments) };
